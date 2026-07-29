@@ -34,6 +34,20 @@ function Home() {
     }
   }, []);
 
+  const attachVideo = useCallback((video: HTMLVideoElement | null) => {
+  videoRef.current = video;
+
+  if (!video || !streamRef.current) return;
+
+  video.srcObject = streamRef.current;
+  video.muted = true;
+  video.playsInline = true;
+
+  video.play().catch((error) => {
+    console.error("Camera preview failed to start:", error);
+  });
+}, []);
+
   const startCamera = useCallback(async () => {
     // Stop any existing stream first
     stopCamera();
@@ -354,7 +368,7 @@ useEffect(() => {
           {/* Video preview fills available space */}
           <div className="relative flex-1 bg-black">
             <video
-              ref={videoRef}
+              ref={attachVideo}
               autoPlay
               playsInline
               muted
