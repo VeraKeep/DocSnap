@@ -62,7 +62,6 @@ function Home() {
       });
       streamRef.current = stream;
       setState("active");
-
 useEffect(() => {
   if (state !== "active") return;
 
