@@ -54,17 +54,30 @@ function Home() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         },
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setState("active");
+setState("active");
+
+requestAnimationFrame(async () => {
+  const video = videoRef.current;
+
+  if (!video) return;
+
+  video.srcObject = stream;
+  video.muted = true;
+  video.playsInline = true;
+
+  try {
+    await video.play();
+  } catch (error) {
+    console.error("Could not start camera preview:", error);
+  }
+});
     } catch (err: unknown) {
       const e = err as DOMException;
       const msg =
