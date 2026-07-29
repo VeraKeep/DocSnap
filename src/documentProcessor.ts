@@ -185,8 +185,9 @@ function findDocumentQuad(
   ].filter(Boolean).length;
 
   if (validSides < 3) {
-    console.log("Document detection failed: not enough valid sides");
-    return null;
+    throw new Error(
+    `Not enough sides: top=${topPts.length}, bottom=${bottomPts.length}, left=${leftPts.length}, right=${rightPts.length}, minimum=${minPts}`,
+  );
   }
 
   // Fit lines to boundary points

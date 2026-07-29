@@ -129,7 +129,13 @@ function Home() {
           }
         } catch {
           // If processing throws, just use the original
-          setProcessedImage(null);
+          const message =
+    error instanceof Error ? error.message : "Unknown processing error";
+
+  setErrorMessage(`Auto-crop failed: ${message}`);
+  setProcessedImage(null);
+  setState("error");
+  return;
         }
         setState("preview");
       }, 100);
