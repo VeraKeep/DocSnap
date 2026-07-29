@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@layer base {
+  html,
+  body {
+    @apply m-0 bg-gray-950 text-white antialiased;
+    overscroll-behavior: none;
+  }
+
+  /* Remove default button focus outline and use a custom ring */
+  button:focus-visible {
+    @apply ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 outline-none;
+  }
+}
