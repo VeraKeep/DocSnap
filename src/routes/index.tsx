@@ -76,51 +76,7 @@ function Home() {
       });
       streamRef.current = stream;
       setState("active");
-useEffect(() => {
-  if (state !== "active") return;
 
-  const video = videoRef.current;
-  const stream = streamRef.current;
-
-  if (!video || !stream) {
-    console.error("Camera video element or stream is unavailable.");
-    return;
-  }
-
-  video.srcObject = stream;
-
-  const startPreview = async () => {
-    try {
-      await video.play();
-
-      console.log("Camera preview started", {
-        videoWidth: video.videoWidth,
-        videoHeight: video.videoHeight,
-        tracks: stream.getVideoTracks().map((track) => ({
-          label: track.label,
-          readyState: track.readyState,
-          enabled: track.enabled,
-          muted: track.muted,
-          settings: track.getSettings(),
-        })),
-      });
-    } catch (error) {
-      console.error("Camera preview failed to play:", error);
-      setErrorMessage("The camera opened, but the preview could not start.");
-      setState("error");
-    }
-  };
-
-  if (video.readyState >= 1) {
-    void startPreview();
-  } else {
-    video.addEventListener("loadedmetadata", startPreview, { once: true });
-  }
-
-  return () => {
-    video.removeEventListener("loadedmetadata", startPreview);
-  };
-}, [state]);
     } catch (err: unknown) {
       const e = err as DOMException;
       const msg =
