@@ -1,8 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { processDocument } from "../documentProcessor";
+import { perspectiveWarp, processDocument, type Quad } from "../documentProcessor";
 
-type AppState = "idle" | "active" | "processing" | "preview" | "error";
+type AppState = "idle" | "starting" | "active" | "processing" | "adjusting" | "preview" | "error";
+type CornerName = keyof Quad;
+
+function createDefaultCorners(width: number, height: number): Quad {
+  const insetX = width * 0.08;
+  const insetY = height * 0.08;
+
+  return {
+    tl: { x: insetX, y: insetY },
+    tr: { x: width - insetX, y: insetY },
+    br: { x: width - insetX, y: height - insetY },
+    bl: { x: insetX, y: height - insetY },
+  };
+}
 
 interface PageEntry {
   processed: string | null;
@@ -17,6 +30,9 @@ export const Route = createFileRoute("/")({
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
+  const capturedImageDataRef = useRef<ImageData | null>(null);
+  const activeCornerRef = useRef<CornerName | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const [state, setState] = useState<AppState>("idle");
@@ -26,6 +42,7 @@ function Home() {
   const [useOriginal, setUseOriginal] = useState(false);
   const [pages, setPages] = useState<PageEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [cropCorners, setCropCorners] = useState<Quad | null>(null);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -55,6 +72,8 @@ function Home() {
     setCapturedImage(null);
     setProcessedImage(null);
     setUseOriginal(false);
+    setCropCorners(null);
+    capturedImageDataRef.current = null;
 
     // Check browser support
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -101,51 +120,116 @@ function Home() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Draw the video frame to canvas
     ctx.drawImage(video, 0, 0);
 
-    // Get the raw ImageData for processing
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    capturedImageDataRef.current = imageData;
 
-    // Store the original capture as a data URL
     const originalDataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setCapturedImage(originalDataUrl);
 
-    // Stop the camera — we have our frame
     stopCamera();
     setState("processing");
 
-    // Yield to the browser so the "Processing…" UI renders,
-    // then run the document detection on the next animation frame
     requestAnimationFrame(() => {
       setTimeout(() => {
         try {
           const result = processDocument(imageData, "image/jpeg", 0.92);
+
           if (result) {
             setProcessedImage(result.dataUrl);
-            setUseOriginal(false);
+            setState("preview");
           } else {
-            setProcessedImage(null);
+            setCropCorners(createDefaultCorners(canvas.width, canvas.height));
+            setState("adjusting");
           }
-        } catch {
-          // If processing throws, just use the original
-          const message =
-    error instanceof Error ? error.message : "Unknown processing error";
-
-  setErrorMessage(`Auto-crop failed: ${message}`);
-  setProcessedImage(null);
-  setState("error");
-  return;
+        } catch (error) {
+          console.error("Auto-crop failed:", error);
+          setCropCorners(createDefaultCorners(canvas.width, canvas.height));
+          setState("adjusting");
         }
-        setState("preview");
       }, 100);
     });
   }, [stopCamera]);
+
+  const applyManualCrop = useCallback(() => {
+    const imageData = capturedImageDataRef.current;
+    if (!imageData || !cropCorners) return;
+
+    try {
+      const cropped = perspectiveWarp(
+        imageData,
+        imageData.width,
+        imageData.height,
+        cropCorners,
+        "image/jpeg",
+        0.92,
+      );
+      setProcessedImage(cropped);
+      setUseOriginal(false);
+      setState("preview");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to crop image";
+      setErrorMessage(message);
+      setState("error");
+    }
+  }, [cropCorners]);
+
+  const updateCornerFromPointer = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = cropCanvasRef.current;
+    const activeCorner = activeCornerRef.current;
+    if (!canvas || !activeCorner) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
+
+    setCropCorners((current) =>
+      current
+        ? {
+            ...current,
+            [activeCorner]: {
+              x: Math.max(0, Math.min(canvas.width - 1, x)),
+              y: Math.max(0, Math.min(canvas.height - 1, y)),
+            },
+          }
+        : current,
+    );
+  }, []);
+
+  const beginCornerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = cropCanvasRef.current;
+    if (!canvas || !cropCorners) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
+
+    const names: CornerName[] = ["tl", "tr", "br", "bl"];
+    activeCornerRef.current = names.reduce((nearest, name) => {
+      const a = cropCorners[nearest];
+      const b = cropCorners[name];
+      const distanceA = Math.hypot(a.x - x, a.y - y);
+      const distanceB = Math.hypot(b.x - x, b.y - y);
+      return distanceB < distanceA ? name : nearest;
+    }, names[0]);
+
+    canvas.setPointerCapture(event.pointerId);
+    updateCornerFromPointer(event);
+  }, [cropCorners, updateCornerFromPointer]);
+
+  const endCornerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    activeCornerRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
 
   const retake = useCallback(() => {
     setCapturedImage(null);
     setProcessedImage(null);
     setUseOriginal(false);
+    setCropCorners(null);
+    capturedImageDataRef.current = null;
     // Restart the camera
     startCamera();
   }, [startCamera]);
@@ -236,6 +320,8 @@ function Home() {
       setCapturedImage(null);
       setProcessedImage(null);
       setUseOriginal(false);
+      setCropCorners(null);
+      capturedImageDataRef.current = null;
       setState("idle");
     } catch {
       setErrorMessage("Failed to generate PDF. Please try again.");
@@ -244,6 +330,55 @@ function Home() {
       setIsGenerating(false);
     }
   }, [pages, capturedImage, processedImage, useOriginal]);
+
+  useEffect(() => {
+    if (state !== "adjusting" || !capturedImage || !cropCorners) return;
+
+    const canvas = cropCanvasRef.current;
+    if (!canvas) return;
+
+    const image = new Image();
+    image.onload = () => {
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.drawImage(image, 0, 0);
+      ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const points = [cropCorners.tl, cropCorners.tr, cropCorners.br, cropCorners.bl];
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.closePath();
+      ctx.lineWidth = Math.max(4, canvas.width / 250);
+      ctx.strokeStyle = "white";
+      ctx.stroke();
+
+      const radius = Math.max(14, canvas.width / 45);
+      for (const point of points) {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+        ctx.lineWidth = Math.max(3, canvas.width / 350);
+        ctx.strokeStyle = "#4f46e5";
+        ctx.stroke();
+      }
+    };
+    image.src = capturedImage;
+  }, [state, capturedImage, cropCorners]);
 
   // Stop camera on unmount
   useEffect(() => {
@@ -368,6 +503,41 @@ function Home() {
             <p className="text-gray-300">Processing…</p>
           </div>
           <p className="text-sm text-gray-500">Detecting document edges</p>
+        </div>
+      )}
+
+      {state === "adjusting" && capturedImage && cropCorners && (
+        <div className="flex flex-1 flex-col min-h-0">
+          <div className="px-4 py-3 text-center">
+            <h2 className="text-lg font-semibold">Adjust document corners</h2>
+            <p className="text-sm text-gray-400">Drag each circle to a document corner.</p>
+          </div>
+
+          <div className="flex flex-1 items-center justify-center overflow-hidden bg-black p-3 min-h-0">
+            <canvas
+              ref={cropCanvasRef}
+              className="max-h-full max-w-full touch-none object-contain"
+              onPointerDown={beginCornerDrag}
+              onPointerMove={updateCornerFromPointer}
+              onPointerUp={endCornerDrag}
+              onPointerCancel={endCornerDrag}
+            />
+          </div>
+
+          <div className="flex items-center justify-center gap-3 bg-gray-950 px-4 py-5">
+            <button
+              onClick={retake}
+              className="rounded-full border border-gray-600 px-6 py-3 text-sm font-medium text-gray-300 transition active:scale-95"
+            >
+              Retake
+            </button>
+            <button
+              onClick={applyManualCrop}
+              className="rounded-full bg-indigo-600 px-7 py-3 text-sm font-semibold text-white shadow-lg transition active:scale-95"
+            >
+              Apply Crop
+            </button>
+          </div>
         </div>
       )}
 

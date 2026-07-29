@@ -167,7 +167,7 @@ function findDocumentQuad(
   sorted.set(edges);
   sorted.sort();
   const medianEdge = sorted[Math.floor(sorted.length / 2)];
-  const threshold = Math.max(medianEdge * 0.4, 15);
+  const threshold = Math.max(medianEdge * 0.7, 30);
 
   // Scan from each direction to find boundary points
   const topPts = scanTopEdge(edges, w, h, threshold);
@@ -184,11 +184,7 @@ function findDocumentQuad(
     rightPts.length > minPts,
   ].filter(Boolean).length;
 
-  if (validSides < 3) {
-    throw new Error(
-    `Not enough sides: top=${topPts.length}, bottom=${bottomPts.length}, left=${leftPts.length}, right=${rightPts.length}, minimum=${minPts}`,
-  );
-  }
+  if (validSides < 3) return null;
 
   // Fit lines to boundary points
   const topLine = fitLine(topPts);
@@ -196,10 +192,7 @@ function findDocumentQuad(
   const leftLine = fitLineVert(leftPts);
   const rightLine = fitLineVert(rightPts);
 
-  if (!topLine || !bottomLine || !leftLine || !rightLine) {
-    console.log("Document detection failed: line fitting");
-   return null;
-  }
+  if (!topLine || !bottomLine || !leftLine || !rightLine) return null;
 
   // Compute intersections (corners)
   // topLine & leftLine → tl
@@ -211,10 +204,7 @@ function findDocumentQuad(
   const bl = intersectLineLine(bottomLine, leftLine);
   const br = intersectLineLine(bottomLine, rightLine);
 
-  if (!tl || !tr || !bl || !br) {
-    console.log("Document detection failed: intersections");
-    return null;
-  }
+  if (!tl || !tr || !bl || !br) return null;
 
   // Clamp corners to image bounds
   const clamp = (p: Point): Point => ({
@@ -230,10 +220,7 @@ function findDocumentQuad(
   };
 
   // Validate: all points within reasonable bounds and form a proper quad
-  if (!isValidQuad(quad, w, h)) {
-    console.log("Document detection failed: invalid quad", quad);
-    return null;
-  }
+  if (!isValidQuad(quad, w, h)) return null;
 
   return quad;
 }
@@ -516,7 +503,7 @@ function isConvex(pts: Point[]): boolean {
  * Apply a 4-point perspective warp to deskew the document.
  * Maps the source quad to a flat rectangle.
  */
-function perspectiveWarp(
+export function perspectiveWarp(
   src: ImageData,
   srcW: number,
   srcH: number,
