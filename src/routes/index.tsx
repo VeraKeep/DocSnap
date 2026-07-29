@@ -34,7 +34,7 @@ function Home() {
     }
   }, []);
 
-  const attachVideo = useCallback((video: HTMLVideoElement | null) => {
+  const attachVideo = (video: HTMLVideoElement | null) => {
   videoRef.current = video;
 
   if (!video || !streamRef.current) return;
@@ -43,10 +43,10 @@ function Home() {
   video.muted = true;
   video.playsInline = true;
 
-  video.play().catch((error) => {
+  void video.play().catch((error) => {
     console.error("Camera preview failed to start:", error);
   });
-}, []);
+};
 
   const startCamera = useCallback(async () => {
     // Stop any existing stream first
