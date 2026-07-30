@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { perspectiveWarp, processDocument, type Quad } from "../documentProcessor";
+import {
+  applyFilter,
+  getSourceForFilter,
+  ALL_FILTERS,
+  FILTER_LABELS,
+  type FilterType,
+} from "../imageFilters";
 
 type AppState = "idle" | "starting" | "active" | "processing" | "adjusting" | "preview" | "error";
 type CornerName = keyof Quad;
@@ -20,7 +27,7 @@ function createDefaultCorners(width: number, height: number): Quad {
 interface PageEntry {
   processed: string | null;
   original: string;
-  useOriginal: boolean;
+  filter: FilterType;
 }
 
 // Drag-and-drop state tracked in a ref so pointer handlers never read stale closures.
@@ -48,7 +55,9 @@ function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
-  const [useOriginal, setUseOriginal] = useState(false);
+  const [currentFilter, setCurrentFilter] = useState<FilterType>("auto");
+  const [displayImage, setDisplayImage] = useState<string | null>(null);
+  const [isComputingFilter, setIsComputingFilter] = useState(false);
   const [pages, setPages] = useState<PageEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
@@ -86,7 +95,8 @@ function Home() {
     setErrorMessage("");
     setCapturedImage(null);
     setProcessedImage(null);
-    setUseOriginal(false);
+    setCurrentFilter("auto");
+    setDisplayImage(null);
     setCropCorners(null);
     capturedImageDataRef.current = null;
 
@@ -181,7 +191,8 @@ function Home() {
         0.92,
       );
       setProcessedImage(cropped);
-      setUseOriginal(false);
+      setCurrentFilter("auto");
+      setDisplayImage(null);
       setState("preview");
     } catch (error) {
       const message =
@@ -242,24 +253,13 @@ function Home() {
   const retake = useCallback(() => {
     setCapturedImage(null);
     setProcessedImage(null);
-    setUseOriginal(false);
+    setCurrentFilter("auto");
+    setDisplayImage(null);
     setCropCorners(null);
     capturedImageDataRef.current = null;
     // Restart the camera
     startCamera();
   }, [startCamera]);
-
-  const addPage = useCallback(() => {
-    if (!capturedImage) return;
-    const entry: PageEntry = {
-      processed: processedImage,
-      original: capturedImage,
-      useOriginal,
-    };
-    setPages((prev) => [...prev, entry]);
-    // Start camera for the next capture
-    startCamera();
-  }, [capturedImage, processedImage, useOriginal, startCamera]);
 
   const deletePage = useCallback((index: number) => {
     // Cancel any in-progress drag when a page is deleted
@@ -352,7 +352,7 @@ function Home() {
       {
         processed: processedImage,
         original: capturedImage,
-        useOriginal,
+        filter: currentFilter,
       },
     ];
 
@@ -377,10 +377,12 @@ function Home() {
 
       for (let i = 0; i < allPages.length; i++) {
         const page = allPages[i];
-        const imageToUse =
-          !page.useOriginal && page.processed
-            ? page.processed
-            : page.original;
+        const sourceUrl = getSourceForFilter(
+          page.original,
+          page.processed,
+          page.filter,
+        );
+        const imageToUse = await applyFilter(sourceUrl, page.filter);
 
         // Load image to get natural dimensions
         const img = new Image();
@@ -412,7 +414,8 @@ function Home() {
       setPages([]);
       setCapturedImage(null);
       setProcessedImage(null);
-      setUseOriginal(false);
+      setCurrentFilter("auto");
+      setDisplayImage(null);
       setCropCorners(null);
       capturedImageDataRef.current = null;
       setState("idle");
@@ -422,7 +425,7 @@ function Home() {
     } finally {
       setIsGenerating(false);
     }
-  }, [pages, capturedImage, processedImage, useOriginal]);
+  }, [pages, capturedImage, processedImage, currentFilter]);
 
   // --- File import from device ---
 
@@ -456,14 +459,14 @@ function Home() {
       return {
         original: originalDataUrl,
         processed: result?.dataUrl ?? null,
-        useOriginal: !result,
+        filter: "auto" as FilterType,
       };
     } catch {
       // If processing throws, use original
       return {
         original: originalDataUrl,
         processed: null,
-        useOriginal: true,
+        filter: "auto" as FilterType,
       };
     }
   }
@@ -516,7 +519,8 @@ function Home() {
       setPages((prev) => [...prev, ...restEntries]);
       setCapturedImage(lastEntry.original);
       setProcessedImage(lastEntry.processed);
-      setUseOriginal(lastEntry.useOriginal);
+      setCurrentFilter(lastEntry.filter);
+      setDisplayImage(null);
       setCropCorners(null);
       capturedImageDataRef.current = null;
 
@@ -534,17 +538,18 @@ function Home() {
     const entry: PageEntry = {
       processed: processedImage,
       original: capturedImage,
-      useOriginal,
+      filter: currentFilter,
     };
     setPages((prev) => [...prev, entry]);
     setCapturedImage(null);
     setProcessedImage(null);
-    setUseOriginal(false);
+    setCurrentFilter("auto");
+    setDisplayImage(null);
     setCropCorners(null);
     capturedImageDataRef.current = null;
     // Open the file picker
     fileInputRef.current?.click();
-  }, [capturedImage, processedImage, useOriginal]);
+  }, [capturedImage, processedImage, currentFilter]);
 
   /** Save current capture to pages and start the camera. */
   const addFromCamera = useCallback(() => {
@@ -552,11 +557,11 @@ function Home() {
     const entry: PageEntry = {
       processed: processedImage,
       original: capturedImage,
-      useOriginal,
+      filter: currentFilter,
     };
     setPages((prev) => [...prev, entry]);
     startCamera();
-  }, [capturedImage, processedImage, useOriginal, startCamera]);
+  }, [capturedImage, processedImage, currentFilter, startCamera]);
 
   useEffect(() => {
     if (state !== "adjusting" || !capturedImage || !cropCorners) return;
@@ -612,10 +617,40 @@ function Home() {
     return () => stopCamera();
   }, [stopCamera]);
 
+  // Compute filtered display image whenever filter or base image changes
+  useEffect(() => {
+    if (state !== "preview" || !capturedImage) {
+      setDisplayImage(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsComputingFilter(true);
+
+    const sourceUrl = getSourceForFilter(
+      capturedImage,
+      processedImage,
+      currentFilter,
+    );
+
+    applyFilter(sourceUrl, currentFilter).then((filtered) => {
+      if (!cancelled) {
+        setDisplayImage(filtered);
+        setIsComputingFilter(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        // On error, fall back to source image
+        setDisplayImage(sourceUrl);
+        setIsComputingFilter(false);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [state, capturedImage, processedImage, currentFilter]);
+
   // Determine which image to show in preview
-  const previewImage =
-    !useOriginal && processedImage ? processedImage : capturedImage;
-  const hasProcessedImage = processedImage !== null;
+  const previewImage = displayImage || capturedImage;
   const totalPages = pages.length + 1; // saved pages + current capture
 
   return (
@@ -823,35 +858,40 @@ function Home() {
         <div className="flex flex-1 flex-col">
           {/* Captured / processed image preview */}
           <div className="relative flex-1 bg-black min-h-0">
+            {isComputingFilter && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+              </div>
+            )}
             <img
               src={previewImage}
-              alt={
-                !useOriginal && hasProcessedImage
-                  ? "Processed document"
-                  : "Captured document"
-              }
+              alt="Document preview"
               className="absolute inset-0 h-full w-full object-contain"
             />
           </div>
 
-          {/* Toggle for original vs processed */}
-          {hasProcessedImage && (
-            <div className="flex items-center justify-center bg-gray-900 px-6 py-2">
-              <button
-                onClick={() => setUseOriginal((prev) => !prev)}
-                className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium text-gray-400 transition hover:text-white"
-              >
-                <span
-                  className={`inline-block h-3 w-3 rounded-full border ${
-                    useOriginal
-                      ? "border-gray-500 bg-transparent"
-                      : "border-indigo-500 bg-indigo-500"
-                  }`}
-                />
-                {useOriginal ? "Use auto-crop" : "Use original"}
-              </button>
+          {/* Filter strip */}
+          <div className="bg-gray-900 px-3 py-2.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {ALL_FILTERS.map((f) => {
+                const isActive = f === currentFilter;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setCurrentFilter(f)}
+                    disabled={isComputingFilter}
+                    className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition whitespace-nowrap ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
+                    } disabled:opacity-50`}
+                  >
+                    {FILTER_LABELS[f]}
+                  </button>
+                );
+              })}
             </div>
-          )}
+          </div>
 
           {/* Thumbnail strip of saved pages */}
           {pages.length > 0 && (
@@ -861,9 +901,9 @@ function Home() {
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
                   {pages.map((page, i) => {
                     const thumbSrc =
-                      !page.useOriginal && page.processed
-                        ? page.processed
-                        : page.original;
+                      page.filter === "color"
+                        ? page.original
+                        : (page.processed || page.original);
                     return (
                       <div
                         key={page.original.slice(-40)}
@@ -893,9 +933,9 @@ function Home() {
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 select-none">
                   {pages.map((page, i) => {
                     const thumbSrc =
-                      !page.useOriginal && page.processed
-                        ? page.processed
-                        : page.original;
+                      page.filter === "color"
+                        ? page.original
+                        : (page.processed || page.original);
 
                     const drag = dragRef.current;
                     const isDragging = drag !== null && drag.index === i;
