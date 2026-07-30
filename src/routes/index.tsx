@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, useUser, SignInButton, SignUpButton, UserButton } from "@clerk/tanstack-start";
 import { perspectiveWarp, processDocument, type Quad } from "../documentProcessor";
@@ -53,6 +53,20 @@ interface DragState {
   overIndex: number;
 }
 
+/** Lightweight haptic feedback for mobile. */
+function vibrate(ms: number) {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    // silently ignore
+  }
+}
+
+/** Detects if the error is a camera permission denial. */
+function isPermissionError(msg: string): boolean {
+  return msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("notallowederror");
+}
+
 export const Route = createFileRoute("/")({
   component: Home,
 });
@@ -65,6 +79,8 @@ function Home() {
   const activeCornerRef = useRef<CornerName | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pageEntryIdCounter = useRef(0);
+  const prevPagesLength = useRef(0);
 
   // Clerk auth hooks
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
@@ -81,6 +97,12 @@ function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [cropCorners, setCropCorners] = useState<Quad | null>(null);
+
+  // Animation states
+  const [showCaptureFlash, setShowCaptureFlash] = useState(false);
+  const [filterPulseKey, setFilterPulseKey] = useState(0);
+  const [prevState, setPrevState] = useState<AppState>("idle");
+  const [newPageIndices, setNewPageIndices] = useState<number[]>([]);
 
   // Cloud sync state
   const [isSaving, setIsSaving] = useState(false);
@@ -105,6 +127,31 @@ function Home() {
   const [, setDragTick] = useState(0);
   const rerenderDrag = useCallback(() => setDragTick((t) => t + 1), []);
 
+  // Track state transitions for animations
+  useEffect(() => {
+    setPrevState((prev) => {
+      if (prev !== state) return prev;
+      return state;
+    });
+  }, [state]);
+
+  // Track new page additions for slide-in animation
+  useEffect(() => {
+    if (pages.length > prevPagesLength.current) {
+      const addedCount = pages.length - prevPagesLength.current;
+      const indices: number[] = [];
+      for (let i = prevPagesLength.current; i < pages.length; i++) {
+        indices.push(i);
+      }
+      setNewPageIndices(indices);
+      // Clear after animation
+      const timer = setTimeout(() => setNewPageIndices([]), 400);
+      prevPagesLength.current = pages.length;
+      return () => clearTimeout(timer);
+    }
+    prevPagesLength.current = pages.length;
+  }, [pages.length]);
+
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -113,18 +160,18 @@ function Home() {
   }, []);
 
   const attachVideo = (video: HTMLVideoElement | null) => {
-  videoRef.current = video;
+    videoRef.current = video;
 
-  if (!video || !streamRef.current) return;
+    if (!video || !streamRef.current) return;
 
-  video.srcObject = streamRef.current;
-  video.muted = true;
-  video.playsInline = true;
+    video.srcObject = streamRef.current;
+    video.muted = true;
+    video.playsInline = true;
 
-  void video.play().catch((error) => {
-    console.error("Camera preview failed to start:", error);
-  });
-};
+    void video.play().catch((error) => {
+      console.error("Camera preview failed to start:", error);
+    });
+  };
 
   const startCamera = useCallback(async () => {
     // Stop any existing stream first
@@ -177,6 +224,8 @@ function Home() {
     if (!video || !canvas) return;
     if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
+    vibrate(10);
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
@@ -189,6 +238,10 @@ function Home() {
 
     const originalDataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setCapturedImage(originalDataUrl);
+
+    // Trigger capture flash
+    setShowCaptureFlash(true);
+    setTimeout(() => setShowCaptureFlash(false), 350);
 
     stopCamera();
     setState("processing");
@@ -215,6 +268,7 @@ function Home() {
   }, [stopCamera]);
 
   const applyManualCrop = useCallback(() => {
+    vibrate(10);
     const imageData = capturedImageDataRef.current;
     if (!imageData || !cropCorners) return;
 
@@ -288,6 +342,7 @@ function Home() {
   }, []);
 
   const retake = useCallback(() => {
+    vibrate(10);
     setCapturedImage(null);
     setProcessedImage(null);
     setCurrentFilter("auto");
@@ -299,7 +354,6 @@ function Home() {
   }, [startCamera]);
 
   const deletePage = useCallback((index: number) => {
-    // Cancel any in-progress drag when a page is deleted
     if (dragRef.current) {
       dragRef.current = null;
     }
@@ -340,7 +394,6 @@ function Home() {
       if (!d) return;
       d.deltaX = e.clientX - d.startX;
       const slotOffset = Math.round(d.deltaX / SLOT_WIDTH);
-      // pages.length might have changed if a delete happened, clamp safely
       d.overIndex = Math.max(
         0,
         Math.min((pages.length || 1) - 1, d.index + slotOffset),
@@ -403,12 +456,15 @@ function Home() {
     setCropCorners(null);
     setOcrProgress(null);
     setOcrPagesForProcessing(null);
+    setNewPageIndices([]);
     capturedImageDataRef.current = null;
+    prevPagesLength.current = 0;
     setState("idle");
   }, []);
 
   /** Start OCR flow: build all pages, enter OCR state */
   const startOCR = useCallback(() => {
+    vibrate(12);
     if (!capturedImage) return;
 
     const allPages = buildAllPages();
@@ -682,6 +738,7 @@ function Home() {
 
   /** Save current capture to pages and open the file picker. */
   const addFromPhotos = useCallback(() => {
+    vibrate(10);
     if (!capturedImage) return;
     const entry: PageEntry = {
       processed: processedImage,
@@ -701,6 +758,7 @@ function Home() {
 
   /** Save current capture to pages and start the camera. */
   const addFromCamera = useCallback(() => {
+    vibrate(10);
     if (!capturedImage) return;
     const entry: PageEntry = {
       processed: processedImage,
@@ -785,6 +843,8 @@ function Home() {
       if (!cancelled) {
         setDisplayImage(filtered);
         setIsComputingFilter(false);
+        // Trigger a subtle pulse on filter change
+        setFilterPulseKey((k) => k + 1);
       }
     }).catch(() => {
       if (!cancelled) {
@@ -821,6 +881,7 @@ function Home() {
 
   // ── Cloud sync: save current pages to cloud ──────────────────────────
   const saveToCloud = useCallback(async () => {
+    vibrate(12);
     if (!capturedImage || !isSignedIn || !user?.id) return;
 
     setIsSaving(true);
@@ -897,249 +958,297 @@ function Home() {
     }
   }, [user?.id]);
 
+  // State transition wrapper for fade animations
+  const stateKey = state;
+
   return (
     <main className="flex min-h-screen flex-col bg-gray-950 text-white">
       {/* Hidden canvas for capture */}
       <canvas ref={canvasRef} className="hidden" />
 
+      {/* ── IDLE STATE ── */}
       {state === "idle" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
-          {/* Auth bar — subtle, at top */}
-          {authLoaded && cloudConfigured && (
-            <div className="absolute right-4 top-4 flex items-center gap-2">
-              {isSignedIn ? (
-                <>
-                  <span className="text-xs text-gray-400 hidden sm:inline">
-                    {user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? ""}
-                  </span>
-                  <UserButton
-                    appearance={{
-                      elements: {
-                        userButtonAvatarBox: "h-8 w-8",
-                      },
-                    }}
-                  />
-                </>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <SignInButton mode="modal">
-                    <button className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white">
-                      Sign in
-                    </button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <button className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500">
-                      Sign up
-                    </button>
-                  </SignUpButton>
-                </div>
-              )}
-            </div>
-          )}
+        <div className="flex flex-1 flex-col" key="idle">
+          {/* Animated gradient hero */}
+          <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-6 pb-8 pt-16 text-center">
+            {/* Gradient background */}
+            <div
+              className="absolute inset-0 opacity-30"
+              style={{
+                background: "radial-gradient(ellipse 80% 60% at 50% 30%, rgba(79,70,229,0.25) 0%, rgba(3,7,18,0) 70%)",
+              }}
+            />
+            <div
+              className="absolute inset-0 opacity-20"
+              style={{
+                background: "radial-gradient(ellipse 40% 40% at 80% 80%, rgba(99,102,241,0.2) 0%, rgba(3,7,18,0) 70%)",
+              }}
+            />
 
-          <div className="space-y-3">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-600">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-10 w-10"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z"
-                />
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              DocSnap
-            </h1>
-            <p className="max-w-sm text-gray-400">
-              Snap a document with your camera and download it as a PDF —
-              instantly, no account needed.
-            </p>
-          </div>
-          <div className="flex flex-col items-center gap-3 sm:flex-row">
-            <button
-              onClick={startCamera}
-              className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-8 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
-                />
-              </svg>
-              Open Camera
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-gray-800 px-8 py-4 text-lg font-semibold text-gray-200 shadow-lg transition hover:border-gray-400 hover:bg-gray-700 active:scale-95"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-                />
-              </svg>
-              Choose from Photos
-            </button>
-          </div>
-          {/* Hidden file input for selecting images from device */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-
-          {/* Sign-in prompt — subtle link for non-authenticated users */}
-          {authLoaded && cloudConfigured && !isSignedIn && (
-            <p className="text-xs text-gray-500">
-              <SignInButton mode="modal">
-                <button className="underline hover:text-gray-300 transition">
-                  Sign in to save your scans to the cloud
-                </button>
-              </SignInButton>
-            </p>
-          )}
-
-          {/* My Scans — shown for signed-in users */}
-          {isSignedIn && cloudConfigured && (
-            <div className="w-full max-w-md border-t border-gray-800 pt-6">
-              {!showMyScans ? (
-                <button
-                  onClick={() => setShowMyScans(true)}
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-gray-800 px-5 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:bg-gray-700 active:scale-95"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
-                  </svg>
-                  My Scans ({savedDocs.length})
-                </button>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-200">My Scans</h3>
-                    <button
-                      onClick={() => setShowMyScans(false)}
-                      className="text-xs text-gray-500 hover:text-gray-300"
-                    >
-                      Close
-                    </button>
+            {/* Auth bar */}
+            {authLoaded && cloudConfigured && (
+              <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+                {isSignedIn ? (
+                  <>
+                    <span className="text-xs text-gray-400 hidden sm:inline">
+                      {user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? ""}
+                    </span>
+                    <UserButton
+                      appearance={{
+                        elements: {
+                          userButtonAvatarBox: "h-8 w-8",
+                        },
+                      }}
+                    />
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <SignInButton mode="modal">
+                      <button className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white">
+                        Sign in
+                      </button>
+                    </SignInButton>
+                    <SignUpButton mode="modal">
+                      <button className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500">
+                        Sign up
+                      </button>
+                    </SignUpButton>
                   </div>
-                  {loadingDocs ? (
-                    <div className="flex items-center justify-center gap-2 py-6">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-                      <span className="text-sm text-gray-400">Loading…</span>
-                    </div>
-                  ) : savedDocs.length === 0 ? (
-                    <p className="py-6 text-sm text-gray-500">
-                      No saved documents yet. Scan and save your first document!
-                    </p>
-                  ) : (
-                    <div className="max-h-72 space-y-2 overflow-y-auto">
-                      {savedDocs.map((doc) => (
-                        <div
-                          key={doc.id}
-                          className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 p-3"
-                        >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-indigo-900/50 text-indigo-400">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0 text-left">
-                            <p className="truncate text-sm font-medium text-gray-200">
-                              {doc.name}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"} · {new Date(doc.date).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => downloadSavedDoc(doc)}
-                              className="rounded p-1.5 text-gray-400 transition hover:bg-gray-800 hover:text-white"
-                              title="Download"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteDoc(doc.id)}
-                              disabled={deletingDocId === doc.id}
-                              className="rounded p-1.5 text-gray-400 transition hover:bg-red-900/50 hover:text-red-400 disabled:opacity-50"
-                              title="Delete"
-                            >
-                              {deletingDocId === doc.id ? (
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
-                              ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                                </svg>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
 
-          {/* Privacy notice */}
-          {isSignedIn && cloudConfigured && (
-            <p className="max-w-xs text-xs text-gray-600">
-              When you save to cloud, your document is securely stored via Uploadthing.
-              Your documents remain private and accessible only to you.
-            </p>
-          )}
+            {/* Logo */}
+            <div className="relative z-10 space-y-4">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/25">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-10 w-10"
+                  fill="none"
+                  viewBox="0 0 64 64"
+                >
+                  <path d="M17 16v32M17 16h16c7.18 0 13 5.82 13 13v6c0 7.18-5.82 13-13 13H17" stroke="#fff" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  <path d="M46 20l-6 12 6 12" stroke="#a5b4fc" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </div>
+              <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+                DocSnap
+              </h1>
+              <p className="max-w-sm text-gray-400 leading-relaxed">
+                Snap a document with your camera and download it as a PDF —
+                instantly, no account needed.
+              </p>
+            </div>
+
+            {/* Feature bullets */}
+            <div className="relative z-10 mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+              {[
+                { icon: "📷", label: "Scan or import" },
+                { icon: "✂️", label: "Auto-crop & deskew" },
+                { icon: "🔍", label: "Searchable PDFs" },
+                { icon: "☁️", label: "Optional cloud sync" },
+              ].map((f) => (
+                <div
+                  key={f.label}
+                  className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-2.5 text-sm text-gray-300"
+                >
+                  <span className="text-lg">{f.icon}</span>
+                  <span>{f.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* CTA buttons */}
+            <div className="relative z-10 mt-10 flex flex-col items-center gap-3 sm:flex-row">
+              <button
+                onClick={startCamera}
+                className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-8 py-4 text-lg font-semibold text-white shadow-lg shadow-indigo-600/30 transition-all hover:bg-indigo-500 hover:shadow-indigo-500/30 active:scale-95"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
+                  />
+                </svg>
+                Open Camera
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-gray-800 px-8 py-4 text-lg font-semibold text-gray-200 shadow-lg transition-all hover:border-gray-400 hover:bg-gray-700 active:scale-95"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+                  />
+                </svg>
+                Choose from Photos
+              </button>
+            </div>
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {/* Sign-in prompt */}
+            {authLoaded && cloudConfigured && !isSignedIn && (
+              <p className="relative z-10 mt-6 text-xs text-gray-500">
+                <SignInButton mode="modal">
+                  <button className="underline hover:text-gray-300 transition">
+                    Sign in to save your scans to the cloud
+                  </button>
+                </SignInButton>
+              </p>
+            )}
+
+            {/* My Scans */}
+            {isSignedIn && cloudConfigured && (
+              <div className="relative z-10 mt-6 w-full max-w-md border-t border-gray-800 pt-6">
+                {!showMyScans ? (
+                  <button
+                    onClick={() => setShowMyScans(true)}
+                    className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-gray-800 px-5 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:bg-gray-700 active:scale-95"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+                    </svg>
+                    My Scans ({savedDocs.length})
+                  </button>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-gray-200">My Scans</h3>
+                      <button
+                        onClick={() => setShowMyScans(false)}
+                        className="text-xs text-gray-500 hover:text-gray-300"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    {loadingDocs ? (
+                      <div className="flex items-center justify-center gap-2 py-6">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                        <span className="text-sm text-gray-400">Loading…</span>
+                      </div>
+                    ) : savedDocs.length === 0 ? (
+                      <p className="py-6 text-sm text-gray-500">
+                        No saved documents yet. Scan and save your first document!
+                      </p>
+                    ) : (
+                      <div className="max-h-72 space-y-2 overflow-y-auto">
+                        {savedDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 p-3"
+                          >
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-indigo-900/50 text-indigo-400">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0 text-left">
+                              <p className="truncate text-sm font-medium text-gray-200">
+                                {doc.name}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"} · {new Date(doc.date).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => downloadSavedDoc(doc)}
+                                className="rounded p-1.5 text-gray-400 transition hover:bg-gray-800 hover:text-white"
+                                title="Download"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDoc(doc.id)}
+                                disabled={deletingDocId === doc.id}
+                                className="rounded p-1.5 text-gray-400 transition hover:bg-red-900/50 hover:text-red-400 disabled:opacity-50"
+                                title="Delete"
+                              >
+                                {deletingDocId === doc.id ? (
+                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                                ) : (
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Privacy notice */}
+            {isSignedIn && cloudConfigured && (
+              <p className="relative z-10 mt-4 max-w-xs text-xs text-gray-600">
+                When you save to cloud, your document is securely stored via Uploadthing.
+                Your documents remain private and accessible only to you.
+              </p>
+            )}
+          </div>
+
+          {/* Footer */}
+          <footer className="flex items-center justify-center gap-6 border-t border-gray-800/50 py-5 text-xs text-gray-600">
+            <Link to="/privacy" className="transition hover:text-gray-400">
+              Privacy
+            </Link>
+            <Link to="/about" className="transition hover:text-gray-400">
+              About
+            </Link>
+          </footer>
         </div>
       )}
 
+      {/* ── ACTIVE (CAMERA) STATE ── */}
       {state === "active" && (
-        <div className="relative flex flex-1 flex-col">
-          {/* Page count badge when pages are already saved */}
+        <div className="relative flex flex-1 flex-col animate-fade-in" key="active">
+          {/* Capture flash overlay */}
+          {showCaptureFlash && (
+            <div className="absolute inset-0 z-50 bg-white animate-flash pointer-events-none" />
+          )}
+
+          {/* Page count badge */}
           {pages.length > 0 && (
-            <div className="absolute left-0 right-0 top-0 z-10 flex justify-center pt-3">
+            <div className="absolute left-0 right-0 top-0 z-10 flex justify-center safe-pt pt-3">
               <span className="rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-300 backdrop-blur-sm">
                 {pages.length} {pages.length === 1 ? "page" : "pages"} saved
               </span>
             </div>
           )}
 
-          {/* Video preview fills available space */}
-          <div className="relative flex-1 bg-black">
+          {/* Video preview */}
+          <div className="relative flex-1 bg-black animate-scale-in">
             <video
               ref={attachVideo}
               autoPlay
@@ -1150,7 +1259,7 @@ function Home() {
           </div>
 
           {/* Capture button bar */}
-          <div className="flex items-center justify-center bg-gray-950 px-6 py-6">
+          <div className="flex items-center justify-center bg-gray-950 px-6 py-6 safe-bottom">
             <button
               onClick={capture}
               className="group relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white shadow-lg transition active:scale-95"
@@ -1162,9 +1271,9 @@ function Home() {
         </div>
       )}
 
+      {/* ── PROCESSING STATE ── */}
       {state === "processing" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
-          {/* Show a thumbnail of what was captured while processing (camera flow) */}
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 animate-fade-in" key="processing">
           {!importProgress && capturedImage && (
             <div className="w-full max-w-sm overflow-hidden rounded-lg bg-black/50">
               <img
@@ -1174,7 +1283,6 @@ function Home() {
               />
             </div>
           )}
-          {/* File import progress */}
           {importProgress && (
             <div className="w-full max-w-sm space-y-3">
               <div className="overflow-hidden rounded-full bg-gray-800">
@@ -1202,8 +1310,9 @@ function Home() {
         </div>
       )}
 
+      {/* ── ADJUSTING STATE ── */}
       {state === "adjusting" && capturedImage && cropCorners && (
-        <div className="flex flex-1 flex-col min-h-0">
+        <div className="flex flex-1 flex-col min-h-0 animate-fade-in" key="adjusting">
           <div className="px-4 py-3 text-center">
             <h2 className="text-lg font-semibold">Adjust document corners</h2>
             <p className="text-sm text-gray-400">Drag each circle to a document corner.</p>
@@ -1220,7 +1329,7 @@ function Home() {
             />
           </div>
 
-          <div className="flex items-center justify-center gap-3 bg-gray-950 px-4 py-5">
+          <div className="flex items-center justify-center gap-3 bg-gray-950 px-4 py-5 safe-bottom">
             <button
               onClick={retake}
               className="rounded-full border border-gray-600 px-6 py-3 text-sm font-medium text-gray-300 transition active:scale-95"
@@ -1237,9 +1346,10 @@ function Home() {
         </div>
       )}
 
+      {/* ── PREVIEW STATE ── */}
       {state === "preview" && previewImage && (
-        <div className="flex flex-1 flex-col">
-          {/* Captured / processed image preview */}
+        <div className="flex flex-1 flex-col animate-fade-in" key="preview">
+          {/* Image preview */}
           <div className="relative flex-1 bg-black min-h-0">
             {isComputingFilter && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30">
@@ -1247,9 +1357,10 @@ function Home() {
               </div>
             )}
             <img
+              key={filterPulseKey}
               src={previewImage}
               alt="Document preview"
-              className="absolute inset-0 h-full w-full object-contain"
+              className="absolute inset-0 h-full w-full object-contain animate-pulse-filter"
             />
           </div>
 
@@ -1261,7 +1372,10 @@ function Home() {
                 return (
                   <button
                     key={f}
-                    onClick={() => setCurrentFilter(f)}
+                    onClick={() => {
+                      vibrate(10);
+                      setCurrentFilter(f);
+                    }}
                     disabled={isComputingFilter}
                     className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition whitespace-nowrap ${
                       isActive
@@ -1280,7 +1394,6 @@ function Home() {
           {pages.length > 0 && (
             <div className="bg-gray-900 px-4 py-3">
               {pages.length === 1 ? (
-                /* Single page: simple layout, no drag UI */
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
                   {pages.map((page, i) => {
                     const thumbSrc =
@@ -1289,8 +1402,8 @@ function Home() {
                         : (page.processed || page.original);
                     return (
                       <div
-                        key={page.original.slice(-40)}
-                        className="relative shrink-0"
+                        key={`page-${i}-${page.original.slice(-20)}`}
+                        className={`relative shrink-0 ${newPageIndices.includes(i) ? "animate-slide-in" : ""}`}
                       >
                         <img
                           src={thumbSrc}
@@ -1327,8 +1440,6 @@ function Home() {
                       drag.overIndex === i &&
                       drag.index !== i;
 
-                    // Compute transform to shift items out of the dragged item's way.
-                    // Items between the drag origin and the target slot slide one slot over.
                     let shiftTransform = "";
                     if (drag !== null && !isDragging) {
                       if (
@@ -1346,8 +1457,8 @@ function Home() {
 
                     return (
                       <div
-                        key={page.original.slice(-40)}
-                        className="relative shrink-0"
+                        key={`page-${i}-${page.original.slice(-20)}`}
+                        className={`relative shrink-0 ${newPageIndices.includes(i) ? "animate-slide-in" : ""}`}
                         style={{
                           transform: isDragging
                             ? `translateX(${drag?.deltaX ?? 0}px)`
@@ -1359,7 +1470,6 @@ function Home() {
                           zIndex: isDragging ? 10 : undefined,
                         }}
                       >
-                        {/* Drag handle — only visible when multiple pages */}
                         <div
                           onPointerDown={(e) =>
                             handleDragPointerDown(e, i)
@@ -1374,7 +1484,6 @@ function Home() {
                           ☰
                         </div>
 
-                        {/* Thumbnail image */}
                         <img
                           src={thumbSrc}
                           alt={`Page ${i + 1}`}
@@ -1388,7 +1497,6 @@ function Home() {
                           draggable={false}
                         />
 
-                        {/* Delete button */}
                         <button
                           onClick={() => deletePage(i)}
                           className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white text-xs leading-none shadow transition hover:bg-red-500 active:scale-90"
@@ -1397,7 +1505,6 @@ function Home() {
                           ×
                         </button>
 
-                        {/* Page number */}
                         <span className="ml-6 mt-0.5 block text-center text-[10px] text-gray-500">
                           {i + 1}
                         </span>
@@ -1417,7 +1524,7 @@ function Home() {
           )}
 
           {/* Action buttons */}
-          <div className="flex flex-wrap items-center justify-center gap-3 bg-gray-950 px-4 py-5">
+          <div className="flex flex-wrap items-center justify-center gap-3 bg-gray-950 px-4 py-5 safe-bottom">
             <button
               onClick={retake}
               disabled={isGenerating || isSaving}
@@ -1439,7 +1546,6 @@ function Home() {
             >
               <span className="hidden sm:inline">Add from </span>Photos
             </button>
-            {/* Save to Cloud — only for signed-in users with cloud configured */}
             {isSignedIn && cloudConfigured && (
               <button
                 onClick={saveToCloud}
@@ -1490,10 +1596,10 @@ function Home() {
         </div>
       )}
 
+      {/* ── OCR STATE ── */}
       {state === "ocr" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center animate-fade-in" key="ocr">
           <div className="space-y-3">
-            {/* Language pill — future-proofed for multi-language OCR */}
             <div className="mx-auto flex items-center justify-center">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-900/50 px-3 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-500/30">
                 <svg
@@ -1514,7 +1620,6 @@ function Home() {
               </span>
             </div>
 
-            {/* OCR progress icon */}
             {!isGenerating && ocrProgress ? (
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-600">
                 <svg
@@ -1546,7 +1651,6 @@ function Home() {
                   : "Preparing…"}
             </h2>
 
-            {/* Progress bar and page counter */}
             {ocrProgress && (
               <div className="w-full max-w-xs space-y-2">
                 <div className="overflow-hidden rounded-full bg-gray-800">
@@ -1567,7 +1671,6 @@ function Home() {
             )}
           </div>
 
-          {/* Action buttons */}
           <div className="flex flex-col items-center gap-3 sm:flex-row">
             <button
               onClick={skipOCR}
@@ -1585,34 +1688,102 @@ function Home() {
         </div>
       )}
 
+      {/* ── ERROR STATE ── */}
       {state === "error" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-900/50">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-8 w-8 text-red-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
-              />
-            </svg>
-          </div>
-          <p className="max-w-sm text-gray-300">{errorMessage}</p>
-          <button
-            onClick={() => {
-              setErrorMessage("");
-              startCamera();
-            }}
-            className="rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 active:scale-95"
-          >
-            Try Again
-          </button>
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center animate-fade-in" key="error">
+          {isPermissionError(errorMessage) ? (
+            /* Permission-specific error */
+            <>
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-900/40">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-10 w-10 text-red-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                  <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold">Camera access needed</h2>
+              <p className="max-w-sm text-gray-400">
+                DocSnap needs camera access to scan documents. Your camera is used
+                entirely in your browser — images never leave your device.
+              </p>
+
+              <div className="mt-2 w-full max-w-sm space-y-4 text-left">
+                <details className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-300">
+                    How to enable on iPhone / iPad
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-gray-400">
+                    <li>Open the <strong className="text-gray-300">Settings</strong> app</li>
+                    <li>Scroll down and tap <strong className="text-gray-300">Safari</strong> (or your browser)</li>
+                    <li>Tap <strong className="text-gray-300">Camera</strong></li>
+                    <li>Select <strong className="text-gray-300">Allow</strong></li>
+                    <li>Return to this page and refresh</li>
+                  </ol>
+                </details>
+
+                <details className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-300">
+                    How to enable on Android
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-gray-400">
+                    <li>Open <strong className="text-gray-300">Settings</strong> → <strong className="text-gray-300">Apps</strong></li>
+                    <li>Find your browser (Chrome, Firefox, etc.)</li>
+                    <li>Tap <strong className="text-gray-300">Permissions</strong></li>
+                    <li>Tap <strong className="text-gray-300">Camera</strong> and select <strong className="text-gray-300">Allow</strong></li>
+                    <li>Return to this page and refresh</li>
+                  </ol>
+                </details>
+              </div>
+
+              <button
+                onClick={() => {
+                  vibrate(12);
+                  setErrorMessage("");
+                  startCamera();
+                }}
+                className="mt-4 rounded-full bg-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
+              >
+                Try Again
+              </button>
+            </>
+          ) : (
+            /* Generic error */
+            <>
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-900/50">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-8 w-8 text-red-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                  />
+                </svg>
+              </div>
+              <p className="max-w-sm text-gray-300">{errorMessage}</p>
+              <button
+                onClick={() => {
+                  vibrate(12);
+                  setErrorMessage("");
+                  startCamera();
+                }}
+                className="rounded-full bg-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
+              >
+                Try Again
+              </button>
+            </>
+          )}
         </div>
       )}
     </main>

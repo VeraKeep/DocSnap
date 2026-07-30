@@ -1,12 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Document body -->
-  <rect x="10" y="6" width="44" height="52" rx="4" fill="#4f46e5" />
-  <!-- Document fold -->
-  <path d="M40 6v14a2 2 0 0 0 2 2h14L40 6Z" fill="#818cf8" />
-  <!-- Camera lens -->
-  <circle cx="32" cy="32" r="12" fill="#030712" />
-  <circle cx="32" cy="32" r="8" fill="#4f46e5" />
-  <circle cx="32" cy="32" r="4" fill="#030712" />
-  <!-- Camera flash -->
-  <rect x="26" y="8" width="4" height="3" rx="1" fill="#818cf8" />
+  <!-- Rounded square background -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#4f46e5" />
+  <!-- D letterform -->
+  <path d="M17 16v32M17 16h16c7.18 0 13 5.82 13 13v6c0 7.18-5.82 13-13 13H17"
+        stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- S accent -->
+  <path d="M46 20l-6 12 6 12" stroke="#a5b4fc" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

@@ -11,4 +11,87 @@
   button:focus-visible {
     @apply ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 outline-none;
   }
+
+  /* Safe-area padding for notched phones */
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-pt {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+@layer utilities {
+  /* Capture flash animation */
+  .animate-flash {
+    animation: captureFlash 350ms ease-out forwards;
+  }
+
+  /* Filter pulse */
+  .animate-pulse-filter {
+    animation: filterPulse 250ms ease-out;
+  }
+
+  /* Thumbnail slide-in */
+  .animate-slide-in {
+    animation: slideIn 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Splash pulse */
+  .animate-splash-pulse {
+    animation: splashPulse 2s ease-in-out infinite;
+  }
+
+  /* Fade in */
+  .animate-fade-in {
+    animation: fadeIn 250ms ease-out forwards;
+  }
+
+  /* Scale in for camera */
+  .animate-scale-in {
+    animation: scaleIn 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes captureFlash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes filterPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+@keyframes slideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes splashPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
 }
