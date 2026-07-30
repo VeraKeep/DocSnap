@@ -8,8 +8,14 @@ import {
   FILTER_LABELS,
   type FilterType,
 } from "../imageFilters";
+import { ocrEnabled, recognizePages, terminateWorker, type OCRWord } from "../ocr";
+import {
+  generateSearchablePDF,
+  generatePlainPDF,
+  type PDFPageEntry,
+} from "../searchablePdf";
 
-type AppState = "idle" | "starting" | "active" | "processing" | "adjusting" | "preview" | "error";
+type AppState = "idle" | "starting" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "error";
 type CornerName = keyof Quad;
 
 function createDefaultCorners(width: number, height: number): Quad {
@@ -62,6 +68,15 @@ function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [cropCorners, setCropCorners] = useState<Quad | null>(null);
+
+  // OCR state
+  const [ocrProgress, setOcrProgress] = useState<{
+    page: number;
+    totalPages: number;
+    status: string;
+  } | null>(null);
+  const [ocrPagesForProcessing, setOcrPagesForProcessing] = useState<PageEntry[] | null>(null);
+  const ocrAbortRef = useRef<AbortController | null>(null);
 
   // Drag-and-drop state (ref for stable pointer handlers, counter to trigger re-renders)
   const dragRef = useRef<DragState | null>(null);
@@ -343,11 +358,10 @@ function Home() {
     [rerenderDrag],
   );
 
-  const doneAndDownload = useCallback(async () => {
-    if (!capturedImage) return;
-
-    // Build the full list: confirmed pages + current capture
-    const allPages: PageEntry[] = [
+  /** Build the list of all pages (saved + current capture) */
+  const buildAllPages = useCallback((): PageEntry[] => {
+    if (!capturedImage) return [...pages];
+    return [
       ...pages,
       {
         processed: processedImage,
@@ -355,77 +369,189 @@ function Home() {
         filter: currentFilter,
       },
     ];
+  }, [pages, capturedImage, processedImage, currentFilter]);
+
+  /** Reset the app to idle state (after download or error) */
+  const resetApp = useCallback(() => {
+    setPages([]);
+    setCapturedImage(null);
+    setProcessedImage(null);
+    setCurrentFilter("auto");
+    setDisplayImage(null);
+    setCropCorners(null);
+    setOcrProgress(null);
+    setOcrPagesForProcessing(null);
+    capturedImageDataRef.current = null;
+    setState("idle");
+  }, []);
+
+  /** Start OCR flow: build all pages, enter OCR state */
+  const startOCR = useCallback(() => {
+    if (!capturedImage) return;
+
+    const allPages = buildAllPages();
+    setOcrPagesForProcessing(allPages);
+    setOcrProgress(null);
+    setState("ocr");
+  }, [capturedImage, buildAllPages]);
+
+  /** Skip OCR — generate plain image PDF immediately */
+  const skipOCR = useCallback(async () => {
+    const allPages = ocrPagesForProcessing;
+    if (!allPages || allPages.length === 0) return;
+
+    // Cancel any in-progress OCR
+    ocrAbortRef.current?.abort();
 
     setIsGenerating(true);
 
     try {
-      // Dynamically import jsPDF to avoid SSR issues
-      const { jsPDF } = await import("jspdf");
+      // Pre-render all pages with their selected filters
+      const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[] = [];
 
-      // Use A4 portrait as default page size (in mm)
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 10;
-      const maxWidth = pageWidth - margin * 2;
-      const maxHeight = pageHeight - margin * 2;
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      for (let i = 0; i < allPages.length; i++) {
-        const page = allPages[i];
-        const sourceUrl = getSourceForFilter(
-          page.original,
-          page.processed,
-          page.filter,
-        );
+      for (const page of allPages) {
+        const sourceUrl = getSourceForFilter(page.original, page.processed, page.filter);
         const imageToUse = await applyFilter(sourceUrl, page.filter);
 
-        // Load image to get natural dimensions
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
-          img.onerror = () =>
-            reject(new Error("Failed to load image for PDF"));
+          img.onerror = () => reject(new Error("Failed to load image"));
           img.src = imageToUse;
         });
 
-        const ratio = Math.min(
-          maxWidth / img.naturalWidth,
-          maxHeight / img.naturalHeight,
-        );
-        const drawWidth = img.naturalWidth * ratio;
-        const drawHeight = img.naturalHeight * ratio;
-        const x = (pageWidth - drawWidth) / 2;
-        const y = (pageHeight - drawHeight) / 2;
-
-        if (i > 0) {
-          pdf.addPage();
-        }
-        pdf.addImage(imageToUse, "JPEG", x, y, drawWidth, drawHeight);
+        pageEntries.push({
+          imageUrl: imageToUse,
+          imgNaturalWidth: img.naturalWidth,
+          imgNaturalHeight: img.naturalHeight,
+        });
       }
 
-      pdf.save("document.pdf");
+      const blob = await generatePlainPDF(pageEntries, {
+        title: "DocSnap Document",
+      });
 
-      // Reset everything
-      setPages([]);
-      setCapturedImage(null);
-      setProcessedImage(null);
-      setCurrentFilter("auto");
-      setDisplayImage(null);
-      setCropCorners(null);
-      capturedImageDataRef.current = null;
-      setState("idle");
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "document.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      resetApp();
     } catch {
       setErrorMessage("Failed to generate PDF. Please try again.");
       setState("error");
     } finally {
       setIsGenerating(false);
+      ocrAbortRef.current = null;
     }
-  }, [pages, capturedImage, processedImage, currentFilter]);
+  }, [ocrPagesForProcessing, resetApp]);
+
+  // ── OCR processing effect ──────────────────────────────────────────
+  useEffect(() => {
+    if (state !== "ocr" || !ocrPagesForProcessing) return;
+
+    const controller = new AbortController();
+    ocrAbortRef.current = controller;
+
+    // If OCR is disabled, skip straight to plain PDF
+    if (!ocrEnabled) {
+      skipOCR();
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const allPages = ocrPagesForProcessing;
+
+      // Step 1: Pre-render all pages with their selected filters
+      const renderedPages: {
+        imageUrl: string;
+        imgNaturalWidth: number;
+        imgNaturalHeight: number;
+      }[] = [];
+
+      for (const page of allPages) {
+        if (controller.signal.aborted) return;
+        const sourceUrl = getSourceForFilter(page.original, page.processed, page.filter);
+        const imageToUse = await applyFilter(sourceUrl, page.filter);
+
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("Failed to load image"));
+          img.src = imageToUse;
+        });
+
+        renderedPages.push({
+          imageUrl: imageToUse,
+          imgNaturalWidth: img.naturalWidth,
+          imgNaturalHeight: img.naturalHeight,
+        });
+      }
+
+      if (controller.signal.aborted) return;
+
+      // Step 2: Run OCR on all pages
+      const imageUrls = renderedPages.map((p) => p.imageUrl);
+      const ocrResults = await recognizePages(
+        imageUrls,
+        (info) => {
+          if (!cancelled) {
+            setOcrProgress({
+              page: info.page,
+              totalPages: info.totalPages,
+              status: info.status,
+            });
+          }
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return;
+      if (cancelled) return;
+
+      // Step 3: Generate searchable PDF
+      const pdfPages: PDFPageEntry[] = renderedPages.map((rp, i) => ({
+        imageUrl: rp.imageUrl,
+        words: ocrResults[i],
+        imgNaturalWidth: rp.imgNaturalWidth,
+        imgNaturalHeight: rp.imgNaturalHeight,
+      }));
+
+      const blob = await generateSearchablePDF(pdfPages, {
+        title: "DocSnap Document",
+      });
+
+      // Step 4: Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "document.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      resetApp();
+    })().catch((err) => {
+      if (!cancelled) {
+        console.error("OCR flow failed:", err);
+        setErrorMessage("OCR processing failed. Your document has been downloaded as a plain PDF.");
+        // Fall back to plain PDF
+        skipOCR();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state, ocrPagesForProcessing]);
 
   // --- File import from device ---
 
@@ -1057,7 +1183,7 @@ function Home() {
               <span className="hidden sm:inline">Add from </span>Photos
             </button>
             <button
-              onClick={doneAndDownload}
+              onClick={startOCR}
               disabled={isGenerating}
               className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95 disabled:opacity-40"
             >
@@ -1070,6 +1196,101 @@ function Home() {
                 `Done (${totalPages} ${totalPages === 1 ? "page" : "pages"})`
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {state === "ocr" && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
+          <div className="space-y-3">
+            {/* Language pill — future-proofed for multi-language OCR */}
+            <div className="mx-auto flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-900/50 px-3 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-500/30">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.657 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 0 1-3.827-5.802"
+                  />
+                </svg>
+                EN
+              </span>
+            </div>
+
+            {/* OCR progress icon */}
+            {!isGenerating && ocrProgress ? (
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-600">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-10 w-10"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"
+                  />
+                </svg>
+              </div>
+            ) : (
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-600">
+                <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-white border-t-transparent" />
+              </div>
+            )}
+
+            <h2 className="text-2xl font-bold tracking-tight">
+              {isGenerating
+                ? "Generating PDF…"
+                : ocrProgress
+                  ? "Recognizing text…"
+                  : "Preparing…"}
+            </h2>
+
+            {/* Progress bar and page counter */}
+            {ocrProgress && (
+              <div className="w-full max-w-xs space-y-2">
+                <div className="overflow-hidden rounded-full bg-gray-800">
+                  <div
+                    className="h-2 rounded-full bg-indigo-500 transition-all duration-500"
+                    style={{
+                      width: `${Math.round((ocrProgress.page / ocrProgress.totalPages) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-sm text-gray-400">
+                  Page {ocrProgress.page} of {ocrProgress.totalPages}
+                  {ocrProgress.status === "failed" && (
+                    <span className="ml-1 text-amber-400">(text detection skipped)</span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-col items-center gap-3 sm:flex-row">
+            <button
+              onClick={skipOCR}
+              disabled={isGenerating}
+              className="rounded-full border border-gray-600 bg-gray-800 px-6 py-3 text-sm font-medium text-gray-300 transition hover:border-gray-400 hover:bg-gray-700 active:scale-95 disabled:opacity-40"
+            >
+              Skip OCR
+            </button>
+            {!isGenerating && (
+              <p className="text-xs text-gray-500">
+                OCR makes your PDF searchable — it runs entirely in your browser
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -1095,7 +1316,6 @@ function Home() {
           <p className="max-w-sm text-gray-300">{errorMessage}</p>
           <button
             onClick={() => {
-              setPages([]);
               setErrorMessage("");
               startCamera();
             }}
