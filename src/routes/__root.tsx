@@ -4,9 +4,12 @@ import {
   Scripts,
   createRootRoute,
 } from "@tanstack/react-router";
+import { ClerkProvider } from "@clerk/tanstack-start";
 import type { ReactNode } from "react";
 
 import appCss from "~/styles/app.css?url";
+
+const clerkPubKey = process.env.CLERK_PUBLISHABLE_KEY ?? "";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -74,7 +77,9 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
-  return (
+  const clerkConfigured = clerkPubKey.length > 0;
+
+  const body = (
     <html lang="en">
       <head>
         <HeadContent />
@@ -84,5 +89,16 @@ function RootDocument({ children }: { children: ReactNode }) {
         <Scripts />
       </body>
     </html>
+  );
+
+  // Always wrap with ClerkProvider so hooks don't throw.
+  // When not configured, use a placeholder key; the Clerk client
+  // will fail to initialize gracefully and hooks return empty state.
+  return (
+    <ClerkProvider
+      publishableKey={clerkConfigured ? clerkPubKey : "pk_test_Z29vZ2xlLWJvdC02OS5jbGVyay5hY2NvdW50cy5kZXYk"}
+    >
+      {body}
+    </ClerkProvider>
   );
 }

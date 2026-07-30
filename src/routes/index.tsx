@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth, useUser, SignInButton, SignUpButton, UserButton } from "@clerk/tanstack-start";
 import { perspectiveWarp, processDocument, type Quad } from "../documentProcessor";
 import {
   applyFilter,
@@ -14,6 +15,14 @@ import {
   generatePlainPDF,
   type PDFPageEntry,
 } from "../searchablePdf";
+import { uploadPDFBlob } from "../cloudSync";
+import {
+  isCloudConfigured,
+  listDocuments,
+  addDocument,
+  deleteDocument,
+  type CloudDocument,
+} from "../cloudStorage";
 
 type AppState = "idle" | "starting" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "error";
 type CornerName = keyof Quad;
@@ -57,6 +66,10 @@ function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Clerk auth hooks
+  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { user } = useUser();
+
   const [state, setState] = useState<AppState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -68,6 +81,15 @@ function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [cropCorners, setCropCorners] = useState<Quad | null>(null);
+
+  // Cloud sync state
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [cloudConfigured, setCloudConfigured] = useState(false);
+  const [savedDocs, setSavedDocs] = useState<CloudDocument[]>([]);
+  const [showMyScans, setShowMyScans] = useState(false);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
 
   // OCR state
   const [ocrProgress, setOcrProgress] = useState<{
@@ -779,6 +801,102 @@ function Home() {
   const previewImage = displayImage || capturedImage;
   const totalPages = pages.length + 1; // saved pages + current capture
 
+  // ── Cloud sync: check configuration ──────────────────────────────────
+  useEffect(() => {
+    isCloudConfigured().then(setCloudConfigured).catch(() => setCloudConfigured(false));
+  }, []);
+
+  // ── Cloud sync: load saved documents when signed in ──────────────────
+  useEffect(() => {
+    if (!isSignedIn || !cloudConfigured || !user?.id) {
+      setSavedDocs([]);
+      return;
+    }
+    setLoadingDocs(true);
+    listDocuments(user.id)
+      .then(setSavedDocs)
+      .catch(() => setSavedDocs([]))
+      .finally(() => setLoadingDocs(false));
+  }, [isSignedIn, cloudConfigured, user?.id]);
+
+  // ── Cloud sync: save current pages to cloud ──────────────────────────
+  const saveToCloud = useCallback(async () => {
+    if (!capturedImage || !isSignedIn || !user?.id) return;
+
+    setIsSaving(true);
+    setSaveSuccess(false);
+
+    try {
+      const allPages = buildAllPages();
+
+      // Generate PDF
+      const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[] = [];
+      for (const page of allPages) {
+        const sourceUrl = getSourceForFilter(page.original, page.processed, page.filter);
+        const imageToUse = await applyFilter(sourceUrl, page.filter);
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("Failed to load image"));
+          img.src = imageToUse;
+        });
+        pageEntries.push({
+          imageUrl: imageToUse,
+          imgNaturalWidth: img.naturalWidth,
+          imgNaturalHeight: img.naturalHeight,
+        });
+      }
+
+      const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
+      const fileName = `document-${Date.now()}.pdf`;
+
+      // Upload to Uploadthing
+      const uploadResult = await uploadPDFBlob(blob, fileName);
+      if (!uploadResult) {
+        throw new Error("Upload failed");
+      }
+
+      // Save metadata
+      await addDocument({
+        userId: user.id,
+        name: fileName,
+        pageCount: allPages.length,
+        fileKey: uploadResult.fileKey,
+        fileUrl: uploadResult.fileUrl,
+      });
+
+      // Refresh the documents list
+      const updatedDocs = await listDocuments(user.id);
+      setSavedDocs(updatedDocs);
+      setSaveSuccess(true);
+    } catch (err) {
+      console.error("Save to cloud failed:", err);
+      setErrorMessage("Failed to save document to cloud. Please try again.");
+      setState("error");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [capturedImage, isSignedIn, user?.id, buildAllPages]);
+
+  // ── Cloud sync: download a saved document ────────────────────────────
+  const downloadSavedDoc = useCallback((doc: CloudDocument) => {
+    window.open(doc.fileUrl, "_blank");
+  }, []);
+
+  // ── Cloud sync: delete a saved document ──────────────────────────────
+  const handleDeleteDoc = useCallback(async (docId: string) => {
+    if (!user?.id) return;
+    setDeletingDocId(docId);
+    try {
+      await deleteDocument({ userId: user.id, docId });
+      setSavedDocs((prev) => prev.filter((d) => d.id !== docId));
+    } catch (err) {
+      console.error("Delete failed:", err);
+    } finally {
+      setDeletingDocId(null);
+    }
+  }, [user?.id]);
+
   return (
     <main className="flex min-h-screen flex-col bg-gray-950 text-white">
       {/* Hidden canvas for capture */}
@@ -786,6 +904,39 @@ function Home() {
 
       {state === "idle" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
+          {/* Auth bar — subtle, at top */}
+          {authLoaded && cloudConfigured && (
+            <div className="absolute right-4 top-4 flex items-center gap-2">
+              {isSignedIn ? (
+                <>
+                  <span className="text-xs text-gray-400 hidden sm:inline">
+                    {user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? ""}
+                  </span>
+                  <UserButton
+                    appearance={{
+                      elements: {
+                        userButtonAvatarBox: "h-8 w-8",
+                      },
+                    }}
+                  />
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <SignInButton mode="modal">
+                    <button className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white">
+                      Sign in
+                    </button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500">
+                      Sign up
+                    </button>
+                  </SignUpButton>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-3">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-600">
               <svg
@@ -867,6 +1018,112 @@ function Home() {
             onChange={handleFileSelect}
             className="hidden"
           />
+
+          {/* Sign-in prompt — subtle link for non-authenticated users */}
+          {authLoaded && cloudConfigured && !isSignedIn && (
+            <p className="text-xs text-gray-500">
+              <SignInButton mode="modal">
+                <button className="underline hover:text-gray-300 transition">
+                  Sign in to save your scans to the cloud
+                </button>
+              </SignInButton>
+            </p>
+          )}
+
+          {/* My Scans — shown for signed-in users */}
+          {isSignedIn && cloudConfigured && (
+            <div className="w-full max-w-md border-t border-gray-800 pt-6">
+              {!showMyScans ? (
+                <button
+                  onClick={() => setShowMyScans(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-gray-800 px-5 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:bg-gray-700 active:scale-95"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+                  </svg>
+                  My Scans ({savedDocs.length})
+                </button>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-200">My Scans</h3>
+                    <button
+                      onClick={() => setShowMyScans(false)}
+                      className="text-xs text-gray-500 hover:text-gray-300"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {loadingDocs ? (
+                    <div className="flex items-center justify-center gap-2 py-6">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                      <span className="text-sm text-gray-400">Loading…</span>
+                    </div>
+                  ) : savedDocs.length === 0 ? (
+                    <p className="py-6 text-sm text-gray-500">
+                      No saved documents yet. Scan and save your first document!
+                    </p>
+                  ) : (
+                    <div className="max-h-72 space-y-2 overflow-y-auto">
+                      {savedDocs.map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 p-3"
+                        >
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-indigo-900/50 text-indigo-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="truncate text-sm font-medium text-gray-200">
+                              {doc.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"} · {new Date(doc.date).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => downloadSavedDoc(doc)}
+                              className="rounded p-1.5 text-gray-400 transition hover:bg-gray-800 hover:text-white"
+                              title="Download"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteDoc(doc.id)}
+                              disabled={deletingDocId === doc.id}
+                              className="rounded p-1.5 text-gray-400 transition hover:bg-red-900/50 hover:text-red-400 disabled:opacity-50"
+                              title="Delete"
+                            >
+                              {deletingDocId === doc.id ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Privacy notice */}
+          {isSignedIn && cloudConfigured && (
+            <p className="max-w-xs text-xs text-gray-600">
+              When you save to cloud, your document is securely stored via Uploadthing.
+              Your documents remain private and accessible only to you.
+            </p>
+          )}
         </div>
       )}
 
@@ -1163,28 +1420,61 @@ function Home() {
           <div className="flex flex-wrap items-center justify-center gap-3 bg-gray-950 px-4 py-5">
             <button
               onClick={retake}
-              disabled={isGenerating}
+              disabled={isGenerating || isSaving}
               className="rounded-full border border-gray-600 px-5 py-3 text-sm font-medium text-gray-300 transition hover:border-gray-400 hover:text-white active:scale-95 disabled:opacity-40"
             >
               Retake
             </button>
             <button
               onClick={addFromCamera}
-              disabled={isGenerating}
+              disabled={isGenerating || isSaving}
               className="rounded-full border border-indigo-500/50 px-5 py-3 text-sm font-medium text-indigo-400 transition hover:border-indigo-400 hover:text-indigo-300 active:scale-95 disabled:opacity-40"
             >
               <span className="hidden sm:inline">Add from </span>Camera
             </button>
             <button
               onClick={addFromPhotos}
-              disabled={isGenerating}
+              disabled={isGenerating || isSaving}
               className="rounded-full border border-indigo-500/50 px-5 py-3 text-sm font-medium text-indigo-400 transition hover:border-indigo-400 hover:text-indigo-300 active:scale-95 disabled:opacity-40"
             >
               <span className="hidden sm:inline">Add from </span>Photos
             </button>
+            {/* Save to Cloud — only for signed-in users with cloud configured */}
+            {isSignedIn && cloudConfigured && (
+              <button
+                onClick={saveToCloud}
+                disabled={isGenerating || isSaving}
+                className={`inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition active:scale-95 disabled:opacity-40 ${
+                  saveSuccess
+                    ? "bg-green-700 text-white"
+                    : "border border-indigo-500 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white"
+                }`}
+              >
+                {isSaving ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Saving…
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                    Saved!
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
+                    </svg>
+                    Save to Cloud
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={startOCR}
-              disabled={isGenerating}
+              disabled={isGenerating || isSaving}
               className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95 disabled:opacity-40"
             >
               {isGenerating ? (
