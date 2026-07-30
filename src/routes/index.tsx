@@ -42,6 +42,7 @@ function Home() {
   const capturedImageDataRef = useRef<ImageData | null>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<AppState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -50,6 +51,7 @@ function Home() {
   const [useOriginal, setUseOriginal] = useState(false);
   const [pages, setPages] = useState<PageEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [cropCorners, setCropCorners] = useState<Quad | null>(null);
 
   // Drag-and-drop state (ref for stable pointer handlers, counter to trigger re-renders)
@@ -422,6 +424,140 @@ function Home() {
     }
   }, [pages, capturedImage, processedImage, useOriginal]);
 
+  // --- File import from device ---
+
+  /** Process a single File through the document pipeline. */
+  async function processFile(file: File): Promise<PageEntry> {
+    // Load file as image via object URL (memory-efficient)
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Failed to load image"));
+      image.src = URL.createObjectURL(file);
+    });
+
+    // Draw to canvas to get ImageData for the processor
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Failed to create canvas context");
+    ctx.drawImage(img, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const originalDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+    // Release the object URL
+    URL.revokeObjectURL(img.src);
+
+    // Run through the same document processing pipeline
+    try {
+      const result = processDocument(imageData, "image/jpeg", 0.92);
+      return {
+        original: originalDataUrl,
+        processed: result?.dataUrl ?? null,
+        useOriginal: !result,
+      };
+    } catch {
+      // If processing throws, use original
+      return {
+        original: originalDataUrl,
+        processed: null,
+        useOriginal: true,
+      };
+    }
+  }
+
+  /** Handle file input selection — process each file through the pipeline. */
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+
+      const fileArray = Array.from(files);
+      setImportProgress({ current: 0, total: fileArray.length });
+      setState("processing");
+
+      const newPages: PageEntry[] = [];
+
+      for (let i = 0; i < fileArray.length; i++) {
+        setImportProgress({ current: i + 1, total: fileArray.length });
+
+        // Yield to the browser so the UI can update the progress counter
+        await new Promise((r) => setTimeout(r, 0));
+
+        try {
+          const entry = await processFile(fileArray[i]);
+          newPages.push(entry);
+        } catch (err) {
+          console.error(
+            "Failed to process file:",
+            (fileArray[i] as File).name,
+            err,
+          );
+        }
+      }
+
+      setImportProgress(null);
+
+      if (newPages.length === 0) {
+        setErrorMessage(
+          "Could not process any of the selected images. Please try different files.",
+        );
+        setState("error");
+        return;
+      }
+
+      // The last processed image becomes the current preview;
+      // all earlier ones go directly into the pages array.
+      const lastEntry = newPages[newPages.length - 1];
+      const restEntries = newPages.slice(0, -1);
+
+      setPages((prev) => [...prev, ...restEntries]);
+      setCapturedImage(lastEntry.original);
+      setProcessedImage(lastEntry.processed);
+      setUseOriginal(lastEntry.useOriginal);
+      setCropCorners(null);
+      capturedImageDataRef.current = null;
+
+      setState("preview");
+
+      // Reset the file input so the same files can be re-selected
+      e.target.value = "";
+    },
+    [],
+  );
+
+  /** Save current capture to pages and open the file picker. */
+  const addFromPhotos = useCallback(() => {
+    if (!capturedImage) return;
+    const entry: PageEntry = {
+      processed: processedImage,
+      original: capturedImage,
+      useOriginal,
+    };
+    setPages((prev) => [...prev, entry]);
+    setCapturedImage(null);
+    setProcessedImage(null);
+    setUseOriginal(false);
+    setCropCorners(null);
+    capturedImageDataRef.current = null;
+    // Open the file picker
+    fileInputRef.current?.click();
+  }, [capturedImage, processedImage, useOriginal]);
+
+  /** Save current capture to pages and start the camera. */
+  const addFromCamera = useCallback(() => {
+    if (!capturedImage) return;
+    const entry: PageEntry = {
+      processed: processedImage,
+      original: capturedImage,
+      useOriginal,
+    };
+    setPages((prev) => [...prev, entry]);
+    startCamera();
+  }, [capturedImage, processedImage, useOriginal, startCamera]);
+
   useEffect(() => {
     if (state !== "adjusting" || !capturedImage || !cropCorners) return;
 
@@ -519,26 +655,57 @@ function Home() {
               instantly, no account needed.
             </p>
           </div>
-          <button
-            onClick={startCamera}
-            className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-8 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          <div className="flex flex-col items-center gap-3 sm:flex-row">
+            <button
+              onClick={startCamera}
+              className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-8 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
-              />
-            </svg>
-            Open Camera
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
+                />
+              </svg>
+              Open Camera
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-gray-800 px-8 py-4 text-lg font-semibold text-gray-200 shadow-lg transition hover:border-gray-400 hover:bg-gray-700 active:scale-95"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+                />
+              </svg>
+              Choose from Photos
+            </button>
+          </div>
+          {/* Hidden file input for selecting images from device */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileSelect}
+            className="hidden"
+          />
         </div>
       )}
 
@@ -579,8 +746,8 @@ function Home() {
 
       {state === "processing" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
-          {/* Show a thumbnail of what was captured while processing */}
-          {capturedImage && (
+          {/* Show a thumbnail of what was captured while processing (camera flow) */}
+          {!importProgress && capturedImage && (
             <div className="w-full max-w-sm overflow-hidden rounded-lg bg-black/50">
               <img
                 src={capturedImage}
@@ -589,11 +756,31 @@ function Home() {
               />
             </div>
           )}
+          {/* File import progress */}
+          {importProgress && (
+            <div className="w-full max-w-sm space-y-3">
+              <div className="overflow-hidden rounded-full bg-gray-800">
+                <div
+                  className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
+                  style={{
+                    width: `${(importProgress.current / importProgress.total) * 100}%`,
+                  }}
+                />
+              </div>
+              <p className="text-center text-sm text-gray-400">
+                Processing {importProgress.current} of {importProgress.total}…
+              </p>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
             <p className="text-gray-300">Processing…</p>
           </div>
-          <p className="text-sm text-gray-500">Detecting document edges</p>
+          <p className="text-sm text-gray-500">
+            {importProgress
+              ? "Detecting document edges in selected images"
+              : "Detecting document edges"}
+          </p>
         </div>
       )}
 
@@ -807,7 +994,7 @@ function Home() {
           )}
 
           {/* Action buttons */}
-          <div className="flex items-center justify-center gap-3 bg-gray-950 px-4 py-5">
+          <div className="flex flex-wrap items-center justify-center gap-3 bg-gray-950 px-4 py-5">
             <button
               onClick={retake}
               disabled={isGenerating}
@@ -816,11 +1003,18 @@ function Home() {
               Retake
             </button>
             <button
-              onClick={addPage}
+              onClick={addFromCamera}
               disabled={isGenerating}
               className="rounded-full border border-indigo-500/50 px-5 py-3 text-sm font-medium text-indigo-400 transition hover:border-indigo-400 hover:text-indigo-300 active:scale-95 disabled:opacity-40"
             >
-              Add Page
+              <span className="hidden sm:inline">Add from </span>Camera
+            </button>
+            <button
+              onClick={addFromPhotos}
+              disabled={isGenerating}
+              className="rounded-full border border-indigo-500/50 px-5 py-3 text-sm font-medium text-indigo-400 transition hover:border-indigo-400 hover:text-indigo-300 active:scale-95 disabled:opacity-40"
+            >
+              <span className="hidden sm:inline">Add from </span>Photos
             </button>
             <button
               onClick={doneAndDownload}
