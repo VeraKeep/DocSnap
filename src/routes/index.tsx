@@ -10,6 +10,14 @@ interface PageEntry {
   useOriginal: boolean;
 }
 
+// Drag-and-drop state tracked in a ref so pointer handlers never read stale closures.
+interface DragState {
+  index: number;
+  startX: number;
+  deltaX: number;
+  overIndex: number;
+}
+
 export const Route = createFileRoute("/")({
   component: Home,
 });
@@ -26,6 +34,11 @@ function Home() {
   const [useOriginal, setUseOriginal] = useState(false);
   const [pages, setPages] = useState<PageEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Drag-and-drop state (ref for stable pointer handlers, counter to trigger re-renders)
+  const dragRef = useRef<DragState | null>(null);
+  const [, setDragTick] = useState(0);
+  const rerenderDrag = useCallback(() => setDragTick((t) => t + 1), []);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -145,8 +158,86 @@ function Home() {
   }, [capturedImage, processedImage, useOriginal, startCamera]);
 
   const deletePage = useCallback((index: number) => {
+    // Cancel any in-progress drag when a page is deleted
+    if (dragRef.current) {
+      dragRef.current = null;
+    }
     setPages((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  const movePage = useCallback((fromIndex: number, toIndex: number) => {
+    setPages((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, item);
+      return next;
+    });
+  }, []);
+
+  // --- Drag-and-drop pointer handlers ---
+  const SLOT_WIDTH = 56; // 48px thumbnail + 8px gap
+
+  const handleDragPointerDown = useCallback(
+    (e: React.PointerEvent, index: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      dragRef.current = {
+        index,
+        startX: e.clientX,
+        deltaX: 0,
+        overIndex: index,
+      };
+      rerenderDrag();
+    },
+    [rerenderDrag],
+  );
+
+  const handleDragPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      d.deltaX = e.clientX - d.startX;
+      const slotOffset = Math.round(d.deltaX / SLOT_WIDTH);
+      // pages.length might have changed if a delete happened, clamp safely
+      d.overIndex = Math.max(
+        0,
+        Math.min((pages.length || 1) - 1, d.index + slotOffset),
+      );
+      rerenderDrag();
+    },
+    [rerenderDrag, pages.length],
+  );
+
+  const handleDragPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      const { index, overIndex } = d;
+      dragRef.current = null;
+      if (overIndex !== index && overIndex >= 0 && overIndex < pages.length) {
+        movePage(index, overIndex);
+      }
+      rerenderDrag();
+    },
+    [movePage, rerenderDrag, pages.length],
+  );
+
+  const handleDragPointerCancel = useCallback(
+    (e: React.PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // capture may already be released
+      }
+      dragRef.current = null;
+      rerenderDrag();
+    },
+    [rerenderDrag],
+  );
 
   const doneAndDownload = useCallback(async () => {
     if (!capturedImage) return;
@@ -390,39 +481,139 @@ function Home() {
           {/* Thumbnail strip of saved pages */}
           {pages.length > 0 && (
             <div className="bg-gray-900 px-4 py-3">
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {pages.map((page, i) => {
-                  const thumbSrc =
-                    !page.useOriginal && page.processed
-                      ? page.processed
-                      : page.original;
-                  return (
-                    <div
-                      key={`${i}-${page.original.slice(-20)}`}
-                      className="relative shrink-0"
-                    >
-                      <img
-                        src={thumbSrc}
-                        alt={`Page ${i + 1}`}
-                        className="h-16 w-12 rounded-md border border-gray-700 object-cover"
-                      />
-                      <button
-                        onClick={() => deletePage(i)}
-                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white text-xs leading-none shadow transition hover:bg-red-500 active:scale-90"
-                        aria-label={`Remove page ${i + 1}`}
+              {pages.length === 1 ? (
+                /* Single page: simple layout, no drag UI */
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {pages.map((page, i) => {
+                    const thumbSrc =
+                      !page.useOriginal && page.processed
+                        ? page.processed
+                        : page.original;
+                    return (
+                      <div
+                        key={page.original.slice(-40)}
+                        className="relative shrink-0"
                       >
-                        ×
-                      </button>
-                      <span className="mt-0.5 block text-center text-[10px] text-gray-500">
-                        {i + 1}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+                        <img
+                          src={thumbSrc}
+                          alt={`Page ${i + 1}`}
+                          className="h-16 w-12 rounded-md border border-gray-700 object-cover"
+                        />
+                        <button
+                          onClick={() => deletePage(i)}
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white text-xs leading-none shadow transition hover:bg-red-500 active:scale-90"
+                          aria-label={`Remove page ${i + 1}`}
+                        >
+                          ×
+                        </button>
+                        <span className="mt-0.5 block text-center text-[10px] text-gray-500">
+                          {i + 1}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Multi-page: drag-and-drop reorder enabled */
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 select-none">
+                  {pages.map((page, i) => {
+                    const thumbSrc =
+                      !page.useOriginal && page.processed
+                        ? page.processed
+                        : page.original;
+
+                    const drag = dragRef.current;
+                    const isDragging = drag !== null && drag.index === i;
+                    const isDragOver =
+                      drag !== null &&
+                      drag.overIndex === i &&
+                      drag.index !== i;
+
+                    // Compute transform to shift items out of the dragged item's way.
+                    // Items between the drag origin and the target slot slide one slot over.
+                    let shiftTransform = "";
+                    if (drag !== null && !isDragging) {
+                      if (
+                        drag.index < i &&
+                        i <= drag.overIndex
+                      ) {
+                        shiftTransform = `translateX(-${SLOT_WIDTH}px)`;
+                      } else if (
+                        drag.index > i &&
+                        i >= drag.overIndex
+                      ) {
+                        shiftTransform = `translateX(${SLOT_WIDTH}px)`;
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={page.original.slice(-40)}
+                        className="relative shrink-0"
+                        style={{
+                          transform: isDragging
+                            ? `translateX(${drag?.deltaX ?? 0}px)`
+                            : shiftTransform,
+                          transition:
+                            drag === null
+                              ? "transform 200ms ease"
+                              : "none",
+                          zIndex: isDragging ? 10 : undefined,
+                        }}
+                      >
+                        {/* Drag handle — only visible when multiple pages */}
+                        <div
+                          onPointerDown={(e) =>
+                            handleDragPointerDown(e, i)
+                          }
+                          onPointerMove={handleDragPointerMove}
+                          onPointerUp={handleDragPointerUp}
+                          onPointerCancel={handleDragPointerCancel}
+                          className="absolute left-0 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 cursor-grab items-center justify-center text-gray-500 transition hover:text-gray-300 active:cursor-grabbing touch-none select-none"
+                          aria-label={`Drag page ${i + 1} to reorder`}
+                          title="Drag to reorder"
+                        >
+                          ☰
+                        </div>
+
+                        {/* Thumbnail image */}
+                        <img
+                          src={thumbSrc}
+                          alt={`Page ${i + 1}`}
+                          className={`ml-6 h-16 w-12 rounded-md border object-cover transition-shadow ${
+                            isDragging
+                              ? "border-indigo-400 shadow-lg shadow-indigo-500/30 scale-105"
+                              : isDragOver
+                                ? "border-indigo-400 ring-2 ring-indigo-400/50"
+                                : "border-gray-700"
+                          }`}
+                          draggable={false}
+                        />
+
+                        {/* Delete button */}
+                        <button
+                          onClick={() => deletePage(i)}
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white text-xs leading-none shadow transition hover:bg-red-500 active:scale-90"
+                          aria-label={`Remove page ${i + 1}`}
+                        >
+                          ×
+                        </button>
+
+                        {/* Page number */}
+                        <span className="ml-6 mt-0.5 block text-center text-[10px] text-gray-500">
+                          {i + 1}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <p className="mt-1 text-center text-xs text-gray-500">
                 {pages.length} {pages.length === 1 ? "page" : "pages"} saved
-                {pages.length > 0 && ` — tap × to remove`}
+                {pages.length === 1
+                  ? " — tap × to remove"
+                  : " — drag ☰ to reorder, tap × to remove"}
               </p>
             </div>
           )}
