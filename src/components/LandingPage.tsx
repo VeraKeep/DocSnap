@@ -336,9 +336,21 @@ export function LandingPage({
       </div>
 
       {/* Footer */}
-      <footer className="flex items-center justify-center gap-6 border-t border-gray-800/50 py-5 text-xs text-gray-600">
+      <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t border-gray-800/50 py-5 text-xs text-gray-600">
         <Link to="/privacy" className="transition hover:text-gray-400">
           Privacy
+        </Link>
+        <Link to="/terms" className="transition hover:text-gray-400">
+          Terms
+        </Link>
+        <Link to="/contact" className="transition hover:text-gray-400">
+          Contact
+        </Link>
+        <Link to="/faq" className="transition hover:text-gray-400">
+          FAQ
+        </Link>
+        <Link to="/changelog" className="transition hover:text-gray-400">
+          Changelog
         </Link>
         <Link to="/about" className="transition hover:text-gray-400">
           About
