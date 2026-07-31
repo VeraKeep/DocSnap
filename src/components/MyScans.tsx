@@ -5,6 +5,7 @@ import {
   ALL_CATEGORIES,
   getDocCategory,
 } from "../cloudStorage";
+import { DocumentSearch } from "./DocumentSearch";
 
 // ── Folder config ──────────────────────────────────────────────────
 
@@ -314,6 +315,8 @@ export function MyScans({
 }: MyScansProps) {
   // Track which folders are expanded. Default: all expanded.
   const [collapsed, setCollapsed] = useState<Set<DocCategory>>(new Set());
+  // Track whether search mode is active
+  const [searchMode, setSearchMode] = useState(false);
 
   // Group scans by effective category
   const grouped = new Map<DocCategory, CloudDocument[]>();
@@ -337,16 +340,54 @@ export function MyScans({
     });
   };
 
+  // If search mode is active, show the search interface
+  if (searchMode) {
+    return (
+      <div className="space-y-4">
+        <DocumentSearch
+          scans={scans}
+          deletingDocId={deletingDocId}
+          onDownload={onDownload}
+          onDelete={onDelete}
+          onClear={() => setSearchMode(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-200">My Scans</h3>
-        <button
-          onClick={onClose}
-          className="text-xs text-gray-500 hover:text-gray-300"
-        >
-          Close
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Search button */}
+          <button
+            onClick={() => setSearchMode(true)}
+            className="rounded p-1.5 text-gray-500 transition hover:text-gray-300 hover:bg-gray-800"
+            title="Search documents"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+              />
+            </svg>
+          </button>
+          <button
+            onClick={onClose}
+            className="text-xs text-gray-500 hover:text-gray-300"
+          >
+            Close
+          </button>
+        </div>
       </div>
 
       {loading ? (

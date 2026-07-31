@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { processDocument, perspectiveWarp, type Quad } from "../documentProcessor";
 import { applyFilter, getSourceForFilter, type FilterType } from "../imageFilters";
 import { ocrEnabled } from "../ocr";
+import { recognizePages as ocrRecognizePages } from "../ocr";
+import { ocrWordsToText } from "../documentCategorizer";
 import { generatePlainPDF } from "../searchablePdf";
 import type { PageEntry } from "../hooks/usePages";
 import { useCamera } from "../hooks/useCamera";
@@ -227,7 +229,25 @@ function Home() {
       const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[] = [];
       for (const page of allPages) { const src = getSourceForFilter(page.original, page.processed, page.filter); const imgUrl = await applyFilter(src, page.filter); const img = new Image(); await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("Failed")); img.src = imgUrl; }); pageEntries.push({ imageUrl: imgUrl, imgNaturalWidth: img.naturalWidth, imgNaturalHeight: img.naturalHeight }); }
       const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
-      await saveToCloud(blob, allPages.length, categorizationResult?.category || "");
+
+      // Attempt OCR text extraction for searchability
+      let ocrText = "";
+      try {
+        const imageUrls = pageEntries.map((p) => p.imageUrl);
+        const ocrResults = await ocrRecognizePages(
+          imageUrls,
+          () => {}, // silent progress — user already sees saving spinner
+        );
+        ocrText = ocrResults
+          .map((words) => ocrWordsToText(words))
+          .join(" ")
+          .trim();
+      } catch (ocrErr) {
+        // OCR failed — save without text; search will skip this doc
+        console.warn("OCR extraction failed during cloud save:", ocrErr);
+      }
+
+      await saveToCloud(blob, allPages.length, categorizationResult?.category || "", ocrText);
     } catch (err) { console.error("Save failed:", err); setErrorMessage("Couldn't save to cloud. Check your connection and try again."); setState("error"); }
     finally { setIsGenerating(false); }
   }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult]);

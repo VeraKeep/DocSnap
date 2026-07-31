@@ -15,6 +15,8 @@ export interface CloudDocument {
   autoCategory?: string;
   /** User-set category override. If set, this takes precedence over autoCategory */
   userCategory?: string;
+  /** OCR-extracted full text for search (empty string if no OCR was run) */
+  ocrText?: string;
 }
 
 export type DocCategory =
@@ -99,6 +101,7 @@ export const addDocument = createServerFn()
       fileKey: string;
       fileUrl: string;
       autoCategory?: string;
+      ocrText?: string;
     }) => doc,
   )
   .handler(async ({ data }) => {
@@ -112,6 +115,7 @@ export const addDocument = createServerFn()
       fileKey: data.fileKey,
       fileUrl: data.fileUrl,
       autoCategory: data.autoCategory || "",
+      ocrText: data.ocrText || "",
     };
     docs.unshift(newDoc);
     writeUserDocs(data.userId, docs);

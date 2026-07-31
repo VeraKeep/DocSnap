@@ -42,7 +42,7 @@ export function useCloudSync() {
 
   /** Save a PDF blob to cloud storage. Returns true on success. */
   const saveToCloud = useCallback(
-    async (pdfBlob: Blob, pageCount: number, autoCategory?: string): Promise<boolean> => {
+    async (pdfBlob: Blob, pageCount: number, autoCategory?: string, ocrText?: string): Promise<boolean> => {
       if (!isSignedIn || !user?.id) return false;
 
       setIsSaving(true);
@@ -63,6 +63,7 @@ export function useCloudSync() {
           fileKey: uploadResult.fileKey,
           fileUrl: uploadResult.fileUrl,
           autoCategory: autoCategory || "",
+          ocrText: ocrText || "",
         });
 
         const updatedDocs = await listDocuments(user.id);
