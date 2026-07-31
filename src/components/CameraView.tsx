@@ -3,6 +3,7 @@ interface CameraViewProps {
   showCaptureFlash: boolean;
   savedPageCount: number;
   onCapture: () => void;
+  isDesktop: boolean;
 }
 
 /** Lightweight haptic feedback for mobile. */
@@ -19,6 +20,7 @@ export function CameraView({
   showCaptureFlash,
   savedPageCount,
   onCapture,
+  isDesktop,
 }: CameraViewProps) {
   return (
     <div className="relative flex flex-1 flex-col animate-fade-in">
@@ -32,6 +34,15 @@ export function CameraView({
         <div className="absolute left-0 right-0 top-0 z-10 flex justify-center safe-pt pt-3">
           <span className="rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-300 backdrop-blur-sm">
             {savedPageCount} {savedPageCount === 1 ? "page" : "pages"} saved
+          </span>
+        </div>
+      )}
+
+      {/* Keyboard shortcut hint (desktop only) */}
+      {isDesktop && (
+        <div className="absolute right-4 top-4 z-10">
+          <span className="rounded-full bg-gray-900/70 px-2.5 py-1 text-[11px] text-gray-500 backdrop-blur-sm">
+            Press <kbd className="font-mono text-gray-400">Space</kbd> to capture
           </span>
         </div>
       )}

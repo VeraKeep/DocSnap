@@ -3,16 +3,6 @@ import { PageStrip } from "./PageStrip";
 import { PDFActions } from "./PDFActions";
 import type { FilterType } from "../imageFilters";
 import type { PageEntry } from "../hooks/usePages";
-import type { CloudDocument } from "../cloudStorage";
-
-/** Lightweight haptic feedback for mobile. */
-function vibrate(ms: number) {
-  try {
-    navigator.vibrate?.(ms);
-  } catch {
-    // silently ignore
-  }
-}
 
 interface PreviewScreenProps {
   previewImage: string;
@@ -44,6 +34,7 @@ interface PreviewScreenProps {
   onAddFromPhotos: () => void;
   onSaveToCloud: () => void;
   onDone: () => void;
+  isDesktop: boolean;
 }
 
 export function PreviewScreen({
@@ -71,6 +62,7 @@ export function PreviewScreen({
   onAddFromPhotos,
   onSaveToCloud,
   onDone,
+  isDesktop,
 }: PreviewScreenProps) {
   return (
     <div className="flex flex-1 flex-col animate-fade-in">
@@ -87,6 +79,14 @@ export function PreviewScreen({
           alt="Document preview"
           className="absolute inset-0 h-full w-full object-contain animate-pulse-filter"
         />
+        {/* Desktop keyboard hint */}
+        {isDesktop && (
+          <div className="absolute right-3 top-3 z-10">
+            <span className="rounded-full bg-gray-900/70 px-2.5 py-1 text-[11px] text-gray-500 backdrop-blur-sm">
+              <kbd className="font-mono text-gray-400">R</kbd> retake · <kbd className="font-mono text-gray-400">D</kbd> done · <kbd className="font-mono text-gray-400">1–6</kbd> filter
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Filter strip */}
@@ -112,7 +112,7 @@ export function PreviewScreen({
 
       {/* Action buttons */}
       <PDFActions
-        pageCount={pages.length}
+        pageCount={pageCount}
         isGenerating={isGenerating}
         isSaving={isSaving}
         saveSuccess={saveSuccess}

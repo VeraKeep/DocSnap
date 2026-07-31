@@ -9,6 +9,7 @@ import { useCamera } from "../hooks/useCamera";
 import { usePages } from "../hooks/usePages";
 import { useOCR } from "../hooks/useOCR";
 import { useCloudSync } from "../hooks/useCloudSync";
+import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
 import { CameraView } from "../components/CameraView";
 import { PreviewScreen } from "../components/PreviewScreen";
 import { OCRProgress } from "../components/OCRProgress";
@@ -31,10 +32,11 @@ export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
   // ── Hooks ──
-  const { videoRef, canvasRef, startCamera: startCameraBase, stopCamera, captureFrame, attachVideo, cameraState, error: cameraError } = useCamera();
+  const { canvasRef, startCamera: startCameraBase, stopCamera, captureFrame, attachVideo, cameraState, error: cameraError } = useCamera();
   const { pages, addPage, addPages, deletePage, resetPages, newPageIndices, dragRef, handleDragPointerDown, handleDragPointerMove, handleDragPointerUp, handleDragPointerCancel } = usePages();
-  const { runOCR, skipOCR: skipOCRFn, ocrProgress, ocrAbortRef, isOCRActive } = useOCR();
+  const { runOCR, skipOCR: skipOCRFn, ocrProgress, ocrAbortRef, ocrPhase } = useOCR();
   const { saveToCloud, isSaving, saveSuccess, isCloudReady: cloudConfigured, myScans: savedDocs, deleteScan, loadingDocs, deletingDocId, authLoaded, isSignedIn, user } = useCloudSync();
+  const isDesktop = useIsDesktop();
 
   // ── App state ──
   const [state, setState] = useState<AppState>("idle");
@@ -51,11 +53,15 @@ function Home() {
   const [filterPulseKey, setFilterPulseKey] = useState(0);
   const [showMyScans, setShowMyScans] = useState(false);
   const [ocrPagesForProcessing, setOcrPagesForProcessing] = useState<PageEntry[] | null>(null);
+  const [showShortcutsHint, setShowShortcutsHint] = useState(false);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
   const capturedImageDataRef = useRef<ImageData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Filter names for shortcuts ──
+  const filterOrder: FilterType[] = ["auto", "bw", "grayscale", "highContrast", "receipt", "color"];
 
   // ── Camera orchestration ──
   const startCamera = useCallback(async () => {
@@ -89,6 +95,10 @@ function Home() {
     capturedImageDataRef.current = null; startCamera();
   }, [startCamera]);
 
+  const closeCamera = useCallback(() => {
+    stopCamera(); setState("idle");
+  }, [stopCamera]);
+
   // ── Crop editor ──
   const applyManualCrop = useCallback(() => {
     vibrate(10); const imageData = capturedImageDataRef.current;
@@ -120,7 +130,7 @@ function Home() {
   // ── Pages ──
   const buildAllPages = useCallback((): PageEntry[] => {
     if (!capturedImage) return [...pages];
-    return [...pages, { processed: processedImage, original: capturedImage, filter: currentFilter }];
+    return [...pages, { processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "" }];
   }, [pages, capturedImage, processedImage, currentFilter]);
 
   const resetApp = useCallback(() => {
@@ -137,12 +147,12 @@ function Home() {
 
   const addFromCamera = useCallback(() => {
     vibrate(10); if (!capturedImage) return;
-    addPage({ processed: processedImage, original: capturedImage, filter: currentFilter }); startCamera();
+    addPage({ processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "" }); startCamera();
   }, [capturedImage, processedImage, currentFilter, addPage, startCamera]);
 
   const addFromPhotos = useCallback(() => {
     vibrate(10); if (!capturedImage) return;
-    addPage({ processed: processedImage, original: capturedImage, filter: currentFilter });
+    addPage({ processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "" });
     setCapturedImage(null); setProcessedImage(null); setCurrentFilter("auto");
     setDisplayImage(null); setCropCorners(null); capturedImageDataRef.current = null;
     fileInputRef.current?.click();
@@ -153,10 +163,10 @@ function Home() {
 
   useEffect(() => {
     if (state !== "ocr" || !ocrPagesForProcessing) return;
-    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing).then(b => { if (b) { downloadBlob(b); resetApp(); } }).catch(() => { setErrorMessage("Failed to generate PDF."); setState("error"); }); return; }
+    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing).then(b => { if (b) { downloadBlob(b); resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
     let cancelled = false;
     (async () => { try { const b = await runOCR(ocrPagesForProcessing); if (!cancelled && b) { downloadBlob(b); resetApp(); } }
-      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing); if (b) { downloadBlob(b); resetApp(); } } catch { setErrorMessage("OCR processing failed."); setState("error"); } } }
+      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing); if (b) { downloadBlob(b); resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
     })();
     return () => { cancelled = true; };
   }, [state, ocrPagesForProcessing]);
@@ -178,7 +188,7 @@ function Home() {
       for (const page of allPages) { const src = getSourceForFilter(page.original, page.processed, page.filter); const imgUrl = await applyFilter(src, page.filter); const img = new Image(); await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("Failed")); img.src = imgUrl; }); pageEntries.push({ imageUrl: imgUrl, imgNaturalWidth: img.naturalWidth, imgNaturalHeight: img.naturalHeight }); }
       const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
       await saveToCloud(blob, allPages.length);
-    } catch (err) { console.error("Save failed:", err); setErrorMessage("Failed to save document."); setState("error"); }
+    } catch (err) { console.error("Save failed:", err); setErrorMessage("Couldn't save to cloud. Check your connection and try again."); setState("error"); }
     finally { setIsGenerating(false); }
   }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud]);
 
@@ -188,8 +198,8 @@ function Home() {
     const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
     const ctx = c.getContext("2d"); if (!ctx) throw new Error("No context"); ctx.drawImage(img, 0, 0);
     const id = ctx.getImageData(0, 0, c.width, c.height), url = c.toDataURL("image/jpeg", 0.92); URL.revokeObjectURL(img.src);
-    try { const r = processDocument(id, "image/jpeg", 0.92); return { original: url, processed: r?.dataUrl ?? null, filter: "auto" }; }
-    catch { return { original: url, processed: null, filter: "auto" }; }
+    try { const r = processDocument(id, "image/jpeg", 0.92); return { original: url, processed: r?.dataUrl ?? null, filter: "auto", thumbnail: "" }; }
+    catch { return { original: url, processed: null, filter: "auto", thumbnail: "" }; }
   }
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -206,6 +216,15 @@ function Home() {
   }, [addPages]);
 
   const downloadSavedDoc = useCallback((doc: { fileUrl: string }) => { window.open(doc.fileUrl, "_blank"); }, []);
+
+  // ── Keyboard shortcuts ──
+  useKeyboardShortcuts(isDesktop, {
+    capture: state === "active" ? capture : undefined,
+    closeCamera: (state === "active" || state === "preview" || state === "adjusting") ? closeCamera : undefined,
+    retake: state === "preview" ? retake : undefined,
+    done: state === "preview" ? startOCR : undefined,
+    filterSwitch: state === "preview" ? (idx) => { if (idx >= 0 && idx < filterOrder.length) setCurrentFilter(filterOrder[idx]); } : undefined,
+  });
 
   // ── Effects ──
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -240,7 +259,7 @@ function Home() {
 
       {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} onOpenCamera={startCamera} onChoosePhotos={() => fileInputRef.current?.click()} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} />}
 
-      {state === "active" && <CameraView videoRefCallback={attachVideo} showCaptureFlash={showCaptureFlash} savedPageCount={pages.length} onCapture={capture} />}
+      {state === "active" && <CameraView videoRefCallback={attachVideo} showCaptureFlash={showCaptureFlash} savedPageCount={pages.length} onCapture={capture} isDesktop={isDesktop} />}
 
       {state === "processing" && <ProcessingScreen capturedImage={capturedImage} importProgress={importProgress} />}
 
@@ -252,11 +271,39 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} />}
+      {state === "preview" && previewImage && <PreviewScreen previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
 
-      {state === "ocr" && <OCRProgress isGenerating={isGenerating} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
+      {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}
+
+      {/* Keyboard shortcuts hint (desktop only, subtle) */}
+      {isDesktop && (
+        <div className="fixed bottom-4 left-4 z-50">
+          <button
+            onClick={() => setShowShortcutsHint(!showShortcutsHint)}
+            className="flex items-center gap-1.5 rounded-full bg-gray-900/80 px-2.5 py-1.5 text-[11px] text-gray-600 backdrop-blur-sm transition hover:text-gray-400 hover:bg-gray-800/80"
+            title="Keyboard shortcuts"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h12M6 12h12m-6 6h6" />
+            </svg>
+            ⌨
+          </button>
+          {showShortcutsHint && (
+            <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border border-gray-700 bg-gray-900/95 p-3 shadow-xl backdrop-blur-sm text-left">
+              <p className="text-[11px] font-medium text-gray-400 mb-2">Keyboard shortcuts</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex justify-between"><span className="text-gray-500">Capture photo</span><kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-gray-300 font-mono text-[10px]">Space</kbd></div>
+                <div className="flex justify-between"><span className="text-gray-500">Done / download</span><kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-gray-300 font-mono text-[10px]">D</kbd></div>
+                <div className="flex justify-between"><span className="text-gray-500">Retake</span><kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-gray-300 font-mono text-[10px]">R</kbd></div>
+                <div className="flex justify-between"><span className="text-gray-500">Close camera</span><kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-gray-300 font-mono text-[10px]">Esc</kbd></div>
+                <div className="flex justify-between"><span className="text-gray-500">Switch filter</span><kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-gray-300 font-mono text-[10px]">1–6</kbd></div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </main>
   );
 }

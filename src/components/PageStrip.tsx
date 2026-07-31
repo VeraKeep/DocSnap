@@ -1,5 +1,5 @@
 import type { PageEntry } from "../hooks/usePages";
-import { SLOT_WIDTH } from "../hooks/usePages";
+import { SLOT_WIDTH, getPageThumbSrc } from "../hooks/usePages";
 
 interface PageStripProps {
   pages: PageEntry[];
@@ -34,10 +34,7 @@ export function PageStrip({
       {pages.length === 1 ? (
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {pages.map((page, i) => {
-            const thumbSrc =
-              page.filter === "color"
-                ? page.original
-                : (page.processed || page.original);
+            const thumbSrc = getPageThumbSrc(page);
             return (
               <div
                 key={`page-${i}-${page.original.slice(-20)}`}
@@ -66,10 +63,7 @@ export function PageStrip({
         /* Multi-page: drag-and-drop reorder enabled */
         <div className="flex items-center gap-2 overflow-x-auto pb-1 select-none">
           {pages.map((page, i) => {
-            const thumbSrc =
-              page.filter === "color"
-                ? page.original
-                : (page.processed || page.original);
+            const thumbSrc = getPageThumbSrc(page);
 
             const drag = dragRef.current;
             const isDragging = drag !== null && drag.index === i;

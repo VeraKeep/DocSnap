@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FilterType } from "../imageFilters";
+import { generateThumbnail } from "../thumbnail";
 
 export interface PageEntry {
   processed: string | null;
   original: string;
   filter: FilterType;
+  /** Low-res thumbnail (max 48px height) for fast page strip rendering */
+  thumbnail: string;
 }
 
 interface DragState {
@@ -15,6 +18,17 @@ interface DragState {
 }
 
 export const SLOT_WIDTH = 56; // 48px thumbnail + 8px gap
+
+/**
+ * Get the best thumbnail source for a page entry, preferring the thumbnail
+ * but falling back to a reasonable alternative.
+ */
+export function getPageThumbSrc(page: PageEntry): string {
+  if (page.thumbnail) return page.thumbnail;
+  return page.filter === "color"
+    ? page.original
+    : (page.processed || page.original);
+}
 
 export function usePages() {
   const [pages, setPages] = useState<PageEntry[]>([]);
@@ -41,11 +55,53 @@ export function usePages() {
   }, [pages.length]);
 
   const addPage = useCallback((entry: PageEntry) => {
-    setPages((prev) => [...prev, entry]);
+    // Generate thumbnail asynchronously if one isn't already set
+    if (!entry.thumbnail) {
+      const src = entry.filter === "color"
+        ? entry.original
+        : (entry.processed || entry.original);
+      generateThumbnail(src).then((thumb) => {
+        setPages((prev) =>
+          prev.map((p) =>
+            p.original === entry.original && p.filter === entry.filter && !p.thumbnail
+              ? { ...p, thumbnail: thumb }
+              : p
+          )
+        );
+      }).catch(() => {});
+    }
+    // Store with placeholder thumbnail initially; async update replaces it
+    setPages((prev) => [
+      ...prev,
+      { ...entry, thumbnail: entry.thumbnail || entry.processed || entry.original },
+    ]);
   }, []);
 
   const addPages = useCallback((entries: PageEntry[]) => {
-    setPages((prev) => [...prev, ...entries]);
+    // Generate thumbnails for all new entries asynchronously
+    for (const entry of entries) {
+      if (!entry.thumbnail) {
+        const src = entry.filter === "color"
+          ? entry.original
+          : (entry.processed || entry.original);
+        generateThumbnail(src).then((thumb) => {
+          setPages((prev) =>
+            prev.map((p) =>
+              p.original === entry.original && p.filter === entry.filter && !p.thumbnail
+                ? { ...p, thumbnail: thumb }
+                : p
+            )
+          );
+        }).catch(() => {});
+      }
+    }
+    setPages((prev) => [
+      ...prev,
+      ...entries.map((e) => ({
+        ...e,
+        thumbnail: e.thumbnail || e.processed || e.original,
+      })),
+    ]);
   }, []);
 
   const deletePage = useCallback((index: number) => {

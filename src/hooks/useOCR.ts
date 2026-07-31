@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { ocrEnabled, recognizePages } from "../ocr";
+import { recognizePages } from "../ocr";
 import {
   generateSearchablePDF,
   generatePlainPDF,
@@ -8,12 +8,23 @@ import {
 import { applyFilter, getSourceForFilter } from "../imageFilters";
 import type { PageEntry } from "./usePages";
 
+export type OCRPhase = "preparing" | "rendering" | "recognizing" | "assembling" | null;
+
+export interface OCRProgressInfo {
+  page: number;
+  totalPages: number;
+  status: string;
+  /** 0–1 progress for the current page's recognition */
+  pageProgress: number;
+  /** The current phase of the OCR pipeline */
+  phase: OCRPhase;
+  /** Approx estimated seconds remaining (null if still calibrating) */
+  etaSeconds: number | null;
+}
+
 export function useOCR() {
-  const [ocrProgress, setOcrProgress] = useState<{
-    page: number;
-    totalPages: number;
-    status: string;
-  } | null>(null);
+  const [ocrProgress, setOcrProgress] = useState<OCRProgressInfo | null>(null);
+  const [ocrPhase, setOcrPhase] = useState<OCRPhase>(null);
   const [isOCRActive, setIsOCRActive] = useState(false);
   const ocrAbortRef = useRef<AbortController | null>(null);
 
@@ -28,6 +39,7 @@ export function useOCR() {
 
       ocrAbortRef.current?.abort();
       setIsOCRActive(true);
+      setOcrPhase("rendering");
 
       try {
         const pageEntries: {
@@ -54,11 +66,16 @@ export function useOCR() {
           });
         }
 
+        setOcrPhase("assembling");
+        // Brief pause so the UI can show "Assembling PDF…"
+        await new Promise((r) => setTimeout(r, 150));
+
         return await generatePlainPDF(pageEntries, {
           title: "DocSnap Document",
         });
       } finally {
         setIsOCRActive(false);
+        setOcrPhase(null);
         ocrAbortRef.current = null;
       }
     },
@@ -73,18 +90,29 @@ export function useOCR() {
       const controller = new AbortController();
       ocrAbortRef.current = controller;
       setIsOCRActive(true);
+      setOcrPhase("preparing");
       setOcrProgress(null);
 
       try {
         // Step 1: Pre-render all pages with their selected filters
+        setOcrPhase("rendering");
         const renderedPages: {
           imageUrl: string;
           imgNaturalWidth: number;
           imgNaturalHeight: number;
         }[] = [];
 
-        for (const page of allPages) {
+        for (let i = 0; i < allPages.length; i++) {
           if (controller.signal.aborted) return null;
+          setOcrProgress({
+            page: i + 1,
+            totalPages: allPages.length,
+            status: "rendering",
+            pageProgress: (i + 1) / allPages.length,
+            phase: "rendering",
+            etaSeconds: null,
+          });
+          const page = allPages[i];
           const sourceUrl = getSourceForFilter(page.original, page.processed, page.filter);
           const imageToUse = await applyFilter(sourceUrl, page.filter);
 
@@ -104,15 +132,40 @@ export function useOCR() {
 
         if (controller.signal.aborted) return null;
 
+        // Track per-page timings for ETA estimation
+        const perPageTimes: number[] = [];
+        let pageStartTime = 0;
+
         // Step 2: Run OCR on all pages
+        setOcrPhase("recognizing");
         const imageUrls = renderedPages.map((p) => p.imageUrl);
         const ocrResults = await recognizePages(
           imageUrls,
           (info) => {
+            const now = Date.now();
+            if (info.status === "recognizing") {
+              pageStartTime = now;
+            } else {
+              const elapsed = now - pageStartTime;
+              if (elapsed > 0 && elapsed < 300_000) { // Ignore outliers
+                perPageTimes.push(elapsed);
+              }
+            }
+            // Calculate ETA from average per-page time
+            const remaining = allPages.length - info.page;
+            let etaSeconds: number | null = null;
+            if (perPageTimes.length > 0 && remaining > 0) {
+              const avgMs = perPageTimes.reduce((a, b) => a + b, 0) / perPageTimes.length;
+              etaSeconds = Math.round((avgMs * remaining) / 1000);
+            }
+
             setOcrProgress({
               page: info.page,
               totalPages: info.totalPages,
               status: info.status,
+              pageProgress: info.progress,
+              phase: "recognizing",
+              etaSeconds,
             });
           },
           controller.signal,
@@ -121,6 +174,19 @@ export function useOCR() {
         if (controller.signal.aborted) return null;
 
         // Step 3: Generate searchable PDF
+        setOcrPhase("assembling");
+        setOcrProgress({
+          page: allPages.length,
+          totalPages: allPages.length,
+          status: "assembling",
+          pageProgress: 1,
+          phase: "assembling",
+          etaSeconds: 0,
+        });
+
+        // Brief pause so the UI can show "Assembling PDF…"
+        await new Promise((r) => setTimeout(r, 150));
+
         const pdfPages: PDFPageEntry[] = renderedPages.map((rp, i) => ({
           imageUrl: rp.imageUrl,
           words: ocrResults[i],
@@ -133,6 +199,7 @@ export function useOCR() {
         });
       } finally {
         setIsOCRActive(false);
+        setOcrPhase(null);
         ocrAbortRef.current = null;
       }
     },
@@ -143,6 +210,7 @@ export function useOCR() {
     runOCR,
     skipOCR,
     ocrProgress,
+    ocrPhase,
     ocrAbortRef,
     cancelOCR,
     isOCRActive,
