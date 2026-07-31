@@ -7,6 +7,11 @@ import {
 } from "../searchablePdf";
 import { applyFilter, getSourceForFilter } from "../imageFilters";
 import type { PageEntry } from "./usePages";
+import {
+  categorizeDocument,
+  ocrWordsToText,
+  type CategorizationResult,
+} from "../documentCategorizer";
 
 export type OCRPhase = "preparing" | "rendering" | "recognizing" | "assembling" | null;
 
@@ -26,6 +31,7 @@ export function useOCR() {
   const [ocrProgress, setOcrProgress] = useState<OCRProgressInfo | null>(null);
   const [ocrPhase, setOcrPhase] = useState<OCRPhase>(null);
   const [isOCRActive, setIsOCRActive] = useState(false);
+  const [categorizationResult, setCategorizationResult] = useState<CategorizationResult | null>(null);
   const ocrAbortRef = useRef<AbortController | null>(null);
 
   const cancelOCR = useCallback(() => {
@@ -92,6 +98,7 @@ export function useOCR() {
       setIsOCRActive(true);
       setOcrPhase("preparing");
       setOcrProgress(null);
+      setCategorizationResult(null);
 
       try {
         // Step 1: Pre-render all pages with their selected filters
@@ -173,6 +180,16 @@ export function useOCR() {
 
         if (controller.signal.aborted) return null;
 
+        // Step 2b: Categorize document from OCR text
+        // Extract all recognized text across pages and run the categorizer
+        {
+          const allText = ocrResults
+            .map((words) => ocrWordsToText(words))
+            .join(" ");
+          const result = categorizeDocument(allText);
+          setCategorizationResult(result);
+        }
+
         // Step 3: Generate searchable PDF
         setOcrPhase("assembling");
         setOcrProgress({
@@ -214,5 +231,7 @@ export function useOCR() {
     ocrAbortRef,
     cancelOCR,
     isOCRActive,
+    /** Latest categorization result from OCR (null until OCR completes or if skipped) */
+    categorizationResult,
   };
 }
