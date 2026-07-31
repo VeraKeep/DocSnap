@@ -2,6 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 export const Route = createFileRoute("/faq")({
+  head: () => ({
+    meta: [{ title: "FAQ — DocSnap" }],
+  }),
   component: FAQ,
 });
 

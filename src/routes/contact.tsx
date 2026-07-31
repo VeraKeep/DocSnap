@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/contact")({
+  head: () => ({
+    meta: [{ title: "Contact — DocSnap" }],
+  }),
   component: Contact,
 });
 

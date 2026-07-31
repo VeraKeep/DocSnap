@@ -29,7 +29,39 @@ function createDefaultCorners(width: number, height: number): Quad {
 
 function vibrate(ms: number) { try { navigator.vibrate?.(ms); } catch { /* ignore */ } }
 
-export const Route = createFileRoute("/")({ component: Home });
+const homeStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "DocSnap",
+  description:
+    "Scan documents to PDF instantly using your camera — no account, no upload, no Adobe license. Everything runs locally in your browser.",
+  url: "https://docsnapapp.com",
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Web",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+    availability: "https://schema.org/InStock",
+  },
+};
+
+export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      {
+        title: "DocSnap — Scan documents to PDF",
+      },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify(homeStructuredData),
+      },
+    ],
+  }),
+  component: Home,
+});
 
 function Home() {
   // ── Hooks ──
