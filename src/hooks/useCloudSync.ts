@@ -6,7 +6,9 @@ import {
   listDocuments,
   addDocument,
   deleteDocument,
+  updateDocumentCategory,
   type CloudDocument,
+  type DocCategory,
 } from "../cloudStorage";
 
 export function useCloudSync() {
@@ -40,7 +42,7 @@ export function useCloudSync() {
 
   /** Save a PDF blob to cloud storage. Returns true on success. */
   const saveToCloud = useCallback(
-    async (pdfBlob: Blob, pageCount: number): Promise<boolean> => {
+    async (pdfBlob: Blob, pageCount: number, autoCategory?: string): Promise<boolean> => {
       if (!isSignedIn || !user?.id) return false;
 
       setIsSaving(true);
@@ -60,6 +62,7 @@ export function useCloudSync() {
           pageCount,
           fileKey: uploadResult.fileKey,
           fileUrl: uploadResult.fileUrl,
+          autoCategory: autoCategory || "",
         });
 
         const updatedDocs = await listDocuments(user.id);
@@ -107,6 +110,31 @@ export function useCloudSync() {
     [user?.id],
   );
 
+  /** Update a document's user-set category */
+  const updateDocCategory = useCallback(
+    async (docId: string, category: DocCategory) => {
+      if (!user?.id) return;
+      // Optimistic update
+      setMyScans((prev) =>
+        prev.map((d) =>
+          d.id === docId ? { ...d, userCategory: category } : d,
+        ),
+      );
+      try {
+        await updateDocumentCategory({
+          userId: user.id,
+          docId,
+          userCategory: category,
+        });
+      } catch (err) {
+        console.error("Category update failed:", err);
+        // Reload on failure to revert optimistic update
+        await loadScans();
+      }
+    },
+    [user?.id, loadScans],
+  );
+
   return {
     saveToCloud,
     isSaving,
@@ -116,6 +144,7 @@ export function useCloudSync() {
     myScans,
     loadScans,
     deleteScan,
+    updateDocCategory,
     loadingDocs,
     deletingDocId,
     authLoaded,

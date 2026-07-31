@@ -11,6 +11,40 @@ export interface CloudDocument {
   fileKey: string;
   fileUrl: string;
   thumbnailUrl?: string;
+  /** Auto-detected category from OCR (empty string if no OCR was run) */
+  autoCategory?: string;
+  /** User-set category override. If set, this takes precedence over autoCategory */
+  userCategory?: string;
+}
+
+export type DocCategory =
+  | "Receipts"
+  | "Insurance"
+  | "Taxes"
+  | "Medical"
+  | "School"
+  | "Military"
+  | "Manuals"
+  | "Uncategorized";
+
+export const ALL_CATEGORIES: DocCategory[] = [
+  "Receipts",
+  "Insurance",
+  "Taxes",
+  "Medical",
+  "School",
+  "Military",
+  "Manuals",
+  "Uncategorized",
+];
+
+/** Get the effective display category for a document */
+export function getDocCategory(doc: CloudDocument): DocCategory {
+  const cat = doc.userCategory || doc.autoCategory;
+  if (cat && ALL_CATEGORIES.includes(cat as DocCategory)) {
+    return cat as DocCategory;
+  }
+  return "Uncategorized";
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -57,7 +91,16 @@ export const listDocuments = createServerFn()
 
 /** Add a document record after uploading to Uploadthing */
 export const addDocument = createServerFn()
-  .validator((doc: { userId: string; name: string; pageCount: number; fileKey: string; fileUrl: string }) => doc)
+  .validator(
+    (doc: {
+      userId: string;
+      name: string;
+      pageCount: number;
+      fileKey: string;
+      fileUrl: string;
+      autoCategory?: string;
+    }) => doc,
+  )
   .handler(async ({ data }) => {
     if (!data.userId) throw new Error("userId required");
     const docs = readUserDocs(data.userId);
@@ -68,10 +111,31 @@ export const addDocument = createServerFn()
       date: new Date().toISOString(),
       fileKey: data.fileKey,
       fileUrl: data.fileUrl,
+      autoCategory: data.autoCategory || "",
     };
     docs.unshift(newDoc);
     writeUserDocs(data.userId, docs);
     return newDoc;
+  });
+
+/** Update a document's user-set category */
+export const updateDocumentCategory = createServerFn()
+  .validator(
+    (params: {
+      userId: string;
+      docId: string;
+      userCategory: string;
+    }) => params,
+  )
+  .handler(async ({ data }) => {
+    if (!data.userId) throw new Error("userId required");
+    const docs = readUserDocs(data.userId);
+    const doc = docs.find((d) => d.id === data.docId);
+    if (!doc) throw new Error("Document not found");
+
+    doc.userCategory = data.userCategory;
+    writeUserDocs(data.userId, docs);
+    return { success: true };
   });
 
 /** Delete a document (both metadata and Uploadthing file) */
