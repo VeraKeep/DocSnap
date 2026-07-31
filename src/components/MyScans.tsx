@@ -298,6 +298,12 @@ interface MyScansProps {
   scans: CloudDocument[];
   loading: boolean;
   deletingDocId: string | null;
+  /** Maximum cloud documents allowed (Infinity for Pro) */
+  docLimit: number;
+  /** Whether the user has a Pro subscription */
+  isPro: boolean;
+  /** URL to upgrade/pricing page */
+  upgradeUrl: string;
   onDownload: (doc: CloudDocument) => void;
   onDelete: (docId: string) => void;
   onClose: () => void;
@@ -308,6 +314,9 @@ export function MyScans({
   scans,
   loading,
   deletingDocId,
+  docLimit,
+  isPro,
+  upgradeUrl,
   onDownload,
   onDelete,
   onClose,
@@ -317,6 +326,10 @@ export function MyScans({
   const [collapsed, setCollapsed] = useState<Set<DocCategory>>(new Set());
   // Track whether search mode is active
   const [searchMode, setSearchMode] = useState(false);
+
+  const docCountDisplay = isPro
+    ? `${scans.length} documents · Unlimited`
+    : `${scans.length} / ${docLimit} documents`;
 
   // Group scans by effective category
   const grouped = new Map<DocCategory, CloudDocument[]>();
@@ -358,7 +371,12 @@ export function MyScans({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-200">My Scans</h3>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-200">My Scans</h3>
+          <p className={`text-xs mt-0.5 ${isPro ? "text-indigo-400" : "text-gray-500"}`}>
+            {docCountDisplay}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           {/* Search button */}
           <button

@@ -24,6 +24,12 @@ interface PreviewScreenProps {
   saveSuccess: boolean;
   isSignedIn: boolean;
   cloudConfigured: boolean;
+  /** Number of documents currently in cloud storage */
+  cloudDocCount: number;
+  /** Maximum cloud documents allowed (Infinity for Pro) */
+  docLimit: number;
+  /** URL to upgrade/pricing page */
+  upgradeUrl: string;
   onDeletePage: (index: number) => void;
   onDragPointerDown: (e: React.PointerEvent, index: number) => void;
   onDragPointerMove: (e: React.PointerEvent) => void;
@@ -52,6 +58,9 @@ export function PreviewScreen({
   saveSuccess,
   isSignedIn,
   cloudConfigured,
+  cloudDocCount,
+  docLimit,
+  upgradeUrl,
   onDeletePage,
   onDragPointerDown,
   onDragPointerMove,
@@ -118,6 +127,9 @@ export function PreviewScreen({
         saveSuccess={saveSuccess}
         isSignedIn={isSignedIn}
         cloudConfigured={cloudConfigured}
+        cloudDocCount={cloudDocCount}
+        docLimit={docLimit}
+        upgradeUrl={upgradeUrl}
         onRetake={onRetake}
         onAddFromCamera={onAddFromCamera}
         onAddFromPhotos={onAddFromPhotos}

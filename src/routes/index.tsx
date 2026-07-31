@@ -11,6 +11,7 @@ import { useCamera } from "../hooks/useCamera";
 import { usePages } from "../hooks/usePages";
 import { useOCR } from "../hooks/useOCR";
 import { useCloudSync } from "../hooks/useCloudSync";
+import { useSubscription } from "../hooks/useSubscription";
 import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
 import { trackEvent } from "../analytics";
 import type { DocCategory } from "../cloudStorage";
@@ -72,6 +73,7 @@ function Home() {
   const { pages, addPage, addPages, deletePage, resetPages, newPageIndices, dragRef, handleDragPointerDown, handleDragPointerMove, handleDragPointerUp, handleDragPointerCancel } = usePages();
   const { runOCR, skipOCR: skipOCRFn, ocrProgress, ocrAbortRef, ocrPhase, categorizationResult } = useOCR();
   const { saveToCloud, isSaving, saveSuccess, isCloudReady: cloudConfigured, myScans: savedDocs, deleteScan, updateDocCategory, loadingDocs, deletingDocId, authLoaded, isSignedIn, user } = useCloudSync();
+  const { isPro, docLimit, upgradeUrl } = useSubscription();
   const isDesktop = useIsDesktop();
 
   // ── App state ──
@@ -90,11 +92,13 @@ function Home() {
   const [showMyScans, setShowMyScans] = useState(false);
   const [ocrPagesForProcessing, setOcrPagesForProcessing] = useState<PageEntry[] | null>(null);
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
+  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
   const capturedImageDataRef = useRef<ImageData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const upgradeBannerShownRef = useRef(false);
 
   // ── Filter names for shortcuts ──
   const filterOrder: FilterType[] = ["auto", "bw", "grayscale", "highContrast", "receipt", "color"];
@@ -204,10 +208,10 @@ function Home() {
 
   useEffect(() => {
     if (state !== "ocr" || !ocrPagesForProcessing) return;
-    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing).then(b => { if (b) { downloadBlob(b); resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
+    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing).then(b => { if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
     let cancelled = false;
-    (async () => { try { const b = await runOCR(ocrPagesForProcessing); if (!cancelled && b) { downloadBlob(b); resetApp(); } }
-      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing); if (b) { downloadBlob(b); resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
+    (async () => { try { const b = await runOCR(ocrPagesForProcessing); if (!cancelled && b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }
+      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing); if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
     })();
     return () => { cancelled = true; };
   }, [state, ocrPagesForProcessing]);
@@ -327,7 +331,7 @@ function Home() {
       <canvas ref={canvasRef} className="hidden" />
       <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
 
-      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} onOpenCamera={startCamera} onChoosePhotos={() => { trackEvent("choose-from-photos"); fileInputRef.current?.click(); }} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} onCategoryChange={handleCategoryChange} />}
+      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} docLimit={docLimit} isPro={isPro} upgradeUrl={upgradeUrl} showUpgradeBanner={showUpgradeBanner} onDismissUpgradeBanner={() => setShowUpgradeBanner(false)} onOpenCamera={startCamera} onChoosePhotos={() => { trackEvent("choose-from-photos"); fileInputRef.current?.click(); }} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} onCategoryChange={handleCategoryChange} />}
 
       {state === "active" && <CameraView videoRefCallback={attachVideo} showCaptureFlash={showCaptureFlash} savedPageCount={pages.length} onCapture={capture} isDesktop={isDesktop} />}
 
@@ -341,7 +345,7 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
+      {state === "preview" && previewImage && <PreviewScreen previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 

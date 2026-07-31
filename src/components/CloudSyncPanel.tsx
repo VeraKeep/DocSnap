@@ -5,6 +5,12 @@ interface CloudSyncPanelProps {
   saveSuccess: boolean;
   pageCount: number;
   isGenerating: boolean;
+  /** Number of documents currently in cloud storage */
+  cloudDocCount: number;
+  /** Maximum cloud documents allowed (Infinity for Pro) */
+  docLimit: number;
+  /** URL to upgrade/pricing page */
+  upgradeUrl: string;
   onSaveToCloud: () => void;
 }
 
@@ -29,9 +35,28 @@ export function CloudSyncPanel({
   saveSuccess,
   pageCount,
   isGenerating,
+  cloudDocCount,
+  docLimit,
+  upgradeUrl,
   onSaveToCloud,
 }: CloudSyncPanelProps) {
   if (!isSignedIn || !isCloudReady) return null;
+
+  const atDocLimit = cloudDocCount >= docLimit;
+
+  if (atDocLimit) {
+    return (
+      <a
+        href={upgradeUrl}
+        className="inline-flex items-center gap-2 rounded-full border border-amber-500/50 bg-amber-900/20 px-5 py-3 text-sm font-semibold text-amber-400 transition hover:bg-amber-900/40 hover:text-amber-300 active:scale-95"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
+        </svg>
+        Upgrade to Pro for unlimited storage
+      </a>
+    );
+  }
 
   return (
     <button

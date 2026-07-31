@@ -66,6 +66,16 @@ interface LandingPageProps {
   deletingDocId: string | null;
   userEmail: string | undefined;
   userName: string | undefined;
+  /** Maximum cloud documents allowed (Infinity for Pro) */
+  docLimit: number;
+  /** Whether the user has a Pro subscription */
+  isPro: boolean;
+  /** URL to upgrade/pricing page */
+  upgradeUrl: string;
+  /** Whether to show the upgrade banner after OCR completion */
+  showUpgradeBanner: boolean;
+  /** Dismiss the upgrade banner */
+  onDismissUpgradeBanner: () => void;
   onOpenCamera: () => void;
   onChoosePhotos: () => void;
   onToggleMyScans: () => void;
@@ -194,6 +204,11 @@ export function LandingPage({
   deletingDocId,
   userEmail,
   userName,
+  docLimit,
+  isPro,
+  upgradeUrl,
+  showUpgradeBanner,
+  onDismissUpgradeBanner,
   onOpenCamera,
   onChoosePhotos,
   onToggleMyScans,
@@ -388,12 +403,46 @@ export function LandingPage({
                 scans={savedDocs}
                 loading={loadingDocs}
                 deletingDocId={deletingDocId}
+                docLimit={docLimit}
+                isPro={isPro}
+                upgradeUrl={upgradeUrl}
                 onDownload={onDownloadDoc}
                 onDelete={onDeleteDoc}
                 onClose={onCloseMyScans}
                 onCategoryChange={onCategoryChange}
               />
             )}
+          </div>
+        )}
+
+        {/* Upgrade banner after OCR completion */}
+        {showUpgradeBanner && !isPro && (
+          <div className="relative z-10 mt-8 w-full max-w-md animate-fade-in">
+            <div className="flex items-center gap-3 rounded-xl border border-indigo-500/30 bg-indigo-950/40 px-4 py-3">
+              <span className="text-xl">✨</span>
+              <div className="flex-1 text-left">
+                <p className="text-sm font-medium text-indigo-300">
+                  Upgrade to Pro for AI-powered categorization and unlimited storage
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/pricing"
+                  className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+                >
+                  Upgrade
+                </Link>
+                <button
+                  onClick={onDismissUpgradeBanner}
+                  className="rounded p-1 text-gray-500 transition hover:text-gray-300"
+                  title="Dismiss"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -425,6 +474,9 @@ export function LandingPage({
         </Link>
         <Link to="/about" className="transition hover:text-gray-400">
           About
+        </Link>
+        <Link to="/pricing" className="transition hover:text-indigo-400">
+          Pricing
         </Link>
       </footer>
     </div>
