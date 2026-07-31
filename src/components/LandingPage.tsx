@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { SignInButton, SignUpButton, UserButton } from "@clerk/tanstack-start";
+import { trackEvent } from "../analytics";
 import { MyScans } from "./MyScans";
 import type { CloudDocument } from "../cloudStorage";
 
@@ -178,12 +179,18 @@ export function LandingPage({
             ) : (
               <div className="flex items-center gap-2">
                 <SignInButton mode="modal">
-                  <button className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white">
+                  <button
+                    onClick={() => trackEvent("sign-in")}
+                    className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white"
+                  >
                     Sign in
                   </button>
                 </SignInButton>
                 <SignUpButton mode="modal">
-                  <button className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500">
+                  <button
+                    onClick={() => trackEvent("sign-up")}
+                    className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500"
+                  >
                     Sign up
                   </button>
                 </SignUpButton>
@@ -280,7 +287,10 @@ export function LandingPage({
         {authLoaded && cloudConfigured && !isSignedIn && (
           <p className="relative z-10 mt-6 text-xs text-gray-500">
             <SignInButton mode="modal">
-              <button className="underline hover:text-gray-300 transition">
+              <button
+                onClick={() => trackEvent("sign-in")}
+                className="underline hover:text-gray-300 transition"
+              >
                 Sign in to save your scans to the cloud
               </button>
             </SignInButton>

@@ -47,12 +47,13 @@ function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white">No tracking, no ads</h2>
+            <h2 className="text-xl font-semibold text-white">Privacy-first analytics</h2>
             <p className="mt-3">
-              We don't use any analytics services, tracking pixels, or advertising
-              networks. We don't collect usage data, page views, or any other metrics.
-              We don't have cookies beyond what's strictly necessary for authentication
-              (and only if you choose to sign in).
+              We use{" "}
+              <a href="https://plausible.io" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">Plausible</a>
+              , a privacy-first analytics tool that doesn't use cookies and never
+              collects personal data. It helps us understand how many people use
+              DocSnap and which features are most useful — nothing more.
             </p>
           </section>
 

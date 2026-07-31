@@ -10,6 +10,7 @@ import { usePages } from "../hooks/usePages";
 import { useOCR } from "../hooks/useOCR";
 import { useCloudSync } from "../hooks/useCloudSync";
 import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
+import { trackEvent } from "../analytics";
 import { CameraView } from "../components/CameraView";
 import { PreviewScreen } from "../components/PreviewScreen";
 import { OCRProgress } from "../components/OCRProgress";
@@ -65,6 +66,7 @@ function Home() {
 
   // ── Camera orchestration ──
   const startCamera = useCallback(async () => {
+    trackEvent("open-camera");
     setErrorMessage(""); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
     capturedImageDataRef.current = null;
@@ -76,6 +78,7 @@ function Home() {
 
   const capture = useCallback(() => {
     const result = captureFrame(); if (!result) return;
+    trackEvent("capture-photo", { source: "camera" });
     vibrate(10); capturedImageDataRef.current = result.imageData;
     setCapturedImage(result.dataUrl); setShowCaptureFlash(true);
     setTimeout(() => setShowCaptureFlash(false), 350);
@@ -159,7 +162,10 @@ function Home() {
   }, [capturedImage, processedImage, currentFilter, addPage]);
 
   // ── OCR flow ──
-  const startOCR = useCallback(() => { vibrate(12); if (!capturedImage) return; setOcrPagesForProcessing(buildAllPages()); setState("ocr"); }, [capturedImage, buildAllPages]);
+  const startOCR = useCallback(() => { vibrate(12); if (!capturedImage) return;
+    const allPages = buildAllPages();
+    trackEvent("generate-pdf", { pages: allPages.length, ocr: ocrEnabled, filter: currentFilter });
+    setOcrPagesForProcessing(allPages); setState("ocr"); }, [capturedImage, buildAllPages, currentFilter]);
 
   useEffect(() => {
     if (state !== "ocr" || !ocrPagesForProcessing) return;
@@ -184,6 +190,7 @@ function Home() {
     vibrate(12); if (!capturedImage || !isSignedIn || !user?.id) return; setIsGenerating(true);
     try {
       const allPages = buildAllPages();
+      trackEvent("save-to-cloud", { pages: allPages.length });
       const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[] = [];
       for (const page of allPages) { const src = getSourceForFilter(page.original, page.processed, page.filter); const imgUrl = await applyFilter(src, page.filter); const img = new Image(); await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("Failed")); img.src = imgUrl; }); pageEntries.push({ imageUrl: imgUrl, imgNaturalWidth: img.naturalWidth, imgNaturalHeight: img.naturalHeight }); }
       const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
@@ -204,7 +211,9 @@ function Home() {
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files; if (!files?.length) return;
-    const arr = Array.from(files); setImportProgress({ current: 0, total: arr.length }); setState("processing");
+    const arr = Array.from(files);
+    trackEvent("import-photo", { count: arr.length });
+    setImportProgress({ current: 0, total: arr.length }); setState("processing");
     const newPages: PageEntry[] = [];
     for (let i = 0; i < arr.length; i++) { setImportProgress({ current: i + 1, total: arr.length }); await new Promise(r => setTimeout(r, 0)); try { newPages.push(await processFile(arr[i])); } catch (err) { console.error("Failed:", (arr[i] as File).name, err); } }
     setImportProgress(null);
@@ -257,7 +266,7 @@ function Home() {
       <canvas ref={canvasRef} className="hidden" />
       <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
 
-      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} onOpenCamera={startCamera} onChoosePhotos={() => fileInputRef.current?.click()} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} />}
+      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} onOpenCamera={startCamera} onChoosePhotos={() => { trackEvent("choose-from-photos"); fileInputRef.current?.click(); }} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} />}
 
       {state === "active" && <CameraView videoRefCallback={attachVideo} showCaptureFlash={showCaptureFlash} savedPageCount={pages.length} onCapture={capture} isDesktop={isDesktop} />}
 

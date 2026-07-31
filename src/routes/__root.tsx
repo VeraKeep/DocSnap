@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import appCss from "~/styles/app.css?url";
 
 const clerkPubKey = process.env.CLERK_PUBLISHABLE_KEY ?? "";
+const plausibleDomain = process.env.PLAUSIBLE_DOMAIN ?? "";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -83,6 +84,13 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        {plausibleDomain ? (
+          <script
+            defer
+            data-domain={plausibleDomain}
+            src="https://plausible.io/js/script.js"
+          />
+        ) : null}
       </head>
       <body>
         {/* Splash screen — hidden once React hydrates */}
