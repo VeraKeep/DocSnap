@@ -1,5 +1,5 @@
 import { createRouteHandler } from "uploadthing/server";
-import { uploadRouter } from "../uploadthing";
+import { uploadRouter } from "../../uploadthing";
 
 const handler = createRouteHandler({
   router: uploadRouter,
