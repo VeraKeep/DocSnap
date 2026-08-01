@@ -38,6 +38,8 @@ interface PreviewScreenProps {
   onRetake: () => void;
   onAddFromCamera: () => void;
   onAddFromPhotos: () => void;
+  documentName: string;
+  onDocumentNameChange: (name: string) => void;
   onSaveToCloud: () => void;
   onDone: () => void;
   isDesktop: boolean;
@@ -69,6 +71,8 @@ export function PreviewScreen({
   onRetake,
   onAddFromCamera,
   onAddFromPhotos,
+  documentName,
+  onDocumentNameChange,
   onSaveToCloud,
   onDone,
   isDesktop,
@@ -133,6 +137,8 @@ export function PreviewScreen({
         onRetake={onRetake}
         onAddFromCamera={onAddFromCamera}
         onAddFromPhotos={onAddFromPhotos}
+        documentName={documentName}
+        onDocumentNameChange={onDocumentNameChange}
         onSaveToCloud={onSaveToCloud}
         onDone={onDone}
       />

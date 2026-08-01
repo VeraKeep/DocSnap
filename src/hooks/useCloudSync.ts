@@ -42,14 +42,14 @@ export function useCloudSync() {
 
   /** Save a PDF blob to cloud storage. Returns true on success. */
   const saveToCloud = useCallback(
-    async (pdfBlob: Blob, pageCount: number, autoCategory?: string, ocrText?: string): Promise<boolean> => {
+    async (pdfBlob: Blob, pageCount: number, name: string, autoCategory?: string, ocrText?: string): Promise<boolean> => {
       if (!isSignedIn || !user?.id) return false;
 
       setIsSaving(true);
       setSaveSuccess(false);
 
       try {
-        const fileName = `document-${Date.now()}.pdf`;
+        const fileName = name.endsWith(".pdf") ? name : `${name}.pdf`;
 
         const uploadResult = await uploadPDFBlob(pdfBlob, fileName);
         if (!uploadResult) {
