@@ -50,12 +50,13 @@ export function PDFActions({
   const disabled = isGenerating || isSaving;
   const totalPages = pageCount + 1; // saved pages + current capture
   const atDocLimit = cloudDocCount >= docLimit;
+  const isCustomName = documentName.trim().length > 0 && !/^Scan - [A-Za-z]+ \d{1,2}, \d{4}$/.test(documentName.trim());
 
   return (
     <div className="bg-gray-950 px-4 py-5 safe-bottom">
       <div className="mx-auto mb-4 w-full max-w-md text-left">
         <label htmlFor="document-name" className="mb-1.5 block text-sm font-medium text-gray-300">Name your document</label>
-        <input id="document-name" type="text" value={documentName} onChange={(e) => onDocumentNameChange(e.target.value)} placeholder="2026 Taxes.pdf or Car Insurance.pdf" disabled={disabled} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50" />
+        <input id="document-name" type="text" value={documentName} onChange={(e) => onDocumentNameChange(e.target.value)} placeholder="2026 Taxes.pdf or Car Insurance.pdf" disabled={disabled} aria-label="Document filename" className={`w-full rounded-lg border bg-gray-800 px-3.5 py-3 text-base text-white shadow-inner outline-none transition placeholder:text-gray-500 disabled:opacity-50 ${isCustomName ? "border-emerald-500/70" : "border-gray-600"} focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40`} />
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3">
       <button

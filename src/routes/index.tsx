@@ -34,6 +34,10 @@ function createDefaultCorners(width: number, height: number): Quad {
 
 function vibrate(ms: number) { try { navigator.vibrate?.(ms); } catch { /* ignore */ } }
 
+function defaultDocumentName() {
+  return `Scan - ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
+}
+
 const homeStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
@@ -94,7 +98,7 @@ function Home() {
   const [ocrPagesForProcessing, setOcrPagesForProcessing] = useState<PageEntry[] | null>(null);
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
-  const [documentName, setDocumentName] = useState(() => new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }));
+  const [documentName, setDocumentName] = useState(defaultDocumentName);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -111,7 +115,6 @@ function Home() {
     trackEvent("open-camera");
     setErrorMessage(""); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
-    setDocumentName(new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }));
     capturedImageDataRef.current = null;
     setShowOnboarding(false);
     const stream = await startCameraBase();
@@ -139,12 +142,28 @@ function Home() {
   const retake = useCallback(() => {
     vibrate(10); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
+    setDocumentName(defaultDocumentName());
     capturedImageDataRef.current = null; startCamera();
   }, [startCamera]);
 
   const closeCamera = useCallback(() => {
     stopCamera(); setState("idle");
   }, [stopCamera]);
+
+  // A landing-page action starts a brand-new document; adding pages and
+  // retaking an in-progress scan use their own name-preservation/reset rules.
+  const startFreshScan = useCallback(() => {
+    setDocumentName(defaultDocumentName());
+    startCamera();
+  }, [startCamera]);
+
+  const startFreshPhotoImport = useCallback(() => {
+    setDocumentName(defaultDocumentName());
+    trackEvent("choose-from-photos");
+    setShowOnboarding(false);
+    try { localStorage.setItem("docsnap-onboarding-seen", "true"); } catch { /* ignore */ }
+    fileInputRef.current?.click();
+  }, []);
 
   // ── Crop editor ──
   const applyManualCrop = useCallback(() => {
@@ -187,7 +206,7 @@ function Home() {
   }, [resetPages]);
 
   const normalizedDocumentName = useCallback(() => {
-    const trimmed = documentName.trim() || new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+    const trimmed = documentName.trim() || defaultDocumentName();
     return /\.pdf$/i.test(trimmed) ? trimmed : `${trimmed}.pdf`;
   }, [documentName]);
 
@@ -347,7 +366,7 @@ function Home() {
       <canvas ref={canvasRef} className="hidden" />
       <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
 
-      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} docLimit={docLimit} isPro={isPro} upgradeUrl={upgradeUrl} showUpgradeBanner={showUpgradeBanner} onDismissUpgradeBanner={() => setShowUpgradeBanner(false)} onOpenCamera={startCamera} onChoosePhotos={() => { trackEvent("choose-from-photos"); setShowOnboarding(false); try { localStorage.setItem("docsnap-onboarding-seen", "true"); } catch { /* ignore */ } fileInputRef.current?.click(); }} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} onCategoryChange={handleCategoryChange} />}
+      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} docLimit={docLimit} isPro={isPro} upgradeUrl={upgradeUrl} showUpgradeBanner={showUpgradeBanner} onDismissUpgradeBanner={() => setShowUpgradeBanner(false)} onOpenCamera={startFreshScan} onChoosePhotos={startFreshPhotoImport} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} onCategoryChange={handleCategoryChange} />}
 
       {state === "active" && <CameraView videoRefCallback={attachVideo} showCaptureFlash={showCaptureFlash} savedPageCount={pages.length} onCapture={capture} isDesktop={isDesktop} />}
 
