@@ -21,6 +21,7 @@ import { OCRProgress } from "../components/OCRProgress";
 import { LandingPage } from "../components/LandingPage";
 import { ProcessingScreen } from "../components/ProcessingScreen";
 import { ErrorScreen } from "../components/ErrorScreen";
+import { OnboardingModal } from "../components/OnboardingModal";
 
 type AppState = "idle" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "error";
 type CornerName = keyof Quad;
@@ -93,6 +94,8 @@ function Home() {
   const [ocrPagesForProcessing, setOcrPagesForProcessing] = useState<PageEntry[] | null>(null);
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
+  const [documentName, setDocumentName] = useState(() => new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }));
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
@@ -108,7 +111,9 @@ function Home() {
     trackEvent("open-camera");
     setErrorMessage(""); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
+    setDocumentName(new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }));
     capturedImageDataRef.current = null;
+    setShowOnboarding(false);
     const stream = await startCameraBase();
     if (stream) setState("active");
   }, [startCameraBase]);
@@ -181,11 +186,16 @@ function Home() {
     setOcrPagesForProcessing(null); capturedImageDataRef.current = null; setState("idle");
   }, [resetPages]);
 
+  const normalizedDocumentName = useCallback(() => {
+    const trimmed = documentName.trim() || new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+    return /\.pdf$/i.test(trimmed) ? trimmed : `${trimmed}.pdf`;
+  }, [documentName]);
+
   const downloadBlob = useCallback((blob: Blob) => {
     const url = URL.createObjectURL(blob), a = document.createElement("a");
-    a.href = url; a.download = "document.pdf"; document.body.appendChild(a);
+    a.href = url; a.download = normalizedDocumentName(); document.body.appendChild(a);
     a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  }, []);
+  }, [normalizedDocumentName]);
 
   const addFromCamera = useCallback(() => {
     vibrate(10); if (!capturedImage) return;
@@ -251,10 +261,10 @@ function Home() {
         console.warn("OCR extraction failed during cloud save:", ocrErr);
       }
 
-      await saveToCloud(blob, allPages.length, categorizationResult?.category || "", ocrText);
+      await saveToCloud(blob, allPages.length, normalizedDocumentName(), categorizationResult?.category || "", ocrText);
     } catch (err) { console.error("Save failed:", err); setErrorMessage("Couldn't save to cloud. Check your connection and try again."); setState("error"); }
     finally { setIsGenerating(false); }
-  }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult]);
+  }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult, normalizedDocumentName]);
 
   // ── File import ──
   async function processFile(file: File): Promise<PageEntry> {
@@ -304,6 +314,12 @@ function Home() {
   useEffect(() => () => stopCamera(), [stopCamera]);
 
   useEffect(() => {
+    if (state === "idle") {
+      try { if (localStorage.getItem("docsnap-onboarding-seen") !== "true") setShowOnboarding(true); } catch { /* storage unavailable: still show */ setShowOnboarding(true); }
+    }
+  }, [state]);
+
+  useEffect(() => {
     if (state !== "preview" || !capturedImage) { setDisplayImage(null); return; }
     let cancelled = false; setIsComputingFilter(true);
     const src = getSourceForFilter(capturedImage, processedImage, currentFilter);
@@ -331,7 +347,7 @@ function Home() {
       <canvas ref={canvasRef} className="hidden" />
       <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
 
-      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} docLimit={docLimit} isPro={isPro} upgradeUrl={upgradeUrl} showUpgradeBanner={showUpgradeBanner} onDismissUpgradeBanner={() => setShowUpgradeBanner(false)} onOpenCamera={startCamera} onChoosePhotos={() => { trackEvent("choose-from-photos"); fileInputRef.current?.click(); }} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} onCategoryChange={handleCategoryChange} />}
+      {state === "idle" && <LandingPage authLoaded={authLoaded} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} showMyScans={showMyScans} savedDocs={savedDocs} loadingDocs={loadingDocs} deletingDocId={deletingDocId} userEmail={user?.primaryEmailAddress?.emailAddress} userName={user?.fullName ?? undefined} docLimit={docLimit} isPro={isPro} upgradeUrl={upgradeUrl} showUpgradeBanner={showUpgradeBanner} onDismissUpgradeBanner={() => setShowUpgradeBanner(false)} onOpenCamera={startCamera} onChoosePhotos={() => { trackEvent("choose-from-photos"); setShowOnboarding(false); try { localStorage.setItem("docsnap-onboarding-seen", "true"); } catch { /* ignore */ } fileInputRef.current?.click(); }} onToggleMyScans={() => setShowMyScans(true)} onCloseMyScans={() => setShowMyScans(false)} onDownloadDoc={downloadSavedDoc} onDeleteDoc={deleteScan} onCategoryChange={handleCategoryChange} />}
 
       {state === "active" && <CameraView videoRefCallback={attachVideo} showCaptureFlash={showCaptureFlash} savedPageCount={pages.length} onCapture={capture} isDesktop={isDesktop} />}
 
@@ -345,11 +361,13 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
+      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}
+
+      {showOnboarding && state === "idle" && <OnboardingModal onDismiss={() => setShowOnboarding(false)} />}
 
       {/* Keyboard shortcuts hint (desktop only, subtle) */}
       {isDesktop && (

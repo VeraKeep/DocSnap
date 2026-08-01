@@ -14,6 +14,8 @@ interface PDFActionsProps {
   onRetake: () => void;
   onAddFromCamera: () => void;
   onAddFromPhotos: () => void;
+  documentName: string;
+  onDocumentNameChange: (name: string) => void;
   onSaveToCloud: () => void;
   onDone: () => void;
 }
@@ -40,6 +42,8 @@ export function PDFActions({
   onRetake,
   onAddFromCamera,
   onAddFromPhotos,
+  documentName,
+  onDocumentNameChange,
   onSaveToCloud,
   onDone,
 }: PDFActionsProps) {
@@ -48,7 +52,12 @@ export function PDFActions({
   const atDocLimit = cloudDocCount >= docLimit;
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-3 bg-gray-950 px-4 py-5 safe-bottom">
+    <div className="bg-gray-950 px-4 py-5 safe-bottom">
+      <div className="mx-auto mb-4 w-full max-w-md text-left">
+        <label htmlFor="document-name" className="mb-1.5 block text-sm font-medium text-gray-300">Name your document</label>
+        <input id="document-name" type="text" value={documentName} onChange={(e) => onDocumentNameChange(e.target.value)} placeholder="2026 Taxes.pdf or Car Insurance.pdf" disabled={disabled} className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50" />
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-3">
       <button
         onClick={() => { vibrate(10); onRetake(); }}
         disabled={disabled}
@@ -128,6 +137,7 @@ export function PDFActions({
           `Done (${totalPages} ${totalPages === 1 ? "page" : "pages"})`
         )}
       </button>
+      </div>
     </div>
   );
 }
