@@ -1,11 +1,11 @@
 {
-  "name": "DocSnap",
+  "name": "DocSnap — Document Scanner",
   "short_name": "DocSnap",
-  "description": "Scan documents to PDF — instantly, no account needed",
-  "start_url": "/",
+  "description": "The privacy-first document scanner",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
   "display": "standalone",
-  "theme_color": "#4f46e5",
-  "background_color": "#030712",
+  "start_url": "/",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

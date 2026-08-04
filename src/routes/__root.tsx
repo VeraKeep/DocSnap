@@ -8,6 +8,7 @@ import { ClerkProvider } from "@clerk/tanstack-start";
 import { useEffect, type ReactNode } from "react";
 
 import { RouteErrorBoundary } from "~/components/RouteErrorBoundary";
+import { PwaRuntime } from "~/components/PwaRuntime";
 import { installGlobalErrorHandlers } from "~/lib/errorLogger";
 import appCss from "~/styles/app.css?url";
 
@@ -142,6 +143,7 @@ function RootDocument({ children }: { children: ReactNode }) {
           }}
         />
         {children}
+        <PwaRuntime />
         <Scripts />
       </body>
     </html>
