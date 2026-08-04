@@ -6,13 +6,11 @@ import { useSubscription } from "../hooks/useSubscription";
 export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
-      { title: "Your Profile — DocSnap" },
-      {
-        name: "description",
-        content: "Manage your DocSnap profile, plan, and cloud storage.",
-      },
+      { title: 'Your Profile — DocSnap' },
+      { name: "description", content: 'Manage your DocSnap account — view storage usage, subscription plan, synced documents, and secure account settings.' },
     ],
-  }),
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/profile" }],
+  }) ,
   component: ProfilePage,
 });
 
@@ -31,7 +29,7 @@ function ProfilePage() {
   const { user, isLoaded } = useUser();
   const clerk = useClerk();
   const { myScans, loadingDocs } = useCloudSync();
-  const { isPro, isLoading: subscriptionLoading, upgradeUrl } = useSubscription();
+  const { isPro, isLoading: subscriptionLoading, upgradeUrl, portalUrl } = useSubscription();
 
   const name = user?.fullName || user?.primaryEmailAddress?.emailAddress || "DocSnap user";
   const initials = name
@@ -95,6 +93,7 @@ function ProfilePage() {
                   </div>
                 </div>
                 {!subscriptionLoading && !isPro && <Link to={upgradeUrl} className="shrink-0 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold transition hover:bg-indigo-500">Upgrade</Link>}
+                {!subscriptionLoading && isPro && (portalUrl ? <a href={portalUrl} className="shrink-0 rounded-full border border-indigo-500 px-4 py-2 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/10">Manage Subscription</a> : <span title="Billing portal coming soon" className="shrink-0 cursor-not-allowed rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-500">Manage Subscription</span>)}
               </div>
               <div className="mt-6 border-t border-gray-800 pt-5">
                 <div className="flex items-center justify-between text-sm">

@@ -61,7 +61,9 @@ export const Route = createFileRoute("/")({
       {
         title: "DocSnap — Scan documents to PDF",
       },
+      { name: "description", content: "Scan documents to PDF instantly — no account, no upload, no Adobe license. Everything runs locally in your browser." },
     ],
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/" }],
     scripts: [
       {
         type: "application/ld+json",

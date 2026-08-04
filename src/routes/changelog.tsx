@@ -2,8 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/changelog")({
   head: () => ({
-    meta: [{ title: "Changelog — DocSnap" }],
-  }),
+    meta: [
+      { title: 'Changelog — DocSnap' },
+      { name: "description", content: "See what's new in DocSnap — product updates, features, fixes, and improvements to the browser-based scanner." },
+    ],
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/changelog" }],
+  }) ,
   component: Changelog,
 });
 

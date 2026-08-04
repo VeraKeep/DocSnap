@@ -2,8 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/terms")({
   head: () => ({
-    meta: [{ title: "Terms of Service — DocSnap" }],
-  }),
+    meta: [
+      { title: 'Terms of Service — DocSnap' },
+      { name: "description", content: 'Plain-English terms of service for DocSnap — you own your documents, and we provide a private, browser-based scanner.' },
+    ],
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/terms" }],
+  }) ,
   component: Terms,
 });
 
