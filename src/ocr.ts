@@ -7,8 +7,20 @@
  * behind a feature flag / paywall check without changing any call sites.
  */
 
-import Tesseract from "tesseract.js";
-import type { Worker, RecognizeResult, Page, Block, Paragraph, Line, Word } from "tesseract.js";
+import type { Worker, RecognizeResult, Page } from "tesseract.js";
+
+// Keep the OCR engine out of the initial application bundle. Tesseract is only
+// needed after the user enables OCR for a scan, so load it on first use and
+// share that import promise with concurrent calls.
+type TesseractModule = typeof import("tesseract.js");
+let tesseractModulePromise: Promise<TesseractModule> | null = null;
+
+async function loadTesseract(): Promise<TesseractModule> {
+  if (!tesseractModulePromise) {
+    tesseractModulePromise = import("tesseract.js");
+  }
+  return tesseractModulePromise;
+}
 
 // ── Monetization seam ──────────────────────────────────────────────
 // Set to false to disable OCR (e.g., behind a paywall).
@@ -46,6 +58,7 @@ export async function initWorker(
   if (workerInitPromise) return workerInitPromise;
 
   workerInitPromise = (async () => {
+    const Tesseract = await loadTesseract();
     const w = await Tesseract.createWorker("eng", 1, {
       logger: logger || (() => {}),
     });
