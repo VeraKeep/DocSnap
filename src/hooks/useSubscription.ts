@@ -10,7 +10,7 @@
 
 import { useMemo, useEffect, useState } from "react";
 import { useUser } from "@clerk/tanstack-start";
-import { getSubscription, syncUser } from "../subscription";
+import { getPortalUrl, getSubscription, syncUser } from "../subscription";
 
 export interface SubscriptionState {
   /** Whether the user has an active Pro subscription */
@@ -26,14 +26,12 @@ export interface SubscriptionState {
 }
 
 const FREE_DOC_LIMIT = 25;
-const portalUrl = process.env.STRIPE_CUSTOMER_PORTAL_URL ?? null;
 
 /** Default state used when not signed in or while loading. */
-const FREE_STATE: SubscriptionState = {
+const FREE_STATE: Omit<SubscriptionState, "portalUrl"> = {
   isPro: false,
   docLimit: FREE_DOC_LIMIT,
   upgradeUrl: "/pricing",
-  portalUrl,
   isLoading: false,
 };
 
@@ -51,6 +49,23 @@ export function useSubscription(): SubscriptionState {
     expiresAt: string | null;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [portalUrl, setPortalUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getPortalUrl()
+      .then((url) => {
+        if (!cancelled) setPortalUrl(url);
+      })
+      .catch((err) => {
+        console.error("[useSubscription] Failed to fetch portal URL:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clerkUserId = clerkLoaded ? user?.id ?? null : null;
   const email = clerkLoaded ? user?.primaryEmailAddress?.emailAddress ?? null : null;
@@ -97,6 +112,7 @@ export function useSubscription(): SubscriptionState {
     if (!clerkUserId || !dbStatus) {
       return {
         ...FREE_STATE,
+        portalUrl,
         isLoading: loading || (clerkLoaded && !!clerkUserId && dbStatus === null),
       };
     }
@@ -108,5 +124,5 @@ export function useSubscription(): SubscriptionState {
       portalUrl,
       isLoading: false,
     };
-  }, [clerkUserId, dbStatus, loading, clerkLoaded]);
+  }, [clerkUserId, dbStatus, loading, clerkLoaded, portalUrl]);
 }
