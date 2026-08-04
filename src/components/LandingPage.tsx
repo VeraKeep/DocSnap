@@ -483,6 +483,12 @@ export function LandingPage({
         <Link to="/changelog" className="transition hover:text-gray-400">
           Changelog
         </Link>
+        <Link to="/roadmap" className="transition hover:text-gray-400">
+          Roadmap
+        </Link>
+        <Link to="/status" className="transition hover:text-gray-400">
+          Status
+        </Link>
         <Link to="/about" className="transition hover:text-gray-400">
           About
         </Link>
