@@ -2,8 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/privacy")({
   head: () => ({
-    meta: [{ title: "Privacy — DocSnap" }],
-  }),
+    meta: [
+      { title: 'Privacy — DocSnap' },
+      { name: "description", content: 'DocSnap processes all documents locally in your browser — nothing is uploaded unless you choose cloud sync. Read our privacy policy.' },
+    ],
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/privacy" }],
+  }) ,
   component: Privacy,
 });
 

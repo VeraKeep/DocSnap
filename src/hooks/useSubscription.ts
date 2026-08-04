@@ -19,17 +19,21 @@ export interface SubscriptionState {
   docLimit: number;
   /** URL to the upgrade/pricing page */
   upgradeUrl: string;
+  /** Stripe Customer Portal URL, when configured */
+  portalUrl: string | null;
   /** True while the subscription status is being fetched */
   isLoading: boolean;
 }
 
 const FREE_DOC_LIMIT = 25;
+const portalUrl = process.env.STRIPE_CUSTOMER_PORTAL_URL ?? null;
 
 /** Default state used when not signed in or while loading. */
 const FREE_STATE: SubscriptionState = {
   isPro: false,
   docLimit: FREE_DOC_LIMIT,
   upgradeUrl: "/pricing",
+  portalUrl,
   isLoading: false,
 };
 
@@ -101,6 +105,7 @@ export function useSubscription(): SubscriptionState {
       isPro: dbStatus.isPro,
       docLimit: dbStatus.isPro ? Infinity : FREE_DOC_LIMIT,
       upgradeUrl: "/pricing",
+      portalUrl,
       isLoading: false,
     };
   }, [clerkUserId, dbStatus, loading, clerkLoaded]);

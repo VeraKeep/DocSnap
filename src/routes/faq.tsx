@@ -3,8 +3,12 @@ import { useState } from "react";
 
 export const Route = createFileRoute("/faq")({
   head: () => ({
-    meta: [{ title: "FAQ — DocSnap" }],
-  }),
+    meta: [
+      { title: 'FAQ — DocSnap' },
+      { name: "description", content: 'Frequently asked questions about DocSnap — document scanning, OCR, cloud sync, pricing, privacy, and using the app safely.' },
+    ],
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/faq" }],
+  }) ,
   component: FAQ,
 });
 

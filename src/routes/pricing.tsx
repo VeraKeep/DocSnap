@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useSubscription } from "../hooks/useSubscription";
 
 const PRO_MONTHLY_URL = "https://buy.stripe.com/eVq3cv8yNggzbAw7vTfw400";
 const PRO_ANNUAL_URL = "https://buy.stripe.com/4gM00jbKZggzcEA9E1fw401";
@@ -6,16 +7,11 @@ const PRO_ANNUAL_URL = "https://buy.stripe.com/4gM00jbKZggzcEA9E1fw401";
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      {
-        title: "Pricing — DocSnap",
-      },
-      {
-        name: "description",
-        content:
-          "DocSnap pricing: Free tier with unlimited scanning, OCR, and 25 cloud documents. Pro plan with unlimited cloud storage, AI features, and more.",
-      },
+      { title: 'Pricing — DocSnap' },
+      { name: "description", content: 'DocSnap is free to use. Pro plan ($5/mo) adds unlimited cloud storage, password-protected PDFs, and AI-powered features.' },
     ],
-  }),
+    links: [{ rel: "canonical", href: "https://docsnapapp.com/pricing" }],
+  }) ,
   component: PricingPage,
 });
 
@@ -35,6 +31,7 @@ function CheckIcon() {
 }
 
 function PricingPage() {
+  const { isPro, portalUrl } = useSubscription();
   return (
     <main className="flex min-h-screen flex-col bg-gray-950 text-white">
       {/* Header / nav */}
@@ -149,6 +146,8 @@ function PricingPage() {
               or $39.99/year (~$3.33/mo)
             </p>
           </div>
+
+          {isPro && (portalUrl ? <a href={portalUrl} className="mb-3 inline-flex w-full items-center justify-center rounded-full border border-indigo-500 px-6 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/10">Manage Subscription</a> : <span title="Billing portal coming soon" className="mb-3 inline-flex w-full cursor-not-allowed items-center justify-center rounded-full border border-gray-700 px-6 py-3 text-sm font-semibold text-gray-500">Manage Subscription</span>)}
 
           <div className="mt-6 flex flex-col gap-3">
             <a
