@@ -5,6 +5,51 @@ import { defineConfig } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        // Keep framework and optional integrations out of route/application
+        // chunks. This also gives the browser stable cache boundaries for
+        // dependencies that change at a different cadence than the app.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            if (
+              id.includes("/src/hooks/useCloudSync") ||
+              id.includes("/src/cloudStorage") ||
+              id.includes("/src/cloud")
+            ) {
+              return "vendor-upload";
+            }
+            return undefined;
+          }
+
+          if (id.includes("html2canvas")) return "vendor-html2canvas";
+          if (id.includes("dompurify")) return "vendor-dompurify";
+          if (id.includes("tesseract.js")) return "vendor-tesseract";
+          if (id.includes("/jspdf/")) return "vendor-jspdf";
+
+          if (id.includes("/react/") || id.includes("/react-dom/")) {
+            return "vendor-react";
+          }
+          if (id.includes("/@clerk/") || id.includes("/clerk/") || id.includes("clerk")) {
+            return "vendor-clerk";
+          }
+          if (
+            id.includes("/@tanstack/react-router/") ||
+            id.includes("/@tanstack/router-") ||
+            id.includes("/@tanstack/start-")
+          ) {
+            return "vendor-router";
+          }
+          if (id.includes("/@uploadthing/") || id.includes("/uploadthing/")) {
+            return "vendor-upload";
+          }
+
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     host: true,

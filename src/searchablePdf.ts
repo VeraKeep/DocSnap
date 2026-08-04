@@ -10,8 +10,15 @@
  * but doesn't visually overlay the document.
  */
 
-import { jsPDF } from "jspdf";
 import type { OCRWord } from "./ocr";
+
+// PDF generation is only needed after a scan; defer the sizeable jsPDF engine
+// until the user downloads a document.
+let jsPdfModulePromise: Promise<typeof import("jspdf")> | null = null;
+async function loadJsPDF(): Promise<typeof import("jspdf")> {
+  if (!jsPdfModulePromise) jsPdfModulePromise = import("jspdf");
+  return jsPdfModulePromise;
+}
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -43,6 +50,7 @@ export async function generateSearchablePDF(
   pages: PDFPageEntry[],
   options: PDFGenerationOptions = {},
 ): Promise<Blob> {
+  const { jsPDF } = await loadJsPDF();
   const pdf = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -123,6 +131,7 @@ export async function generatePlainPDF(
   pages: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[],
   options: PDFGenerationOptions = {},
 ): Promise<Blob> {
+  const { jsPDF } = await loadJsPDF();
   const pdf = new jsPDF({
     orientation: "portrait",
     unit: "mm",
