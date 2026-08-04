@@ -290,9 +290,8 @@ export function LandingPage({
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
             DocSnap
           </h1>
-          <p className="max-w-sm text-gray-400 leading-relaxed">
-            Snap a document with your camera and download it as a PDF —
-            instantly, no account needed.
+          <p className="mx-auto max-w-md text-gray-400 leading-relaxed">
+            The privacy-first document scanner that keeps your important documents organized for life.
           </p>
         </div>
 
@@ -454,6 +453,18 @@ export function LandingPage({
           </p>
         )}
       </div>
+
+      {/* Quiet, always-available feedback link */}
+      <Link
+        to="/contact"
+        aria-label="Send feedback"
+        className="fixed bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-gray-700/80 bg-gray-900/95 px-3 py-2 text-xs font-medium text-gray-400 shadow-lg shadow-black/20 backdrop-blur transition hover:border-gray-500 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/70 focus:ring-offset-2 focus:ring-offset-gray-950 sm:bottom-6 sm:right-6"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 9.75h6.75m-6.75 3h4.5m-8.25 4.5 1.685-1.685A2.25 2.25 0 0 1 8.15 14.9h7.7a2.25 2.25 0 0 0 2.25-2.25V7.35A2.25 2.25 0 0 0 15.85 5.1h-7.7A2.25 2.25 0 0 0 5.9 7.35v5.3a2.25 2.25 0 0 0 .659 1.591l-1.684 1.685Z" />
+        </svg>
+        Send feedback
+      </Link>
 
       {/* Footer */}
       <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t border-gray-800/50 py-5 text-xs text-gray-600">
