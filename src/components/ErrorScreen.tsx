@@ -1,3 +1,7 @@
+import { useEffect } from "react";
+
+import { logError } from "~/lib/errorLogger";
+
 /** Lightweight haptic feedback for mobile. */
 function vibrate(ms: number) {
   try {
@@ -47,6 +51,11 @@ interface ErrorScreenProps {
 
 export function ErrorScreen({ errorMessage, onTryAgain }: ErrorScreenProps) {
   const category = classifyError(errorMessage);
+
+  // Route errors through the shared in-app logger for visibility.
+  useEffect(() => {
+    logError(new Error(errorMessage), "scan-flow-error");
+  }, [errorMessage]);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center animate-fade-in">

@@ -5,8 +5,10 @@ import {
   createRootRoute,
 } from "@tanstack/react-router";
 import { ClerkProvider } from "@clerk/tanstack-start";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
+import { RouteErrorBoundary } from "~/components/RouteErrorBoundary";
+import { installGlobalErrorHandlers } from "~/lib/errorLogger";
 import appCss from "~/styles/app.css?url";
 
 const clerkPubKey = process.env.CLERK_PUBLISHABLE_KEY ?? "";
@@ -65,10 +67,14 @@ export const Route = createRootRoute({
     ],
   }),
   notFoundComponent: () => <div>Page not found</div>,
+  errorComponent: RouteErrorBoundary,
   component: RootComponent,
 });
 
 function RootComponent() {
+  // Install global handlers for unhandled errors/rejections (client only).
+  useEffect(() => installGlobalErrorHandlers(), []);
+
   return (
     <RootDocument>
       <Outlet />
