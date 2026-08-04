@@ -162,6 +162,11 @@ export const getSubscription = createServerFn()
     return getUserSubscription(clerkUserId);
   });
 
+/** Resolve the Stripe Customer Portal URL on the server. */
+export const getPortalUrl = createServerFn().handler(async () => {
+  return process.env.STRIPE_CUSTOMER_PORTAL_URL || null;
+});
+
 /** Create or update the user record (called on sign-in). */
 export const syncUser = createServerFn()
   .validator(
