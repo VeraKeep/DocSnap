@@ -1,7 +1,7 @@
 {
-  "name": "DocSnap — Document Scanner",
-  "short_name": "DocSnap",
-  "description": "The privacy-first document scanner",
+  "name": "DocSnap — Document Scanner by VeraKeep™",
+  "short_name": "DocSnap · VeraKeep™",
+  "description": "The privacy-first document scanner by VeraKeep™",
   "theme_color": "#0f172a",
   "background_color": "#0f172a",
   "display": "standalone",

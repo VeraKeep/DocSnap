@@ -19,7 +19,7 @@ export function OnboardingModal({ onDismiss }: OnboardingModalProps) {
       <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl shadow-black/50 sm:p-8" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-2xl shadow-lg shadow-indigo-600/25">📑</div>
-          <h2 id="onboarding-title" className="text-2xl font-bold text-white">How DocSnap Works</h2>
+          <h2 id="onboarding-title" className="text-2xl font-bold text-white">How DocSnap © 2026 Works</h2>
           <p className="mt-2 text-sm text-gray-400">Turn paper documents into polished PDFs in seconds.</p>
         </div>
         <div className="space-y-4">

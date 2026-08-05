@@ -7,8 +7,8 @@ const PRO_ANNUAL_URL = "https://buy.stripe.com/4gM00jbKZggzcEA9E1fw401";
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      { title: 'Pricing — DocSnap' },
-      { name: "description", content: 'DocSnap is free to use. Pro plan ($5/mo) adds unlimited cloud storage, password-protected PDFs, and AI-powered features.' },
+      { title: 'Pricing — DocSnap © 2026' },
+      { name: "description", content: 'DocSnap © 2026 is free to use. Pro plan ($5/mo) adds unlimited cloud storage, password-protected PDFs, and AI-powered features.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/pricing" }],
   }) ,
@@ -65,7 +65,7 @@ function PricingPage() {
               />
             </svg>
           </div>
-          DocSnap
+          DocSnap © 2026
         </Link>
         <Link
           to="/"

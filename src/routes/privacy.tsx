@@ -3,8 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: 'Privacy — DocSnap' },
-      { name: "description", content: 'DocSnap processes all documents locally in your browser — nothing is uploaded unless you choose cloud sync. Read our privacy policy.' },
+      { title: 'Privacy — DocSnap © 2026' },
+      { name: "description", content: 'DocSnap © 2026 processes all documents locally in your browser — nothing is uploaded unless you choose cloud sync. Read our privacy policy.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/privacy" }],
   }) ,
@@ -33,7 +33,7 @@ function Privacy() {
           <section>
             <h2 className="text-xl font-semibold text-white">Your documents stay on your device</h2>
             <p className="mt-3">
-              DocSnap processes everything locally in your browser. When you scan a
+              DocSnap © 2026 processes everything locally in your browser. When you scan a
               document using your camera or import an image from your device, the image
               never leaves your device — it stays right there in your browser tab. We
               don't have servers that receive or store your images.
@@ -60,7 +60,7 @@ function Privacy() {
               <a href="https://plausible.io" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">Plausible</a>
               , a privacy-first analytics tool that doesn't use cookies and never
               collects personal data. It helps us understand how many people use
-              DocSnap and which features are most useful — nothing more.
+              DocSnap © 2026 and which features are most useful — nothing more.
             </p>
           </section>
 
@@ -85,7 +85,7 @@ function Privacy() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap — everything stays on your device</span>
+        <span>DocSnap © 2026 — everything stays on your device</span>
       </footer>
     </main>
   );

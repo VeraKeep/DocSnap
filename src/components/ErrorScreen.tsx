@@ -77,7 +77,7 @@ export function ErrorScreen({ errorMessage, onTryAgain }: ErrorScreenProps) {
           </div>
           <h2 className="text-xl font-semibold">Camera access needed</h2>
           <p className="max-w-sm text-gray-400">
-            DocSnap needs camera access to scan documents. Your camera is used
+            DocSnap © 2026 needs camera access to scan documents. Your camera is used
             entirely in your browser — images never leave your device.
           </p>
 

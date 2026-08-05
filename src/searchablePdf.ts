@@ -57,9 +57,12 @@ export async function generateSearchablePDF(
     format: "a4",
   });
 
-  if (options.title) {
-    pdf.setProperties({ title: options.title });
-  }
+  pdf.setProperties({
+    ...(options.title ? { title: options.title } : {}),
+    author: "DocSnap © 2026 — VeraKeep™",
+    creator: "DocSnap by VeraKeep™",
+    subject: "Document scanned with DocSnap © 2026",
+  });
 
   const pageWidth = 210; // A4 width in mm
   const pageHeight = 297; // A4 height in mm
@@ -86,6 +89,11 @@ export async function generateSearchablePDF(
 
     // 1. Add the document image as full-page background
     pdf.addImage(page.imageUrl, "JPEG", x, y, drawWidth, drawHeight);
+
+    // Brand every generated page without obscuring the scanned document.
+    pdf.setFontSize(7);
+    pdf.setTextColor(110, 110, 110);
+    pdf.text("© 2026 DocSnap · VeraKeep™", pageWidth / 2, pageHeight - 3, { align: "center" });
 
     // 2. Add invisible text layer from OCR words
     if (page.words && page.words.length > 0) {
@@ -138,9 +146,12 @@ export async function generatePlainPDF(
     format: "a4",
   });
 
-  if (options.title) {
-    pdf.setProperties({ title: options.title });
-  }
+  pdf.setProperties({
+    ...(options.title ? { title: options.title } : {}),
+    author: "DocSnap © 2026 — VeraKeep™",
+    creator: "DocSnap by VeraKeep™",
+    subject: "Document scanned with DocSnap © 2026",
+  });
 
   const pageWidth = 210;
   const pageHeight = 297;
@@ -165,6 +176,10 @@ export async function generatePlainPDF(
     const y = (pageHeight - drawHeight) / 2;
 
     pdf.addImage(page.imageUrl, "JPEG", x, y, drawWidth, drawHeight);
+
+    pdf.setFontSize(7);
+    pdf.setTextColor(110, 110, 110);
+    pdf.text("© 2026 DocSnap · VeraKeep™", pageWidth / 2, pageHeight - 3, { align: "center" });
   }
 
   return pdf.output("blob");

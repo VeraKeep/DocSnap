@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 export const Route = createFileRoute("/status")({
   head: () => ({
     meta: [
-      { title: "System Status — DocSnap" },
-      { name: "description", content: "Current status of DocSnap services — app, cloud storage, authentication, payments, and OCR." },
+      { title: "System Status — DocSnap © 2026" },
+      { name: "description", content: "Current status of DocSnap © 2026 services — app, cloud storage, authentication, payments, and OCR." },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/status" }],
   }),
@@ -19,7 +19,7 @@ interface Component {
 }
 
 const components: Component[] = [
-  { name: "DocSnap App", description: "Web app, scanning, and PDF generation" },
+  { name: "DocSnap © 2026 App", description: "Web app, scanning, and PDF generation" },
   { name: "Cloud Storage", description: "Uploadthing — cloud document storage" },
   { name: "Authentication", description: "Clerk — sign-in and account management" },
   { name: "Payments", description: "Stripe — subscriptions and billing" },
@@ -57,7 +57,7 @@ function Status() {
         </Link>
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">System Status</h1>
-        <p className="mt-2 text-gray-400">Live status of the services that power DocSnap</p>
+        <p className="mt-2 text-gray-400">Live status of the services that power DocSnap © 2026</p>
 
         {/* Overall status */}
         <div className="mt-10 flex items-center gap-4 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-5 sm:p-6">
@@ -96,7 +96,7 @@ function Status() {
             We'll email you when something changes — no spam, unsubscribe anytime.
           </p>
           <a
-            href="mailto:support@docsnapapp.com?subject=Subscribe%20to%20status%20updates&body=Please%20add%20me%20to%20the%20DocSnap%20status%20notification%20list."
+            href="mailto:support@docsnapapp.com?subject=Subscribe%20to%20status%20updates&body=Please%20add%20me%20to%20the%20DocSnap © 2026%20status%20notification%20list."
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
           >
             Subscribe via email
@@ -110,7 +110,7 @@ function Status() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
       </footer>
     </main>
   );

@@ -6,8 +6,8 @@ import { useSubscription } from "../hooks/useSubscription";
 export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
-      { title: 'Your Profile — DocSnap' },
-      { name: "description", content: 'Manage your DocSnap account — view storage usage, subscription plan, synced documents, and secure account settings.' },
+      { title: 'Your Profile — DocSnap © 2026' },
+      { name: "description", content: 'Manage your DocSnap © 2026 account — view storage usage, subscription plan, synced documents, and secure account settings.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/profile" }],
   }) ,
@@ -31,7 +31,7 @@ function ProfilePage() {
   const { myScans, loadingDocs } = useCloudSync();
   const { isPro, isLoading: subscriptionLoading, upgradeUrl, portalUrl } = useSubscription();
 
-  const name = user?.fullName || user?.primaryEmailAddress?.emailAddress || "DocSnap user";
+  const name = user?.fullName || user?.primaryEmailAddress?.emailAddress || "DocSnap © 2026 user";
   const initials = name
     .split(" ")
     .map((part) => part[0])
@@ -47,7 +47,7 @@ function ProfilePage() {
       <header className="flex items-center justify-between border-b border-gray-800/50 px-4 py-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold text-white transition hover:text-indigo-400">
           <Logo />
-          DocSnap
+          DocSnap © 2026
         </Link>
         <Link to="/" className="text-sm text-gray-400 transition hover:text-gray-200">
           ← Back to app
@@ -58,7 +58,7 @@ function ProfilePage() {
         <div>
           <p className="text-sm font-medium text-indigo-400">Account</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Your profile</h1>
-          <p className="mt-3 text-gray-400">Manage your account and keep an eye on your DocSnap storage.</p>
+          <p className="mt-3 text-gray-400">Manage your account and keep an eye on your DocSnap © 2026 storage.</p>
         </div>
 
         {!isLoaded ? (
@@ -117,7 +117,7 @@ function ProfilePage() {
         )}
       </section>
 
-      <footer className="border-t border-gray-800/50 py-5 text-center text-xs text-gray-600">DocSnap — scan documents instantly, right in your browser</footer>
+      <footer className="border-t border-gray-800/50 py-5 text-center text-xs text-gray-600">DocSnap © 2026 — scan documents instantly, right in your browser</footer>
     </main>
   );
 }

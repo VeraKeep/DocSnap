@@ -41,7 +41,7 @@ function defaultDocumentName() {
 const homeStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "DocSnap",
+  name: "DocSnap © 2026",
   description:
     "Scan documents to PDF instantly using your camera — no account, no upload, no Adobe license. Everything runs locally in your browser.",
   url: "https://docsnapapp.com",
@@ -59,7 +59,7 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       {
-        title: "DocSnap — Scan documents to PDF",
+        title: "DocSnap © 2026 — Scan documents to PDF",
       },
       { name: "description", content: "Scan documents to PDF instantly — no account, no upload, no Adobe license. Everything runs locally in your browser." },
     ],
@@ -263,7 +263,7 @@ function Home() {
       trackEvent("save-to-cloud", { pages: allPages.length });
       const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[] = [];
       for (const page of allPages) { const src = getSourceForFilter(page.original, page.processed, page.filter); const imgUrl = await applyFilter(src, page.filter); const img = new Image(); await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("Failed")); img.src = imgUrl; }); pageEntries.push({ imageUrl: imgUrl, imgNaturalWidth: img.naturalWidth, imgNaturalHeight: img.naturalHeight }); }
-      const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
+      const blob = await generatePlainPDF(pageEntries, { title: "DocSnap © 2026 Document" });
 
       // Attempt OCR text extraction for searchability
       let ocrText = "";
