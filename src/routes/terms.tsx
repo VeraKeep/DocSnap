@@ -3,8 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
-      { title: 'Terms of Service — DocSnap' },
-      { name: "description", content: 'Plain-English terms of service for DocSnap — you own your documents, and we provide a private, browser-based scanner.' },
+      { title: 'Terms of Service — DocSnap © 2026' },
+      { name: "description", content: 'Plain-English terms of service for DocSnap © 2026 — you own your documents, and we provide a private, browser-based scanner.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/terms" }],
   }) ,
@@ -33,7 +33,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">In plain English</h2>
             <p className="mt-3">
-              DocSnap is a free tool that runs in your browser. We don't want to
+              DocSnap © 2026 is a free tool that runs in your browser. We don't want to
               bury you in legalese — here's what you need to know, honestly and
               simply.
             </p>
@@ -42,7 +42,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">You own your documents</h2>
             <p className="mt-3">
-              Anything you scan, import, or create with DocSnap is yours. We
+              Anything you scan, import, or create with DocSnap © 2026 is yours. We
               don't claim any ownership, license, or rights over your content.
               When you save a document to Cloud Sync, you're just storing it —
               we don't look at it, analyze it, or use it for anything.
@@ -52,10 +52,10 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Service is provided "as-is"</h2>
             <p className="mt-3">
-              DocSnap is a side project and we do our best, but there are no
+              DocSnap © 2026 is a side project and we do our best, but there are no
               guarantees. The service may have bugs, downtime, or limitations.
               We're not liable for any damages resulting from your use of
-              DocSnap, including lost documents. (We'd feel terrible about it,
+              DocSnap © 2026, including lost documents. (We'd feel terrible about it,
               but legally we can't take that responsibility.)
             </p>
           </section>
@@ -77,7 +77,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">No warranty</h2>
             <p className="mt-3">
-              DocSnap is distributed in the hope that it will be useful, but
+              DocSnap © 2026 is distributed in the hope that it will be useful, but
               WITHOUT ANY WARRANTY; without even the implied warranty of
               MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
             </p>
@@ -86,7 +86,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Limitation of liability</h2>
             <p className="mt-3">
-              To the fullest extent permitted by law, DocSnap and its creators
+              To the fullest extent permitted by law, DocSnap © 2026 and its creators
               shall not be liable for any indirect, incidental, special, or
               consequential damages arising from your use of the service. If
               something goes wrong, our total liability is limited to the
@@ -100,7 +100,7 @@ function Terms() {
               If we update these terms, we'll post the new version here with
               an updated date. Significant changes will be noted in the{" "}
               <Link to="/changelog" className="text-indigo-400 underline">changelog</Link>.
-              Continuing to use DocSnap after changes means you accept the new
+              Continuing to use DocSnap © 2026 after changes means you accept the new
               terms.
             </p>
           </section>
@@ -117,7 +117,7 @@ function Terms() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
       </footer>
     </main>
   );

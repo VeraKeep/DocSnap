@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "DocSnap",
+  name: "DocSnap © 2026",
   description:
     "Free document scanner — scan documents to PDF online using your camera. Convert paper to searchable PDF with OCR. No account, no uploads — everything runs in your browser.",
   url: "https://docsnapapp.com/scan",
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/scan")({
   head: () => ({
     meta: [
       {
-        title: "Free Document Scanner — Scan to PDF Online | DocSnap",
+        title: "Free Document Scanner — Scan to PDF Online | DocSnap © 2026",
       },
       {
         name: "description",
@@ -35,7 +35,7 @@ export const Route = createFileRoute("/scan")({
       },
       {
         property: "og:title",
-        content: "Free Document Scanner — Scan to PDF Online | DocSnap",
+        content: "Free Document Scanner — Scan to PDF Online | DocSnap © 2026",
       },
       {
         property: "og:description",
@@ -56,7 +56,7 @@ export const Route = createFileRoute("/scan")({
       },
       {
         name: "twitter:title",
-        content: "Free Document Scanner — Scan to PDF Online | DocSnap",
+        content: "Free Document Scanner — Scan to PDF Online | DocSnap © 2026",
       },
       {
         name: "twitter:description",
@@ -387,7 +387,7 @@ function ScanLanding() {
           <div className="mt-12 space-y-4">
             {[
               {
-                q: "Is DocSnap really free?",
+                q: "Is DocSnap © 2026 really free?",
                 a: "Yes, completely free. There are no premium tiers, no watermarks, and no hidden fees. Every feature — camera scanning, OCR, multi-page PDFs, filters, and optional cloud sync — is available at no cost.",
               },
               {
@@ -400,7 +400,7 @@ function ScanLanding() {
               },
               {
                 q: "Does OCR work for all languages?",
-                a: "DocSnap uses Tesseract.js for OCR, which supports 100+ languages including English, Spanish, French, German, Chinese, Japanese, and more. English is the default; additional language support is planned.",
+                a: "DocSnap © 2026 uses Tesseract.js for OCR, which supports 100+ languages including English, Spanish, French, German, Chinese, Japanese, and more. English is the default; additional language support is planned.",
               },
             ].map((faq, i) => (
               <details

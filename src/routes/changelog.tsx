@@ -3,8 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/changelog")({
   head: () => ({
     meta: [
-      { title: 'Changelog — DocSnap' },
-      { name: "description", content: "See what's new in DocSnap — product updates, features, fixes, and improvements to the browser-based scanner." },
+      { title: 'Changelog — DocSnap © 2026' },
+      { name: "description", content: "See what's new in DocSnap © 2026 — product updates, features, fixes, and improvements to the browser-based scanner." },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/changelog" }],
   }) ,
@@ -74,7 +74,7 @@ function Changelog() {
         </Link>
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Changelog</h1>
-        <p className="mt-2 text-gray-400">What's new in DocSnap</p>
+        <p className="mt-2 text-gray-400">What's new in DocSnap © 2026</p>
 
         <div className="mt-10 space-y-10">
           {entries.map((entry, i) => (
@@ -109,7 +109,7 @@ function Changelog() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
       </footer>
     </main>
   );

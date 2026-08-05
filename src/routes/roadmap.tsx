@@ -3,8 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/roadmap")({
   head: () => ({
     meta: [
-      { title: "Roadmap — DocSnap" },
-      { name: "description", content: "See what's coming to DocSnap — what we're working on now, what's planned next, future ideas, and everything we've already shipped." },
+      { title: "Roadmap — DocSnap © 2026" },
+      { name: "description", content: "See what's coming to DocSnap © 2026 — what we're working on now, what's planned next, future ideas, and everything we've already shipped." },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/roadmap" }],
   }),
@@ -41,7 +41,7 @@ const sections: Section[] = [
     borderClass: "border-amber-400/30",
     items: [
       "Offline mode — scan and save documents without an internet connection",
-      "PWA support — install DocSnap on your home screen like a native app",
+      "PWA support — install DocSnap © 2026 on your home screen like a native app",
       "AI document summaries and Q&A on your scanned documents",
       "Smart auto-naming and auto-filing for new scans",
     ],
@@ -96,7 +96,7 @@ function Roadmap() {
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Roadmap</h1>
         <p className="mt-2 text-gray-400">
-          What's on the radar for DocSnap — and what we've already shipped.
+          What's on the radar for DocSnap © 2026 — and what we've already shipped.
           No dates promised, just an honest look at where things are heading.
         </p>
 
@@ -139,7 +139,7 @@ function Roadmap() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
       </footer>
     </main>
   );

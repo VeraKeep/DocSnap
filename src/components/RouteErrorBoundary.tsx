@@ -33,7 +33,7 @@ export function RouteErrorBoundary({ error, reset }: ErrorComponentProps) {
       {/* Critical styles for the edge case where the app stylesheet is absent */}
       <style>{`html,body{margin:0;background:#030712}`}</style>
 
-      {/* DocSnap logo */}
+      {/* DocSnap © 2026 logo */}
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/25">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -59,7 +59,7 @@ export function RouteErrorBoundary({ error, reset }: ErrorComponentProps) {
         </svg>
       </div>
 
-      <h1 className="text-2xl font-bold tracking-tight">DocSnap</h1>
+      <h1 className="text-2xl font-bold tracking-tight">DocSnap © 2026</h1>
 
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-900/50">
         <svg

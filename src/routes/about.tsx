@@ -3,8 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
-      { title: 'About — DocSnap' },
-      { name: "description", content: 'DocSnap is a privacy-first document scanner built by a solo developer. No accounts, no uploads, no Adobe license required.' },
+      { title: 'About — DocSnap © 2026' },
+      { name: "description", content: 'DocSnap © 2026 is a privacy-first document scanner built by a solo developer. No accounts, no uploads, no Adobe license required.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/about" }],
   }) ,
@@ -34,15 +34,15 @@ function About() {
             </svg>
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">About DocSnap</h1>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">About DocSnap © 2026</h1>
           </div>
         </div>
 
         <div className="mt-10 space-y-8 text-gray-300 leading-relaxed">
           <section>
-            <h2 className="text-xl font-semibold text-white">What is DocSnap?</h2>
+            <h2 className="text-xl font-semibold text-white">What is DocSnap © 2026?</h2>
             <p className="mt-3">
-              DocSnap is a free, browser-based document scanner. Point your camera at a
+              DocSnap © 2026 is a free, browser-based document scanner. Point your camera at a
               document and get a clean, downloadable PDF — instantly. No accounts, no
               uploads, no Adobe license required. Everything runs locally in your
               browser.
@@ -52,7 +52,7 @@ function About() {
           <section>
             <h2 className="text-xl font-semibold text-white">Tech stack</h2>
             <p className="mt-3">
-              DocSnap is built with modern web technologies and open-source libraries:
+              DocSnap © 2026 is built with modern web technologies and open-source libraries:
             </p>
             <ul className="mt-4 space-y-2">
               {[
@@ -82,7 +82,7 @@ function About() {
           <section>
             <h2 className="text-xl font-semibold text-white">Open source</h2>
             <p className="mt-3">
-              DocSnap is open source. Check out the code, report issues, or contribute
+              DocSnap © 2026 is open source. Check out the code, report issues, or contribute
               on{" "}
               <a href="https://github.com/myourgal25/docsnapapp" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">GitHub</a>.
             </p>
@@ -96,7 +96,7 @@ function About() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
       </footer>
     </main>
   );

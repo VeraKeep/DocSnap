@@ -27,7 +27,7 @@ export const Route = createRootRoute({
       },
       {
         property: "og:title",
-        content: "DocSnap — Scan documents to PDF",
+        content: "DocSnap © 2026 — Scan documents to PDF",
       },
       {
         property: "og:description",
@@ -48,7 +48,7 @@ export const Route = createRootRoute({
       },
       {
         name: "twitter:title",
-        content: "DocSnap — Scan documents to PDF",
+        content: "DocSnap © 2026 — Scan documents to PDF",
       },
       {
         name: "twitter:description",
@@ -143,6 +143,11 @@ function RootDocument({ children }: { children: ReactNode }) {
           }}
         />
         {children}
+        <footer className="border-t border-gray-800/50 bg-gray-950 px-6 py-4 text-center text-xs text-gray-600">
+          <span>© 2026 DocSnap. All rights reserved.</span>
+          <span className="mx-2 text-gray-700" aria-hidden="true">·</span>
+          <span>Powered by VeraKeep™</span>
+        </footer>
         <PwaRuntime />
         <Scripts />
       </body>
