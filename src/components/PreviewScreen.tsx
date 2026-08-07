@@ -30,6 +30,11 @@ interface PreviewScreenProps {
   docLimit: number;
   /** URL to upgrade/pricing page */
   upgradeUrl: string;
+  isPro: boolean;
+  password: string;
+  passwordEnabled: boolean;
+  onPasswordEnabledChange: (enabled: boolean) => void;
+  onPasswordChange: (password: string) => void;
   onDeletePage: (index: number) => void;
   onDragPointerDown: (e: React.PointerEvent, index: number) => void;
   onDragPointerMove: (e: React.PointerEvent) => void;
@@ -63,6 +68,11 @@ export function PreviewScreen({
   cloudDocCount,
   docLimit,
   upgradeUrl,
+  isPro,
+  password,
+  passwordEnabled,
+  onPasswordEnabledChange,
+  onPasswordChange,
   onDeletePage,
   onDragPointerDown,
   onDragPointerMove,
@@ -134,6 +144,11 @@ export function PreviewScreen({
         cloudDocCount={cloudDocCount}
         docLimit={docLimit}
         upgradeUrl={upgradeUrl}
+        isPro={isPro}
+        password={password}
+        passwordEnabled={passwordEnabled}
+        onPasswordEnabledChange={onPasswordEnabledChange}
+        onPasswordChange={onPasswordChange}
         onRetake={onRetake}
         onAddFromCamera={onAddFromCamera}
         onAddFromPhotos={onAddFromPhotos}

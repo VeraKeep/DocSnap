@@ -36,6 +36,8 @@ export interface PDFPageEntry {
 export interface PDFGenerationOptions {
   /** Title embedded in PDF metadata */
   title?: string;
+  /** Optional password required to open the PDF (jsPDF RC4 encryption). */
+  password?: string;
 }
 
 // ── PDF Generation ─────────────────────────────────────────────────
@@ -55,6 +57,15 @@ export async function generateSearchablePDF(
     orientation: "portrait",
     unit: "mm",
     format: "a4",
+    ...(options.password
+      ? {
+          encryption: {
+            userPassword: options.password,
+            ownerPassword: options.password,
+            userPermissions: ["print", "copy", "modify"],
+          },
+        }
+      : {}),
   });
 
   pdf.setProperties({
@@ -144,6 +155,15 @@ export async function generatePlainPDF(
     orientation: "portrait",
     unit: "mm",
     format: "a4",
+    ...(options.password
+      ? {
+          encryption: {
+            userPassword: options.password,
+            ownerPassword: options.password,
+            userPermissions: ["print", "copy", "modify"],
+          },
+        }
+      : {}),
   });
 
   pdf.setProperties({

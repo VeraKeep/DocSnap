@@ -101,6 +101,8 @@ function Home() {
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
   const [documentName, setDocumentName] = useState(defaultDocumentName);
+  const [passwordEnabled, setPasswordEnabled] = useState(false);
+  const [pdfPassword, setPdfPassword] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -239,21 +241,21 @@ function Home() {
 
   useEffect(() => {
     if (state !== "ocr" || !ocrPagesForProcessing) return;
-    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing).then(b => { if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
+    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined).then(b => { if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
     let cancelled = false;
-    (async () => { try { const b = await runOCR(ocrPagesForProcessing); if (!cancelled && b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }
-      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing); if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
+    (async () => { try { const b = await runOCR(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (!cancelled && b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }
+      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
     })();
     return () => { cancelled = true; };
-  }, [state, ocrPagesForProcessing]);
+  }, [state, ocrPagesForProcessing, isPro, passwordEnabled, pdfPassword]);
 
   const handleSkipOCR = useCallback(async () => {
     const allPages = ocrPagesForProcessing; if (!allPages?.length) return;
     ocrAbortRef.current?.abort(); setIsGenerating(true);
-    try { const b = await skipOCRFn(allPages); if (b) { downloadBlob(b); resetApp(); } }
+    try { const b = await skipOCRFn(allPages, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (b) { downloadBlob(b); resetApp(); } }
     catch { setErrorMessage("Failed to generate PDF."); setState("error"); }
     finally { setIsGenerating(false); ocrAbortRef.current = null; }
-  }, [ocrPagesForProcessing, skipOCRFn, downloadBlob, resetApp, ocrAbortRef]);
+  }, [ocrPagesForProcessing, skipOCRFn, downloadBlob, resetApp, ocrAbortRef, isPro, passwordEnabled, pdfPassword]);
 
   // ── Cloud save ──
   const handleSaveToCloud = useCallback(async () => {
@@ -382,7 +384,7 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
+      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 

@@ -40,7 +40,7 @@ export function useOCR() {
 
   /** Generate a plain (non-searchable) PDF from page entries. Returns the blob. */
   const skipOCR = useCallback(
-    async (allPages: PageEntry[]): Promise<Blob | null> => {
+    async (allPages: PageEntry[], password?: string): Promise<Blob | null> => {
       if (!allPages || allPages.length === 0) return null;
 
       ocrAbortRef.current?.abort();
@@ -78,6 +78,7 @@ export function useOCR() {
 
         return await generatePlainPDF(pageEntries, {
           title: "DocSnap Document",
+          password,
         });
       } finally {
         setIsOCRActive(false);
@@ -90,7 +91,7 @@ export function useOCR() {
 
   /** Run full OCR pipeline: render pages → recognize text → generate searchable PDF. Returns the blob. */
   const runOCR = useCallback(
-    async (allPages: PageEntry[]): Promise<Blob | null> => {
+    async (allPages: PageEntry[], password?: string): Promise<Blob | null> => {
       if (!allPages || allPages.length === 0) return null;
 
       const controller = new AbortController();
@@ -213,6 +214,7 @@ export function useOCR() {
 
         return await generateSearchablePDF(pdfPages, {
           title: "DocSnap Document",
+          password,
         });
       } finally {
         setIsOCRActive(false);
