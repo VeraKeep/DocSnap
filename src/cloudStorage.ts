@@ -72,6 +72,11 @@ function readUserDocs(userId: string): CloudDocument[] {
     return [];
   }
 }
+/** Server-only helper: read a user's documents directly from the data dir.
+ *  Safe to import from API route handlers (plain function, no serverFn). */
+export function readUserDocuments(userId: string): CloudDocument[] {
+  return readUserDocs(userId);
+}
 
 function writeUserDocs(userId: string, docs: CloudDocument[]) {
   ensureDataDir();

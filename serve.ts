@@ -15,6 +15,12 @@ import handler from "./dist/server/server.js";
 // API route handlers (these use "-" prefix so they're excluded from TanStack Start)
 import { POST as stripePOST } from "./src/routes/api/-stripe-webhook";
 import { GET as uploadGET, POST as uploadPOST } from "./src/routes/api/-uploadthing";
+import {
+  POST as sharePOST,
+  GET as shareGET,
+  DELETE as shareDELETE,
+  GET_LIST as sharesGET,
+} from "./src/routes/api/-share";
 
 const PORT = 3000;
 const HOST = "0.0.0.0";
@@ -43,6 +49,18 @@ for (let attempt = 1; ; attempt++) {
         if (pathname === "/api/uploadthing") {
           if (req.method === "GET") return uploadGET(req);
           if (req.method === "POST") return uploadPOST(req);
+        }
+        // Share links — create, access, revoke, list.
+        if (pathname === "/api/share" && req.method === "POST") {
+          return sharePOST(req);
+        }
+        if (pathname === "/api/shares" && req.method === "GET") {
+          return sharesGET(req);
+        }
+        const shareMatch = pathname.match(/^\/api\/share\/([^/]+)$/);
+        if (shareMatch) {
+          if (req.method === "GET") return shareGET(req, shareMatch[1]);
+          if (req.method === "DELETE") return shareDELETE(req, shareMatch[1]);
         }
 
         // Static files.
