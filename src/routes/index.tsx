@@ -6,6 +6,8 @@ import { ocrEnabled } from "../ocr";
 import { recognizePages as ocrRecognizePages } from "../ocr";
 import { ocrWordsToText } from "../documentCategorizer";
 import { suggestDocumentName, type NamingKind } from "../documentNamer";
+import { detectExpirations, type DetectedExpiration } from "../expirationDetector";
+import { notifyDueReminders, saveReminder, removeReminder, type NotifyBefore } from "../reminders";
 import { generatePlainPDF } from "../searchablePdf";
 import type { PageEntry } from "../hooks/usePages";
 import { useCamera } from "../hooks/useCamera";
@@ -109,6 +111,8 @@ function Home() {
   // AI naming (Pro): the suggested name + strategy, and the PDF awaiting download
   const [suggestedName, setSuggestedName] = useState<string | null>(null);
   const [suggestedKind, setSuggestedKind] = useState<NamingKind | null>(null);
+  const [detectedExpiration, setDetectedExpiration] = useState<DetectedExpiration | null>(null);
+  const [reminderDays, setReminderDays] = useState<NotifyBefore | null>(null);
   const pendingPdfBlobRef = useRef<Blob | null>(null);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -254,10 +258,12 @@ function Home() {
     (async () => { try {
       const res = await runOCR(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined);
       if (!cancelled && res?.blob) {
-        // Pro users with recognized text get an AI-suggested filename to review
-        if (isPro && res.ocrText.trim()) {
+        // OCR text can reveal an expiration for any user; setting a reminder is Pro-only.
+        if (res.ocrText.trim()) {
           const s = suggestDocumentName(res.ocrText, res.category);
-          if (s.kind !== "generic") {
+          const expiration = detectExpirations(res.ocrText)[0] ?? null;
+          if (expiration) { setDetectedExpiration(expiration); setReminderDays(null); }
+          if ((isPro && s.kind !== "generic") || expiration) {
             setSuggestedName(s.name);
             setSuggestedKind(s.kind);
             setDocumentName(s.name);
@@ -277,6 +283,14 @@ function Home() {
   }, [state, ocrPagesForProcessing, isPro, passwordEnabled, pdfPassword]);
 
   /** Download the PDF whose name was just reviewed on the "naming" screen. */
+  const handleReminderChange = useCallback((days: NotifyBefore | null) => {
+    setReminderDays(days);
+    if (!detectedExpiration || !isPro) return;
+    const documentId = `${normalizedDocumentName()}-${detectedExpiration.date.toISOString()}`;
+    if (days == null) removeReminder(`${documentId}-${detectedExpiration.date.toISOString()}`);
+    else saveReminder({ documentId, documentName: normalizedDocumentName(), expirationDate: detectedExpiration.date.toISOString(), notifyBefore: days });
+  }, [detectedExpiration, isPro, normalizedDocumentName]);
+
   const downloadNamedPdf = useCallback(() => {
     const blob = pendingPdfBlobRef.current;
     if (!blob) return;
@@ -374,6 +388,12 @@ function Home() {
 
   useEffect(() => {
     if (state === "idle") {
+      try { notifyDueReminders(); } catch { /* notifications are optional */ }
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (state === "idle") {
       try { if (localStorage.getItem("docsnap-onboarding-seen") !== "true") setShowOnboarding(true); } catch { /* storage unavailable: still show */ setShowOnboarding(true); }
     }
   }, [state]);
@@ -425,7 +445,7 @@ function Home() {
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 
       {state === "naming" && suggestedName && suggestedKind && (
-        <NameReviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} suggestion={suggestedName} suggestionKind={suggestedKind} pageCount={ocrPagesForProcessing?.length ?? 1} onDownload={downloadNamedPdf} />
+        <NameReviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} suggestion={suggestedName} suggestionKind={suggestedKind} pageCount={ocrPagesForProcessing?.length ?? 1} onDownload={downloadNamedPdf} expiration={detectedExpiration ?? undefined} isPro={isPro} reminderDays={reminderDays} onReminderChange={handleReminderChange} upgradeUrl={upgradeUrl} />
       )}
 
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}

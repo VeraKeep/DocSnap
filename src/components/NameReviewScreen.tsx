@@ -1,4 +1,7 @@
 import type { NamingKind } from "../documentNamer";
+import type { DetectedExpiration } from "../expirationDetector";
+import { formatExpirationDate } from "../expirationDetector";
+import type { NotifyBefore } from "../reminders";
 
 interface NameReviewScreenProps {
   /** Current value of the document name input (no .pdf extension) */
@@ -11,6 +14,11 @@ interface NameReviewScreenProps {
   /** Total pages in the PDF being downloaded */
   pageCount: number;
   onDownload: () => void;
+  expiration?: DetectedExpiration;
+  isPro?: boolean;
+  onReminderChange?: (days: NotifyBefore | null) => void;
+  reminderDays?: NotifyBefore | null;
+  upgradeUrl?: string;
 }
 
 const KIND_LABELS: Record<NamingKind, string> = {
@@ -30,6 +38,11 @@ export function NameReviewScreen({
   suggestionKind,
   pageCount,
   onDownload,
+  expiration,
+  isPro = false,
+  onReminderChange,
+  reminderDays,
+  upgradeUrl = "/pricing",
 }: NameReviewScreenProps) {
   const isSuggested = documentName.trim() === suggestion.trim();
 
@@ -127,6 +140,13 @@ export function NameReviewScreen({
             .pdf is added automatically when you download
           </p>
         </div>
+
+        {expiration && (
+          <div className="rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-left">
+            <p className="font-semibold text-amber-200">📅 Expiration detected: {formatExpirationDate(expiration.date)}</p>
+            {isPro ? <div className="mt-3 flex items-center gap-2"><span className="text-sm text-gray-300">🔔 Remind me</span><select aria-label="Reminder timing" value={reminderDays == null ? "skip" : String(reminderDays)} onChange={(e) => onReminderChange?.(e.target.value === "skip" ? null : Number(e.target.value) as NotifyBefore)} className="rounded-lg border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-white"><option value="skip">Skip</option><option value="30">30 days before</option><option value="14">14 days before</option><option value="7">7 days before</option><option value="0">On the date</option></select></div> : <p className="mt-2 text-xs text-gray-400">Date tracking is a Pro feature — <a className="text-indigo-300 underline" href={upgradeUrl}>upgrade to set reminders</a></p>}
+          </div>
+        )}
 
         <button
           onClick={onDownload}
