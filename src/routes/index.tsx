@@ -5,6 +5,7 @@ import { applyFilter, getSourceForFilter, type FilterType } from "../imageFilter
 import { ocrEnabled } from "../ocr";
 import { recognizePages as ocrRecognizePages } from "../ocr";
 import { ocrWordsToText } from "../documentCategorizer";
+import { suggestDocumentName, type NamingKind } from "../documentNamer";
 import { generatePlainPDF } from "../searchablePdf";
 import type { PageEntry } from "../hooks/usePages";
 import { useCamera } from "../hooks/useCamera";
@@ -22,8 +23,9 @@ import { LandingPage } from "../components/LandingPage";
 import { ProcessingScreen } from "../components/ProcessingScreen";
 import { ErrorScreen } from "../components/ErrorScreen";
 import { OnboardingModal } from "../components/OnboardingModal";
+import { NameReviewScreen } from "../components/NameReviewScreen";
 
-type AppState = "idle" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "error";
+type AppState = "idle" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "naming" | "error";
 type CornerName = keyof Quad;
 
 function createDefaultCorners(width: number, height: number): Quad {
@@ -104,6 +106,10 @@ function Home() {
   const [passwordEnabled, setPasswordEnabled] = useState(false);
   const [pdfPassword, setPdfPassword] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // AI naming (Pro): the suggested name + strategy, and the PDF awaiting download
+  const [suggestedName, setSuggestedName] = useState<string | null>(null);
+  const [suggestedKind, setSuggestedKind] = useState<NamingKind | null>(null);
+  const pendingPdfBlobRef = useRef<Blob | null>(null);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
@@ -146,7 +152,8 @@ function Home() {
   const retake = useCallback(() => {
     vibrate(10); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
-    setDocumentName(defaultDocumentName());
+    setDocumentName(defaultDocumentName()); setSuggestedName(null); setSuggestedKind(null);
+    pendingPdfBlobRef.current = null;
     capturedImageDataRef.current = null; startCamera();
   }, [startCamera]);
 
@@ -207,6 +214,7 @@ function Home() {
     resetPages(); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
     setOcrPagesForProcessing(null); capturedImageDataRef.current = null; setState("idle");
+    setSuggestedName(null); setSuggestedKind(null); pendingPdfBlobRef.current = null;
   }, [resetPages]);
 
   const normalizedDocumentName = useCallback(() => {
@@ -243,11 +251,39 @@ function Home() {
     if (state !== "ocr" || !ocrPagesForProcessing) return;
     if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined).then(b => { if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
     let cancelled = false;
-    (async () => { try { const b = await runOCR(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (!cancelled && b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }
+    (async () => { try {
+      const res = await runOCR(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined);
+      if (!cancelled && res?.blob) {
+        // Pro users with recognized text get an AI-suggested filename to review
+        if (isPro && res.ocrText.trim()) {
+          const s = suggestDocumentName(res.ocrText, res.category);
+          if (s.kind !== "generic") {
+            setSuggestedName(s.name);
+            setSuggestedKind(s.kind);
+            setDocumentName(s.name);
+            pendingPdfBlobRef.current = res.blob;
+            setState("naming");
+            return;
+          }
+        }
+        downloadBlob(res.blob);
+        if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); }
+        resetApp();
+      }
+    }
       catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
     })();
     return () => { cancelled = true; };
   }, [state, ocrPagesForProcessing, isPro, passwordEnabled, pdfPassword]);
+
+  /** Download the PDF whose name was just reviewed on the "naming" screen. */
+  const downloadNamedPdf = useCallback(() => {
+    const blob = pendingPdfBlobRef.current;
+    if (!blob) return;
+    pendingPdfBlobRef.current = null;
+    downloadBlob(blob);
+    resetApp();
+  }, [downloadBlob, resetApp]);
 
   const handleSkipOCR = useCallback(async () => {
     const allPages = ocrPagesForProcessing; if (!allPages?.length) return;
@@ -387,6 +423,10 @@ function Home() {
       {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
+
+      {state === "naming" && suggestedName && suggestedKind && (
+        <NameReviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} suggestion={suggestedName} suggestionKind={suggestedKind} pageCount={ocrPagesForProcessing?.length ?? 1} onDownload={downloadNamedPdf} />
+      )}
 
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}
 

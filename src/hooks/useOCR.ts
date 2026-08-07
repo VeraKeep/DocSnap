@@ -27,6 +27,16 @@ export interface OCRProgressInfo {
   etaSeconds: number | null;
 }
 
+/** Result of a full OCR run: the generated PDF plus the recognized text. */
+export interface OCRRunResult {
+  /** The generated searchable PDF */
+  blob: Blob;
+  /** All recognized text across every page ("" if nothing was read) */
+  ocrText: string;
+  /** Winning category from categorizeDocument (e.g. "Receipts", "Uncategorized") */
+  category: string;
+}
+
 export function useOCR() {
   const [ocrProgress, setOcrProgress] = useState<OCRProgressInfo | null>(null);
   const [ocrPhase, setOcrPhase] = useState<OCRPhase>(null);
@@ -89,9 +99,9 @@ export function useOCR() {
     [],
   );
 
-  /** Run full OCR pipeline: render pages → recognize text → generate searchable PDF. Returns the blob. */
+  /** Run full OCR pipeline: render pages → recognize text → generate searchable PDF. Returns the blob plus recognized text. */
   const runOCR = useCallback(
-    async (allPages: PageEntry[], password?: string): Promise<Blob | null> => {
+    async (allPages: PageEntry[], password?: string): Promise<OCRRunResult | null> => {
       if (!allPages || allPages.length === 0) return null;
 
       const controller = new AbortController();
@@ -183,13 +193,12 @@ export function useOCR() {
 
         // Step 2b: Categorize document from OCR text
         // Extract all recognized text across pages and run the categorizer
-        {
-          const allText = ocrResults
-            .map((words) => ocrWordsToText(words))
-            .join(" ");
-          const result = categorizeDocument(allText);
-          setCategorizationResult(result);
-        }
+        const allText = ocrResults
+          .map((words) => ocrWordsToText(words))
+          .join(" ")
+          .trim();
+        const result = categorizeDocument(allText);
+        setCategorizationResult(result);
 
         // Step 3: Generate searchable PDF
         setOcrPhase("assembling");
@@ -212,10 +221,11 @@ export function useOCR() {
           imgNaturalHeight: rp.imgNaturalHeight,
         }));
 
-        return await generateSearchablePDF(pdfPages, {
+        const blob = await generateSearchablePDF(pdfPages, {
           title: "DocSnap Document",
           password,
         });
+        return { blob, ocrText: allText, category: result.category };
       } finally {
         setIsOCRActive(false);
         setOcrPhase(null);
