@@ -18,6 +18,7 @@ import { useCloudSync } from "../hooks/useCloudSync";
 import { useSubscription } from "../hooks/useSubscription";
 import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
 import { trackEvent } from "../analytics";
+import { findDuplicate, hashImageData } from "../duplicateDetector";
 import type { DocCategory } from "../cloudStorage";
 import { CameraView } from "../components/CameraView";
 import { PreviewScreen } from "../components/PreviewScreen";
@@ -337,10 +338,24 @@ function Home() {
         console.warn("OCR extraction failed during cloud save:", ocrErr);
       }
 
-      await saveToCloud(blob, allPages.length, normalizedDocumentName(), categorizationResult?.category || "", ocrText);
+      const contentHash = hashImageData(pageEntries.map((p) => p.imageUrl).join("|"));
+      const duplicate = findDuplicate(savedDocs, { exactHash: contentHash, ocrText, isPro });
+      if (duplicate) {
+        const matched = duplicate.matchedDoc;
+        const date = new Date(matched.date).toLocaleDateString();
+        const detail = duplicate.method === "similar" ? ` (${Math.round((duplicate.similarity || 0) * 100)}% text match)` : "";
+        if (!window.confirm(`⚠️ This appears to be the same document as ${matched.name} saved on ${date}${detail}. Save anyway?`)) {
+          window.alert(`Existing document: ${matched.name} — ${date}`);
+          return;
+        }
+      } else if (!isPro && ocrText.trim() && savedDocs.some((d) => d.ocrText)) {
+        window.alert("Enable similarity detection with Pro to catch documents with matching text.");
+      }
+
+      await saveToCloud(blob, allPages.length, normalizedDocumentName(), categorizationResult?.category || "", ocrText, contentHash);
     } catch (err) { console.error("Save failed:", err); setErrorMessage("Couldn't save to cloud. Check your connection and try again."); setState("error"); }
     finally { setIsGenerating(false); }
-  }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult, normalizedDocumentName]);
+  }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult, normalizedDocumentName, savedDocs, isPro]);
 
   // ── File import ──
   async function processFile(file: File): Promise<PageEntry> {

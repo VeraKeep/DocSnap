@@ -203,6 +203,7 @@ function DocCard({
 }) {
   const category = getDocCategory(doc);
   const cfg = FOLDER_CONFIGS[category];
+  const duplicateCount = (doc as CloudDocument & { duplicateCount?: number }).duplicateCount ?? 0;
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900/60 p-3 transition hover:border-gray-700">
@@ -229,8 +230,13 @@ function DocCard({
       {/* Name + date + badge */}
       <div className="flex-1 min-w-0 text-left">
         <p className="truncate text-sm font-medium text-gray-200">
-          {doc.name}
+        {doc.name}
         </p>
+        {duplicateCount > 0 && (
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-700/50 bg-amber-900/30 px-2 py-0.5 text-[10px] text-amber-300" title="Duplicate group">
+          ⚠ {duplicateCount} duplicate{duplicateCount === 1 ? "" : "s"} found
+        </span>
+        )}
         <div className="mt-0.5 flex items-center gap-2">
           <p className="text-xs text-gray-500">
             {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"} ·{" "}

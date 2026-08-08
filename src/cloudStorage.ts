@@ -17,6 +17,10 @@ export interface CloudDocument {
   userCategory?: string;
   /** OCR-extracted full text for search (empty string if no OCR was run) */
   ocrText?: string;
+  /** Lightweight image/content hash used for duplicate detection */
+  contentHash?: string;
+  /** Number of other documents sharing this document's hash */
+  duplicateCount?: number;
 }
 
 export type DocCategory =
@@ -107,6 +111,7 @@ export const addDocument = createServerFn()
       fileUrl: string;
       autoCategory?: string;
       ocrText?: string;
+      contentHash?: string;
     }) => doc,
   )
   .handler(async ({ data }) => {
@@ -121,6 +126,7 @@ export const addDocument = createServerFn()
       fileUrl: data.fileUrl,
       autoCategory: data.autoCategory || "",
       ocrText: data.ocrText || "",
+      contentHash: data.contentHash || "",
     };
     docs.unshift(newDoc);
     writeUserDocs(data.userId, docs);
