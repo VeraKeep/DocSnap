@@ -3,6 +3,7 @@ import { PageStrip } from "./PageStrip";
 import { PDFActions } from "./PDFActions";
 import type { FilterType } from "../imageFilters";
 import type { PageEntry } from "../hooks/usePages";
+import { RedactionTool, type Redaction } from "./RedactionTool";
 
 interface PreviewScreenProps {
   previewImage: string;
@@ -48,6 +49,10 @@ interface PreviewScreenProps {
   onSaveToCloud: () => void;
   onDone: () => void;
   isDesktop: boolean;
+  redactions: Redaction[];
+  redactionMode: boolean;
+  onRedactionChange: (r: Redaction[]) => void;
+  onRedactionModeChange: (open: boolean) => void;
 }
 
 export function PreviewScreen({
@@ -85,10 +90,11 @@ export function PreviewScreen({
   onDocumentNameChange,
   onSaveToCloud,
   onDone,
-  isDesktop,
+  isDesktop, redactions, redactionMode, onRedactionChange, onRedactionModeChange,
 }: PreviewScreenProps) {
   return (
     <div className="flex flex-1 flex-col animate-fade-in">
+      {redactionMode ? <RedactionTool imageUrl={previewImage} redactions={redactions} onChange={onRedactionChange} onApply={() => onRedactionModeChange(false)} onCancel={() => onRedactionModeChange(false)} /> : <>
       {/* Image preview */}
       <div className="relative flex-1 bg-black min-h-0">
         {isComputingFilter && (
@@ -157,6 +163,8 @@ export function PreviewScreen({
         onSaveToCloud={onSaveToCloud}
         onDone={onDone}
       />
+      <button onClick={() => onRedactionModeChange(true)} className="mx-4 mb-2 rounded-lg border border-red-500/50 bg-red-950/40 px-3 py-2 text-sm font-medium text-red-200">▰ Redact <span className="text-xs text-red-300">(Pro)</span>{redactions.length > 0 && ` · ${redactions.length}`}</button>
+      </>}
     </div>
   );
 }

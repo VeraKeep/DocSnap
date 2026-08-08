@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FilterType } from "../imageFilters";
 import { generateThumbnail } from "../thumbnail";
+import type { Redaction } from "../components/RedactionTool";
 
 export interface PageEntry {
   processed: string | null;
@@ -8,6 +9,7 @@ export interface PageEntry {
   filter: FilterType;
   /** Low-res thumbnail (max 48px height) for fast page strip rendering */
   thumbnail: string;
+  redactions?: Redaction[];
 }
 
 interface DragState {

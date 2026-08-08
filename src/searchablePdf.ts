@@ -11,6 +11,7 @@
  */
 
 import type { OCRWord } from "./ocr";
+import type { Redaction } from "./components/RedactionTool";
 
 // PDF generation is only needed after a scan; defer the sizeable jsPDF engine
 // until the user downloads a document.
@@ -31,6 +32,8 @@ export interface PDFPageEntry {
   imgNaturalWidth: number;
   /** Natural height of the image in pixels */
   imgNaturalHeight: number;
+  /** Permanent black redactions in image pixel coordinates. */
+  redactions?: Redaction[];
 }
 
 export interface PDFGenerationOptions {
@@ -41,6 +44,14 @@ export interface PDFGenerationOptions {
 }
 
 // ── PDF Generation ─────────────────────────────────────────────────
+async function burnRedactions(imageUrl: string, redactions: Redaction[], width: number, height: number): Promise<string> {
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error("Failed to load image")); img.src = imageUrl; });
+  const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext("2d"); if (!ctx) return imageUrl; ctx.drawImage(img, 0, 0, width, height); ctx.fillStyle = "#000";
+  for (const r of redactions) ctx.fillRect(Math.max(0,r.x), Math.max(0,r.y), Math.max(0,r.width), Math.max(0,r.height));
+  return canvas.toDataURL("image/jpeg", 0.95);
+}
 
 /**
  * Generate a searchable PDF from an array of page entries.
@@ -98,8 +109,9 @@ export async function generateSearchablePDF(
     const x = (pageWidth - drawWidth) / 2;
     const y = (pageHeight - drawHeight) / 2;
 
-    // 1. Add the document image as full-page background
-    pdf.addImage(page.imageUrl, "JPEG", x, y, drawWidth, drawHeight);
+    // 1. Burn redactions into a raster canvas before embedding the image.
+    const imageUrl = page.redactions?.length ? await burnRedactions(page.imageUrl, page.redactions, page.imgNaturalWidth, page.imgNaturalHeight) : page.imageUrl;
+    pdf.addImage(imageUrl, "JPEG", x, y, drawWidth, drawHeight);
 
     // Brand every generated page without obscuring the scanned document.
     pdf.setFontSize(7);
@@ -112,6 +124,8 @@ export async function generateSearchablePDF(
       const scaleY = drawHeight / page.imgNaturalHeight;
 
       for (const word of page.words) {
+        const overlaps = page.redactions?.some((r) => word.bbox.x0 < r.x + r.width && word.bbox.x1 > r.x && word.bbox.y0 < r.y + r.height && word.bbox.y1 > r.y);
+        if (overlaps) continue;
         const wordW = Math.max(0.01, (word.bbox.x1 - word.bbox.x0) * scaleX);
         const wordH = Math.max(0.01, (word.bbox.y1 - word.bbox.y0) * scaleY);
         const wordX = x + word.bbox.x0 * scaleX;
@@ -147,7 +161,7 @@ export async function generateSearchablePDF(
  * Generates a plain image-only PDF with no text layer.
  */
 export async function generatePlainPDF(
-  pages: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number }[],
+  pages: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number; redactions?: Redaction[] }[],
   options: PDFGenerationOptions = {},
 ): Promise<Blob> {
   const { jsPDF } = await loadJsPDF();
@@ -195,7 +209,8 @@ export async function generatePlainPDF(
     const x = (pageWidth - drawWidth) / 2;
     const y = (pageHeight - drawHeight) / 2;
 
-    pdf.addImage(page.imageUrl, "JPEG", x, y, drawWidth, drawHeight);
+    const imageUrl = page.redactions?.length ? await burnRedactions(page.imageUrl, page.redactions, page.imgNaturalWidth, page.imgNaturalHeight) : page.imageUrl;
+    pdf.addImage(imageUrl, "JPEG", x, y, drawWidth, drawHeight);
 
     pdf.setFontSize(7);
     pdf.setTextColor(110, 110, 110);

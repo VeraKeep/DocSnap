@@ -9,6 +9,7 @@ import { suggestDocumentName, type NamingKind } from "../documentNamer";
 import { detectExpirations, type DetectedExpiration } from "../expirationDetector";
 import { notifyDueReminders, saveReminder, removeReminder, type NotifyBefore } from "../reminders";
 import { generatePlainPDF } from "../searchablePdf";
+import type { Redaction } from "../components/RedactionTool";
 import type { PageEntry } from "../hooks/usePages";
 import { useCamera } from "../hooks/useCamera";
 import { usePages } from "../hooks/usePages";
@@ -107,6 +108,8 @@ function Home() {
   const [documentName, setDocumentName] = useState(defaultDocumentName);
   const [passwordEnabled, setPasswordEnabled] = useState(false);
   const [pdfPassword, setPdfPassword] = useState("");
+  const [redactions, setRedactions] = useState<Redaction[]>([]);
+  const [redactionMode, setRedactionMode] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   // AI naming (Pro): the suggested name + strategy, and the PDF awaiting download
   const [suggestedName, setSuggestedName] = useState<string | null>(null);
@@ -128,7 +131,7 @@ function Home() {
   const startCamera = useCallback(async () => {
     trackEvent("open-camera");
     setErrorMessage(""); setCapturedImage(null); setProcessedImage(null);
-    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
+    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null); setRedactions([]); setRedactionMode(false);
     capturedImageDataRef.current = null;
     setShowOnboarding(false);
     const stream = await startCameraBase();
@@ -211,12 +214,12 @@ function Home() {
   // ── Pages ──
   const buildAllPages = useCallback((): PageEntry[] => {
     if (!capturedImage) return [...pages];
-    return [...pages, { processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "" }];
-  }, [pages, capturedImage, processedImage, currentFilter]);
+    return [...pages, { processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "", redactions }];
+  }, [pages, capturedImage, processedImage, currentFilter, redactions]);
 
   const resetApp = useCallback(() => {
     resetPages(); setCapturedImage(null); setProcessedImage(null);
-    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
+    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null); setRedactions([]); setRedactionMode(false);
     setOcrPagesForProcessing(null); capturedImageDataRef.current = null; setState("idle");
     setSuggestedName(null); setSuggestedKind(null); pendingPdfBlobRef.current = null;
   }, [resetPages]);
@@ -440,7 +443,7 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
+      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} redactions={redactions} redactionMode={redactionMode} onRedactionChange={setRedactions} onRedactionModeChange={(open) => { if (open && !isPro) { setShowUpgradeBanner(true); return; } setRedactionMode(open); }} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 

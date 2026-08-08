@@ -62,6 +62,7 @@ export function useOCR() {
           imageUrl: string;
           imgNaturalWidth: number;
           imgNaturalHeight: number;
+          redactions?: import("../components/RedactionTool").Redaction[];
         }[] = [];
 
         for (const page of allPages) {
@@ -79,6 +80,7 @@ export function useOCR() {
             imageUrl: imageToUse,
             imgNaturalWidth: img.naturalWidth,
             imgNaturalHeight: img.naturalHeight,
+            redactions: page.redactions,
           });
         }
 
@@ -118,6 +120,7 @@ export function useOCR() {
           imageUrl: string;
           imgNaturalWidth: number;
           imgNaturalHeight: number;
+          redactions?: import("../components/RedactionTool").Redaction[];
         }[] = [];
 
         for (let i = 0; i < allPages.length; i++) {
@@ -145,6 +148,7 @@ export function useOCR() {
             imageUrl: imageToUse,
             imgNaturalWidth: img.naturalWidth,
             imgNaturalHeight: img.naturalHeight,
+            redactions: page.redactions,
           });
         }
 
@@ -219,6 +223,7 @@ export function useOCR() {
           words: ocrResults[i],
           imgNaturalWidth: rp.imgNaturalWidth,
           imgNaturalHeight: rp.imgNaturalHeight,
+          redactions: rp.redactions,
         }));
 
         const blob = await generateSearchablePDF(pdfPages, {
