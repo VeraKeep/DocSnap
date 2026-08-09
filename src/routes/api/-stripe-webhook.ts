@@ -14,7 +14,7 @@
 import Stripe from "stripe";
 import { sql } from "../../db";
 import {
-  setProSubscription,
+  setSubscriptionTier,
   setFreeSubscription,
   findUserByEmail,
   findUserByStripeCustomerId,
@@ -126,8 +126,11 @@ async function handleCheckoutCompleted(
     return;
   }
 
-  await setProSubscription(clerkUserId, stripeCustomerId ?? "");
-  console.log(`[stripe-webhook] Set Pro for user ${clerkUserId}`);
+  // Payment links may provide price_id in metadata; otherwise retrieve line items.
+  const priceId = session.metadata?.price_id ?? await getCheckoutPriceId(session);
+  const tier = priceTier(priceId);
+  await setSubscriptionTier(clerkUserId, tier, stripeCustomerId ?? "");
+  console.log(`[stripe-webhook] Set ${tier} for user ${clerkUserId}`);
 }
 
 /**
@@ -157,6 +160,32 @@ async function handleSubscriptionDeleted(
 
   await setFreeSubscription(clerkUserId);
   console.log(`[stripe-webhook] Set Free for user ${clerkUserId}`);
+}
+
+const PRICE_TIERS: Record<string, "personal" | "household" | "complete"> = {
+  "price_1U2SjQDjQBNY25JvY49czw5w": "personal",
+  "price_1U2SjQDjQBNY25JvHW3Jgxoi": "household",
+  "price_1U2SjQDjQBNY25JvnOS572z2": "complete",
+  "price_1TzAj6DjQBNY25Jv2G11crty": "personal",
+  "price_1TzAj7DjQBNY25JvJ6F1YHOE": "personal",
+};
+
+function priceTier(priceId: string | undefined): "personal" | "household" | "complete" {
+  return (priceId && PRICE_TIERS[priceId]) || "personal";
+}
+
+async function getCheckoutPriceId(session: Stripe.Checkout.Session): Promise<string | undefined> {
+  const embedded = session.line_items?.data?.[0]?.price?.id;
+  if (embedded) return embedded;
+  if (!session.id || !process.env.STRIPE_SECRET_KEY) return undefined;
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-06-30.basil" });
+    const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
+    return items.data[0]?.price?.id;
+  } catch (err) {
+    console.error("[stripe-webhook] Failed to read checkout line items:", err);
+    return undefined;
+  }
 }
 
 /**

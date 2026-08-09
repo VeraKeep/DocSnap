@@ -1,4 +1,6 @@
 -- DocSnap Database Schema
+-- subscription_status supports 'free', 'personal', 'household', and 'complete'.
+-- Legacy 'pro' values are accepted and interpreted as 'personal'.
 -- Run this against your Neon Postgres database to set up tables.
 -- Usage: psql "$DATABASE_URL" -f db-schema.sql
 
