@@ -27,6 +27,16 @@ export interface OCRProgressInfo {
   etaSeconds: number | null;
 }
 
+/** Result of a full OCR run: the generated PDF plus the recognized text. */
+export interface OCRRunResult {
+  /** The generated searchable PDF */
+  blob: Blob;
+  /** All recognized text across every page ("" if nothing was read) */
+  ocrText: string;
+  /** Winning category from categorizeDocument (e.g. "Receipts", "Uncategorized") */
+  category: string;
+}
+
 export function useOCR() {
   const [ocrProgress, setOcrProgress] = useState<OCRProgressInfo | null>(null);
   const [ocrPhase, setOcrPhase] = useState<OCRPhase>(null);
@@ -40,7 +50,7 @@ export function useOCR() {
 
   /** Generate a plain (non-searchable) PDF from page entries. Returns the blob. */
   const skipOCR = useCallback(
-    async (allPages: PageEntry[]): Promise<Blob | null> => {
+    async (allPages: PageEntry[], password?: string): Promise<Blob | null> => {
       if (!allPages || allPages.length === 0) return null;
 
       ocrAbortRef.current?.abort();
@@ -52,6 +62,7 @@ export function useOCR() {
           imageUrl: string;
           imgNaturalWidth: number;
           imgNaturalHeight: number;
+          redactions?: import("../components/RedactionTool").Redaction[];
         }[] = [];
 
         for (const page of allPages) {
@@ -69,6 +80,7 @@ export function useOCR() {
             imageUrl: imageToUse,
             imgNaturalWidth: img.naturalWidth,
             imgNaturalHeight: img.naturalHeight,
+            redactions: page.redactions,
           });
         }
 
@@ -78,6 +90,7 @@ export function useOCR() {
 
         return await generatePlainPDF(pageEntries, {
           title: "DocSnap Document",
+          password,
         });
       } finally {
         setIsOCRActive(false);
@@ -88,9 +101,9 @@ export function useOCR() {
     [],
   );
 
-  /** Run full OCR pipeline: render pages → recognize text → generate searchable PDF. Returns the blob. */
+  /** Run full OCR pipeline: render pages → recognize text → generate searchable PDF. Returns the blob plus recognized text. */
   const runOCR = useCallback(
-    async (allPages: PageEntry[]): Promise<Blob | null> => {
+    async (allPages: PageEntry[], password?: string): Promise<OCRRunResult | null> => {
       if (!allPages || allPages.length === 0) return null;
 
       const controller = new AbortController();
@@ -107,6 +120,7 @@ export function useOCR() {
           imageUrl: string;
           imgNaturalWidth: number;
           imgNaturalHeight: number;
+          redactions?: import("../components/RedactionTool").Redaction[];
         }[] = [];
 
         for (let i = 0; i < allPages.length; i++) {
@@ -134,6 +148,7 @@ export function useOCR() {
             imageUrl: imageToUse,
             imgNaturalWidth: img.naturalWidth,
             imgNaturalHeight: img.naturalHeight,
+            redactions: page.redactions,
           });
         }
 
@@ -182,13 +197,12 @@ export function useOCR() {
 
         // Step 2b: Categorize document from OCR text
         // Extract all recognized text across pages and run the categorizer
-        {
-          const allText = ocrResults
-            .map((words) => ocrWordsToText(words))
-            .join(" ");
-          const result = categorizeDocument(allText);
-          setCategorizationResult(result);
-        }
+        const allText = ocrResults
+          .map((words) => ocrWordsToText(words))
+          .join(" ")
+          .trim();
+        const result = categorizeDocument(allText);
+        setCategorizationResult(result);
 
         // Step 3: Generate searchable PDF
         setOcrPhase("assembling");
@@ -209,11 +223,14 @@ export function useOCR() {
           words: ocrResults[i],
           imgNaturalWidth: rp.imgNaturalWidth,
           imgNaturalHeight: rp.imgNaturalHeight,
+          redactions: rp.redactions,
         }));
 
-        return await generateSearchablePDF(pdfPages, {
+        const blob = await generateSearchablePDF(pdfPages, {
           title: "DocSnap Document",
+          password,
         });
+        return { blob, ocrText: allText, category: result.category };
       } finally {
         setIsOCRActive(false);
         setOcrPhase(null);

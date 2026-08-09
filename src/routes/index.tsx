@@ -5,7 +5,11 @@ import { applyFilter, getSourceForFilter, type FilterType } from "../imageFilter
 import { ocrEnabled } from "../ocr";
 import { recognizePages as ocrRecognizePages } from "../ocr";
 import { ocrWordsToText } from "../documentCategorizer";
+import { suggestDocumentName, type NamingKind } from "../documentNamer";
+import { detectExpirations, type DetectedExpiration } from "../expirationDetector";
+import { notifyDueReminders, saveReminder, removeReminder, type NotifyBefore } from "../reminders";
 import { generatePlainPDF } from "../searchablePdf";
+import type { Redaction } from "../components/RedactionTool";
 import type { PageEntry } from "../hooks/usePages";
 import { useCamera } from "../hooks/useCamera";
 import { usePages } from "../hooks/usePages";
@@ -14,6 +18,7 @@ import { useCloudSync } from "../hooks/useCloudSync";
 import { useSubscription } from "../hooks/useSubscription";
 import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
 import { trackEvent } from "../analytics";
+import { findDuplicate, hashImageData } from "../duplicateDetector";
 import type { DocCategory } from "../cloudStorage";
 import { CameraView } from "../components/CameraView";
 import { PreviewScreen } from "../components/PreviewScreen";
@@ -22,8 +27,9 @@ import { LandingPage } from "../components/LandingPage";
 import { ProcessingScreen } from "../components/ProcessingScreen";
 import { ErrorScreen } from "../components/ErrorScreen";
 import { OnboardingModal } from "../components/OnboardingModal";
+import { NameReviewScreen } from "../components/NameReviewScreen";
 
-type AppState = "idle" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "error";
+type AppState = "idle" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "naming" | "error";
 type CornerName = keyof Quad;
 
 function createDefaultCorners(width: number, height: number): Quad {
@@ -101,7 +107,17 @@ function Home() {
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
   const [documentName, setDocumentName] = useState(defaultDocumentName);
+  const [passwordEnabled, setPasswordEnabled] = useState(false);
+  const [pdfPassword, setPdfPassword] = useState("");
+  const [redactions, setRedactions] = useState<Redaction[]>([]);
+  const [redactionMode, setRedactionMode] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // AI naming (Pro): the suggested name + strategy, and the PDF awaiting download
+  const [suggestedName, setSuggestedName] = useState<string | null>(null);
+  const [suggestedKind, setSuggestedKind] = useState<NamingKind | null>(null);
+  const [detectedExpiration, setDetectedExpiration] = useState<DetectedExpiration | null>(null);
+  const [reminderDays, setReminderDays] = useState<NotifyBefore | null>(null);
+  const pendingPdfBlobRef = useRef<Blob | null>(null);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
@@ -116,7 +132,7 @@ function Home() {
   const startCamera = useCallback(async () => {
     trackEvent("open-camera");
     setErrorMessage(""); setCapturedImage(null); setProcessedImage(null);
-    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
+    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null); setRedactions([]); setRedactionMode(false);
     capturedImageDataRef.current = null;
     setShowOnboarding(false);
     const stream = await startCameraBase();
@@ -144,7 +160,8 @@ function Home() {
   const retake = useCallback(() => {
     vibrate(10); setCapturedImage(null); setProcessedImage(null);
     setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
-    setDocumentName(defaultDocumentName());
+    setDocumentName(defaultDocumentName()); setSuggestedName(null); setSuggestedKind(null);
+    pendingPdfBlobRef.current = null;
     capturedImageDataRef.current = null; startCamera();
   }, [startCamera]);
 
@@ -198,13 +215,14 @@ function Home() {
   // ── Pages ──
   const buildAllPages = useCallback((): PageEntry[] => {
     if (!capturedImage) return [...pages];
-    return [...pages, { processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "" }];
-  }, [pages, capturedImage, processedImage, currentFilter]);
+    return [...pages, { processed: processedImage, original: capturedImage, filter: currentFilter, thumbnail: "", redactions }];
+  }, [pages, capturedImage, processedImage, currentFilter, redactions]);
 
   const resetApp = useCallback(() => {
     resetPages(); setCapturedImage(null); setProcessedImage(null);
-    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null);
+    setCurrentFilter("auto"); setDisplayImage(null); setCropCorners(null); setRedactions([]); setRedactionMode(false);
     setOcrPagesForProcessing(null); capturedImageDataRef.current = null; setState("idle");
+    setSuggestedName(null); setSuggestedKind(null); pendingPdfBlobRef.current = null;
   }, [resetPages]);
 
   const normalizedDocumentName = useCallback(() => {
@@ -239,21 +257,59 @@ function Home() {
 
   useEffect(() => {
     if (state !== "ocr" || !ocrPagesForProcessing) return;
-    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing).then(b => { if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
+    if (!ocrEnabled) { skipOCRFn(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined).then(b => { if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }).catch(() => { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); }); return; }
     let cancelled = false;
-    (async () => { try { const b = await runOCR(ocrPagesForProcessing); if (!cancelled && b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } }
-      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing); if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
+    (async () => { try {
+      const res = await runOCR(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined);
+      if (!cancelled && res?.blob) {
+        // OCR text can reveal an expiration for any user; setting a reminder is Pro-only.
+        if (res.ocrText.trim()) {
+          const s = suggestDocumentName(res.ocrText, res.category);
+          const expiration = detectExpirations(res.ocrText)[0] ?? null;
+          if (expiration) { setDetectedExpiration(expiration); setReminderDays(null); }
+          if ((isPro && s.kind !== "generic") || expiration) {
+            setSuggestedName(s.name);
+            setSuggestedKind(s.kind);
+            setDocumentName(s.name);
+            pendingPdfBlobRef.current = res.blob;
+            setState("naming");
+            return;
+          }
+        }
+        downloadBlob(res.blob);
+        if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); }
+        resetApp();
+      }
+    }
+      catch { if (!cancelled) { try { const b = await skipOCRFn(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (b) { downloadBlob(b); if (!isPro && !upgradeBannerShownRef.current) { upgradeBannerShownRef.current = true; setShowUpgradeBanner(true); } resetApp(); } } catch { setErrorMessage("Text recognition couldn't complete for this page. The PDF will still include the scanned image."); setState("error"); } } }
     })();
     return () => { cancelled = true; };
-  }, [state, ocrPagesForProcessing]);
+  }, [state, ocrPagesForProcessing, isPro, passwordEnabled, pdfPassword]);
+
+  /** Download the PDF whose name was just reviewed on the "naming" screen. */
+  const handleReminderChange = useCallback((days: NotifyBefore | null) => {
+    setReminderDays(days);
+    if (!detectedExpiration || !isPro) return;
+    const documentId = `${normalizedDocumentName()}-${detectedExpiration.date.toISOString()}`;
+    if (days == null) removeReminder(`${documentId}-${detectedExpiration.date.toISOString()}`);
+    else saveReminder({ documentId, documentName: normalizedDocumentName(), expirationDate: detectedExpiration.date.toISOString(), notifyBefore: days });
+  }, [detectedExpiration, isPro, normalizedDocumentName]);
+
+  const downloadNamedPdf = useCallback(() => {
+    const blob = pendingPdfBlobRef.current;
+    if (!blob) return;
+    pendingPdfBlobRef.current = null;
+    downloadBlob(blob);
+    resetApp();
+  }, [downloadBlob, resetApp]);
 
   const handleSkipOCR = useCallback(async () => {
     const allPages = ocrPagesForProcessing; if (!allPages?.length) return;
     ocrAbortRef.current?.abort(); setIsGenerating(true);
-    try { const b = await skipOCRFn(allPages); if (b) { downloadBlob(b); resetApp(); } }
+    try { const b = await skipOCRFn(allPages, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined); if (b) { downloadBlob(b); resetApp(); } }
     catch { setErrorMessage("Failed to generate PDF."); setState("error"); }
     finally { setIsGenerating(false); ocrAbortRef.current = null; }
-  }, [ocrPagesForProcessing, skipOCRFn, downloadBlob, resetApp, ocrAbortRef]);
+  }, [ocrPagesForProcessing, skipOCRFn, downloadBlob, resetApp, ocrAbortRef, isPro, passwordEnabled, pdfPassword]);
 
   // ── Cloud save ──
   const handleSaveToCloud = useCallback(async () => {
@@ -282,10 +338,24 @@ function Home() {
         console.warn("OCR extraction failed during cloud save:", ocrErr);
       }
 
-      await saveToCloud(blob, allPages.length, normalizedDocumentName(), categorizationResult?.category || "", ocrText);
+      const contentHash = hashImageData(pageEntries.map((p) => p.imageUrl).join("|"));
+      const duplicate = findDuplicate(savedDocs, { exactHash: contentHash, ocrText, isPro });
+      if (duplicate) {
+        const matched = duplicate.matchedDoc;
+        const date = new Date(matched.date).toLocaleDateString();
+        const detail = duplicate.method === "similar" ? ` (${Math.round((duplicate.similarity || 0) * 100)}% text match)` : "";
+        if (!window.confirm(`⚠️ This appears to be the same document as ${matched.name} saved on ${date}${detail}. Save anyway?`)) {
+          window.alert(`Existing document: ${matched.name} — ${date}`);
+          return;
+        }
+      } else if (!isPro && ocrText.trim() && savedDocs.some((d) => d.ocrText)) {
+        window.alert("Enable similarity detection with Pro to catch documents with matching text.");
+      }
+
+      await saveToCloud(blob, allPages.length, normalizedDocumentName(), categorizationResult?.category || "", ocrText, contentHash);
     } catch (err) { console.error("Save failed:", err); setErrorMessage("Couldn't save to cloud. Check your connection and try again."); setState("error"); }
     finally { setIsGenerating(false); }
-  }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult, normalizedDocumentName]);
+  }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult, normalizedDocumentName, savedDocs, isPro]);
 
   // ── File import ──
   async function processFile(file: File): Promise<PageEntry> {
@@ -336,6 +406,12 @@ function Home() {
 
   useEffect(() => {
     if (state === "idle") {
+      try { notifyDueReminders(); } catch { /* notifications are optional */ }
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (state === "idle") {
       try { if (localStorage.getItem("docsnap-onboarding-seen") !== "true") setShowOnboarding(true); } catch { /* storage unavailable: still show */ setShowOnboarding(true); }
     }
   }, [state]);
@@ -382,9 +458,13 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} />}
+      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} redactions={redactions} redactionMode={redactionMode} onRedactionChange={setRedactions} onRedactionModeChange={(open) => { if (open && !isPro) { setShowUpgradeBanner(true); return; } setRedactionMode(open); }} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
+
+      {state === "naming" && suggestedName && suggestedKind && (
+        <NameReviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} suggestion={suggestedName} suggestionKind={suggestedKind} pageCount={ocrPagesForProcessing?.length ?? 1} onDownload={downloadNamedPdf} expiration={detectedExpiration ?? undefined} isPro={isPro} reminderDays={reminderDays} onReminderChange={handleReminderChange} upgradeUrl={upgradeUrl} />
+      )}
 
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}
 

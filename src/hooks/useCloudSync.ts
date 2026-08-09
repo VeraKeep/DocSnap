@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import type { DuplicateDocument } from "../duplicateDetector";
+
+function withDuplicateCounts(docs: CloudDocument[]): CloudDocument[] {
+  const counts = new Map<string, number>();
+  for (const doc of docs) if (doc.contentHash) counts.set(doc.contentHash, (counts.get(doc.contentHash) || 0) + 1);
+  return docs.map((doc) => ({ ...doc, duplicateCount: doc.contentHash ? Math.max(0, (counts.get(doc.contentHash) || 1) - 1) : 0 }));
+}
 import { useAuth, useUser } from "@clerk/tanstack-start";
 import { uploadPDFBlob } from "../cloudSync";
 import {
@@ -35,14 +42,14 @@ export function useCloudSync() {
     }
     setLoadingDocs(true);
     listDocuments(user.id)
-      .then(setMyScans)
+      .then((docs) => setMyScans(withDuplicateCounts(docs)))
       .catch(() => setMyScans([]))
       .finally(() => setLoadingDocs(false));
   }, [isSignedIn, isCloudReady, user?.id]);
 
   /** Save a PDF blob to cloud storage. Returns true on success. */
   const saveToCloud = useCallback(
-    async (pdfBlob: Blob, pageCount: number, name: string, autoCategory?: string, ocrText?: string): Promise<boolean> => {
+    async (pdfBlob: Blob, pageCount: number, name: string, autoCategory?: string, ocrText?: string, contentHash?: string): Promise<boolean> => {
       if (!isSignedIn || !user?.id) return false;
 
       setIsSaving(true);
@@ -64,10 +71,11 @@ export function useCloudSync() {
           fileUrl: uploadResult.fileUrl,
           autoCategory: autoCategory || "",
           ocrText: ocrText || "",
+          contentHash: contentHash || "",
         });
 
         const updatedDocs = await listDocuments(user.id);
-        setMyScans(updatedDocs);
+        setMyScans(withDuplicateCounts(updatedDocs));
         setSaveSuccess(true);
         return true;
       } catch (err) {
@@ -86,7 +94,7 @@ export function useCloudSync() {
     setLoadingDocs(true);
     try {
       const docs = await listDocuments(user.id);
-      setMyScans(docs);
+      setMyScans(withDuplicateCounts(docs));
     } catch {
       setMyScans([]);
     } finally {

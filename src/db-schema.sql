@@ -26,3 +26,15 @@ CREATE INDEX IF NOT EXISTS idx_users_clerk_id ON users(clerk_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_events_stripe_id ON webhook_events(stripe_event_id);
+CREATE TABLE IF NOT EXISTS share_links (
+  id UUID PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  owner_user_id TEXT NOT NULL,
+  password_hash TEXT,
+  expires_at TIMESTAMPTZ,
+  max_downloads INTEGER,
+  download_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_share_links_owner ON share_links(owner_user_id);

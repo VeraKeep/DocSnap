@@ -6,6 +6,7 @@ import {
   getDocCategory,
 } from "../cloudStorage";
 import { DocumentSearch } from "./DocumentSearch";
+import { ShareDialog } from "./ShareDialog";
 
 // ── Folder config ──────────────────────────────────────────────────
 
@@ -191,15 +192,18 @@ function DocCard({
   onDownload,
   onDelete,
   onCategoryChange,
+  onShare,
 }: {
   doc: CloudDocument;
   deletingDocId: string | null;
   onDownload: (doc: CloudDocument) => void;
   onDelete: (docId: string) => void;
   onCategoryChange: (docId: string, cat: DocCategory) => void;
+  onShare: (doc: CloudDocument) => void;
 }) {
   const category = getDocCategory(doc);
   const cfg = FOLDER_CONFIGS[category];
+  const duplicateCount = (doc as CloudDocument & { duplicateCount?: number }).duplicateCount ?? 0;
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900/60 p-3 transition hover:border-gray-700">
@@ -226,8 +230,13 @@ function DocCard({
       {/* Name + date + badge */}
       <div className="flex-1 min-w-0 text-left">
         <p className="truncate text-sm font-medium text-gray-200">
-          {doc.name}
+        {doc.name}
         </p>
+        {duplicateCount > 0 && (
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-700/50 bg-amber-900/30 px-2 py-0.5 text-[10px] text-amber-300" title="Duplicate group">
+          ⚠ {duplicateCount} duplicate{duplicateCount === 1 ? "" : "s"} found
+        </span>
+        )}
         <div className="mt-0.5 flex items-center gap-2">
           <p className="text-xs text-gray-500">
             {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"} ·{" "}
@@ -259,6 +268,26 @@ function DocCard({
               strokeLinecap="round"
               strokeLinejoin="round"
               d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+            />
+          </svg>
+        </button>
+        <button
+          onClick={() => onShare(doc)}
+          className="rounded p-1.5 text-gray-400 transition hover:bg-gray-800 hover:text-white"
+          title="Share"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"
             />
           </svg>
         </button>
@@ -326,6 +355,8 @@ export function MyScans({
   const [collapsed, setCollapsed] = useState<Set<DocCategory>>(new Set());
   // Track whether search mode is active
   const [searchMode, setSearchMode] = useState(false);
+  // Document currently being shared (opens ShareDialog)
+  const [shareDoc, setShareDoc] = useState<CloudDocument | null>(null);
 
   const docCountDisplay = isPro
     ? `${scans.length} documents · Unlimited`
@@ -485,6 +516,7 @@ export function MyScans({
                             onDownload={onDownload}
                             onDelete={onDelete}
                             onCategoryChange={onCategoryChange}
+                            onShare={(d) => setShareDoc(d)}
                           />
                         ))}
                       </div>
@@ -495,6 +527,14 @@ export function MyScans({
             );
           })}
         </div>
+      )}
+      {shareDoc && (
+        <ShareDialog
+          doc={shareDoc}
+          isPro={isPro}
+          upgradeUrl={upgradeUrl}
+          onClose={() => setShareDoc(null)}
+        />
       )}
     </div>
   );

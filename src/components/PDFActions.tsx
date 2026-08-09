@@ -11,6 +11,11 @@ interface PDFActionsProps {
   docLimit: number;
   /** URL to upgrade/pricing page */
   upgradeUrl: string;
+  isPro: boolean;
+  password: string;
+  passwordEnabled: boolean;
+  onPasswordEnabledChange: (enabled: boolean) => void;
+  onPasswordChange: (password: string) => void;
   onRetake: () => void;
   onAddFromCamera: () => void;
   onAddFromPhotos: () => void;
@@ -39,6 +44,11 @@ export function PDFActions({
   cloudDocCount,
   docLimit,
   upgradeUrl,
+  isPro,
+  password,
+  passwordEnabled,
+  onPasswordEnabledChange,
+  onPasswordChange,
   onRetake,
   onAddFromCamera,
   onAddFromPhotos,
@@ -57,6 +67,20 @@ export function PDFActions({
       <div className="mx-auto mb-4 w-full max-w-md text-left">
         <label htmlFor="document-name" className="mb-1.5 block text-sm font-medium text-gray-300">Name your document</label>
         <input id="document-name" type="text" value={documentName} onChange={(e) => onDocumentNameChange(e.target.value)} placeholder="2026 Taxes.pdf or Car Insurance.pdf" disabled={disabled} aria-label="Document filename" className={`w-full rounded-lg border bg-gray-800 px-3.5 py-3 text-base text-white shadow-inner outline-none transition placeholder:text-gray-500 disabled:opacity-50 ${isCustomName ? "border-emerald-500/70" : "border-gray-600"} focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40`} />
+      </div>
+      <div className="mx-auto mb-4 w-full max-w-md rounded-lg border border-gray-700 bg-gray-900/70 p-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+          <input type="checkbox" checked={passwordEnabled} onChange={(e) => onPasswordEnabledChange(e.target.checked)} disabled={!isPro || disabled} className="h-4 w-4 accent-indigo-500" />
+          <span>Password protect <span className="text-xs text-indigo-400">Pro</span></span>
+        </label>
+        {!isPro ? (
+          <p className="mt-2 text-xs text-amber-400">Password-protected PDFs are a Pro feature. <a className="underline hover:text-amber-300" href={upgradeUrl}>Upgrade to Pro</a></p>
+        ) : passwordEnabled ? (
+          <div className="mt-2 flex gap-2">
+            <input type="password" minLength={4} value={password} onChange={(e) => onPasswordChange(e.target.value)} placeholder="Enter a PDF password" disabled={disabled} className="min-w-0 flex-1 rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-indigo-400" aria-label="PDF password" />
+            <button type="button" onClick={() => { const input = document.querySelector<HTMLInputElement>('input[aria-label="PDF password"]'); if (input) input.type = input.type === "password" ? "text" : "password"; }} className="rounded-md border border-gray-600 px-2 text-xs text-gray-300 hover:text-white">Show</button>
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3">
       <button
