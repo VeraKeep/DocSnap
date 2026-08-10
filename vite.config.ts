@@ -32,11 +32,29 @@ export default defineConfig({
           if (id.includes("tesseract.js")) return "vendor-tesseract";
           if (id.includes("/jspdf/")) return "vendor-jspdf";
 
-          if (id.includes("/react/") || id.includes("/react-dom/")) {
+          // Only react + react-dom belong in the React vendor chunk. The old
+          // "/react/" matcher also captured @tanstack/react-router,
+          // @tanstack/react-start, @clerk/clerk-react and @uploadthing/react,
+          // whose sibling packages (@tanstack/router-core, @clerk/shared,
+          // @uploadthing/core) land in other vendor chunks — so vendor-react
+          // imported vendor-router/vendor-clerk/vendor-upload, which import
+          // React back. That circular chunk graph broke hydration: vendor-router
+          // evaluates `React.use` at module scope before vendor-react finishes
+          // initializing ("Cannot read properties of undefined (reading 'use')").
+          if (
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/react-dom/")
+          ) {
             return "vendor-react";
           }
+          // Clerk's TanStack adapter (@clerk/tanstack-start) imports from
+          // @tanstack/react-start and vice versa, so a separate vendor-clerk
+          // chunk always forms an import cycle with vendor-router. Circular
+          // chunks made vendor-router's module-scope React patching run while
+          // React was still initializing. Keep @clerk/* in the same chunk as
+          // @tanstack/* instead; module-level cycles inside one chunk are safe.
           if (id.includes("/@clerk/") || id.includes("/clerk/") || id.includes("clerk")) {
-            return "vendor-clerk";
+            return "vendor-router";
           }
           if (
             id.includes("/@tanstack/react-router/") ||
