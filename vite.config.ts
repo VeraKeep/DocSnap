@@ -5,6 +5,10 @@ import { defineConfig } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
+  // Expose NEXT_PUBLIC_* vars (the owner's Clerk publishable key) to
+  // import.meta.env in addition to Vite's default VITE_ prefix, so client
+  // code (e.g. __root.tsx's ClerkProvider) receives them at build time.
+  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   build: {
     rollupOptions: {
       output: {

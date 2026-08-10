@@ -90,7 +90,7 @@ function writeUserDocs(userId: string, docs: CloudDocument[]) {
 
 /** Check if cloud sync is configured (env vars present) */
 export const isCloudConfigured = createServerFn().handler(async () => {
-  return !!(process.env.UPLOADTHING_SECRET && process.env.CLERK_PUBLISHABLE_KEY);
+  return !!(process.env.UPLOADTHING_SECRET && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 });
 
 /** List all saved documents for a user.
