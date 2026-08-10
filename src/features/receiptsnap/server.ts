@@ -112,24 +112,48 @@ async function extract(imageBase64: string, mimeType: string) {
   };
 }
 
-function toReceiptSummary(r: Record<string, unknown>) {
+/**
+ * Wire shapes for the serialized API responses. `Json` is the JSONB payload
+ * from the items/extra columns (arbitrary JSON produced by AI extraction); it
+ * must stay `any` so TanStack Start's strict output-serializability check
+ * accepts it — `unknown` is rejected by `ValidateSerializable`.
+ */
+type Json = any;
+
+interface ReceiptSummary {
+  id: number;
+  merchant: string | null;
+  store_date: string | null;
+  total: number | null;
+  currency: string | null;
+  items: Json;
+  extra: Json;
+  created_at: string;
+}
+
+interface ReceiptDetail extends ReceiptSummary {
+  image_base64: string | null;
+  clerk_user_id: string | null;
+}
+
+function toReceiptSummary(r: Record<string, unknown>): ReceiptSummary {
   return {
-    id: r.id,
-    merchant: r.merchant,
-    store_date: r.store_date,
+    id: Number(r.id),
+    merchant: (r.merchant as string | null) ?? null,
+    store_date: (r.store_date as string | null) ?? null,
     total: r.total == null ? null : Number(r.total),
-    currency: r.currency,
-    items: r.items,
-    extra: r.extra,
+    currency: (r.currency as string | null) ?? null,
+    items: r.items as Json,
+    extra: r.extra as Json,
     created_at: String(r.created_at),
   };
 }
 
-function toReceipt(r: Record<string, unknown>) {
+function toReceipt(r: Record<string, unknown>): ReceiptDetail {
   return {
     ...toReceiptSummary(r),
-    image_base64: r.image_base64,
-    clerk_user_id: r.clerk_user_id,
+    image_base64: (r.image_base64 as string | null) ?? null,
+    clerk_user_id: (r.clerk_user_id as string | null) ?? null,
   };
 }
 
@@ -137,13 +161,13 @@ function toReceipt(r: Record<string, unknown>) {
  * Auth-contract proof: resolves the caller's Clerk user ID from the server
  * session, or fails closed with HTTP 401.
  */
-export const whoAmI = createServerFn({ method: "GET" }).handler(async (opts) => {
-  const userId = await requireServerFunctionUser(opts.context);
+export const whoAmI = createServerFn({ method: "GET" }).handler(async () => {
+  const userId = await requireServerFunctionUser();
   return { userId };
 });
 
-export const listReceipts = createServerFn({ method: "GET" }).handler(async (opts) => {
-  const userId = await requireServerFunctionUser(opts.context);
+export const listReceipts = createServerFn({ method: "GET" }).handler(async () => {
+  const userId = await requireServerFunctionUser();
   if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
   const rows = (await sql`
     SELECT id, merchant, store_date, total, currency, items, extra, created_at
@@ -154,53 +178,50 @@ export const listReceipts = createServerFn({ method: "GET" }).handler(async (opt
   return { configured: true, receipts: rows.map(toReceiptSummary) };
 });
 
-export const searchReceipts = createServerFn({
-  method: "POST",
-  validator: (data: unknown) => {
+export const searchReceipts = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
     const d = (data ?? {}) as { query?: unknown };
     if (typeof d.query !== "string" || d.query.trim().length === 0) {
       throw new Error("Enter a search term.");
     }
     return { query: d.query.trim().slice(0, 200) };
-  },
-}).handler(async (opts) => {
-  const userId = await requireServerFunctionUser(opts.context);
-  if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
-  const q = `%${opts.data.query}%`;
-  const rows = (await sql`
-    SELECT id, merchant, store_date, total, currency, items, extra, created_at
-    FROM receipts
-    WHERE clerk_user_id = ${userId}
-      AND (merchant ILIKE ${q} OR CAST(items AS TEXT) ILIKE ${q} OR CAST(extra AS TEXT) ILIKE ${q})
-    ORDER BY created_at DESC
-  `) as Record<string, unknown>[];
-  return { configured: true, receipts: rows.map(toReceiptSummary) };
-});
+  })
+  .handler(async (opts) => {
+    const userId = await requireServerFunctionUser();
+    if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
+    const q = `%${opts.data.query}%`;
+    const rows = (await sql`
+      SELECT id, merchant, store_date, total, currency, items, extra, created_at
+      FROM receipts
+      WHERE clerk_user_id = ${userId}
+        AND (merchant ILIKE ${q} OR CAST(items AS TEXT) ILIKE ${q} OR CAST(extra AS TEXT) ILIKE ${q})
+      ORDER BY created_at DESC
+    `) as Record<string, unknown>[];
+    return { configured: true, receipts: rows.map(toReceiptSummary) };
+  });
 
-export const getReceipt = createServerFn({
-  method: "POST",
-  validator: (data: unknown) => {
+export const getReceipt = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
     const d = (data ?? {}) as { id?: unknown };
     const id = typeof d.id === "number" ? d.id : Number(d.id);
     if (!Number.isInteger(id) || id <= 0) {
       throw new Error("Invalid receipt id.");
     }
     return { id };
-  },
-}).handler(async (opts) => {
-  const userId = await requireServerFunctionUser(opts.context);
-  if (!process.env.DATABASE_URL) return { configured: false, receipt: null };
-  const rows = (await sql`
-    SELECT * FROM receipts
-    WHERE id = ${opts.data.id} AND clerk_user_id = ${userId}
-  `) as Record<string, unknown>[];
-  if (!rows[0]) return { configured: true, receipt: null };
-  return { configured: true, receipt: toReceipt(rows[0]) };
-});
+  })
+  .handler(async (opts) => {
+    const userId = await requireServerFunctionUser();
+    if (!process.env.DATABASE_URL) return { configured: false, receipt: null };
+    const rows = (await sql`
+      SELECT * FROM receipts
+      WHERE id = ${opts.data.id} AND clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!rows[0]) return { configured: true, receipt: null };
+    return { configured: true, receipt: toReceipt(rows[0]) };
+  });
 
-export const saveReceipt = createServerFn({
-  method: "POST",
-  validator: (data: unknown) => {
+export const saveReceipt = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
     const d = (data ?? {}) as { imageBase64?: unknown; mimeType?: unknown };
     if (typeof d.imageBase64 !== "string" || d.imageBase64.length === 0) {
       throw new Error("Please choose a receipt image.");
@@ -213,35 +234,34 @@ export const saveReceipt = createServerFn({
       throw new Error("Unsupported image type. Please use a JPEG, PNG, or WebP photo.");
     }
     return { imageBase64: d.imageBase64, mimeType };
-  },
-}).handler(async (opts) => {
-  const userId = await requireServerFunctionUser(opts.context);
-  if (!process.env.DATABASE_URL) {
-    throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
-  }
-  const extracted = await extract(opts.data.imageBase64, opts.data.mimeType);
-  const rows = (await sql`
-    INSERT INTO receipts (clerk_user_id, merchant, store_date, total, currency, items, extra, image_base64)
-    VALUES (${userId}, ${extracted.merchant}, ${extracted.date}, ${extracted.total}, ${extracted.currency},
-            ${JSON.stringify(extracted.items)}::jsonb,
-            ${JSON.stringify({ ...extracted, items: undefined })}::jsonb,
-            ${opts.data.imageBase64})
-    RETURNING id
-  `) as Record<string, unknown>[];
-  return { id: rows[0].id, extracted };
-});
+  })
+  .handler(async (opts) => {
+    const userId = await requireServerFunctionUser();
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const extracted = await extract(opts.data.imageBase64, opts.data.mimeType);
+    const rows = (await sql`
+      INSERT INTO receipts (clerk_user_id, merchant, store_date, total, currency, items, extra, image_base64)
+      VALUES (${userId}, ${extracted.merchant}, ${extracted.date}, ${extracted.total}, ${extracted.currency},
+              ${JSON.stringify(extracted.items)}::jsonb,
+              ${JSON.stringify({ ...extracted, items: undefined })}::jsonb,
+              ${opts.data.imageBase64})
+      RETURNING id
+    `) as Record<string, unknown>[];
+    return { id: Number(rows[0].id), extracted };
+  });
 
-export const joinWaitlist = createServerFn({
-  method: "POST",
-  validator: (data: unknown) => {
+export const joinWaitlist = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
     const d = (data ?? {}) as { email?: unknown };
     if (typeof d.email !== "string" || d.email.trim().length === 0) {
       throw new Error("Enter an email address.");
     }
     return { email: d.email.trim().toLowerCase() };
-  },
-}).handler(async (opts) => {
-  if (!process.env.DATABASE_URL) return { configured: false };
-  await sql`INSERT INTO waitlist (email) VALUES (${opts.data.email}) ON CONFLICT (email) DO NOTHING`;
-  return { configured: true };
-});
+  })
+  .handler(async (opts) => {
+    if (!process.env.DATABASE_URL) return { configured: false };
+    await sql`INSERT INTO waitlist (email) VALUES (${opts.data.email}) ON CONFLICT (email) DO NOTHING`;
+    return { configured: true };
+  });
