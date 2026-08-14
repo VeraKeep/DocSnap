@@ -126,7 +126,7 @@ function ProfilePage() {
         )}
       </section>
 
-      <footer className="border-t border-gray-800/50 py-5 text-center text-xs text-gray-600">DocSnap © 2026 — scan documents instantly, right in your browser</footer>
+      <footer className="border-t border-gray-800/50 py-5 text-center text-xs text-gray-600">DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</footer>
     </main>
   );
 }

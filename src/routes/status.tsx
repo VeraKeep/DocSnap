@@ -110,7 +110,7 @@ function Status() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
       </footer>
     </main>
   );

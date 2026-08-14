@@ -23,16 +23,16 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Scan documents to PDF instantly — no account, no upload, no Adobe license. Everything runs locally in your browser.",
+          "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser. Part of the VeraKeep™ suite.",
       },
       {
         property: "og:title",
-        content: "DocSnap © 2026 — Scan documents to PDF",
+        content: "DocSnap — one place for the important stuff you own and the documents that go with it",
       },
       {
         property: "og:description",
         content:
-          "Scan documents to PDF instantly — no account, no upload, no Adobe license. Everything runs locally in your browser.",
+          "Scan any document to a searchable PDF right in your browser, then keep everything you own and its paperwork organized in one place — part of the VeraKeep™ suite.",
       },
       {
         property: "og:image",
@@ -48,12 +48,12 @@ export const Route = createRootRoute({
       },
       {
         name: "twitter:title",
-        content: "DocSnap © 2026 — Scan documents to PDF",
+        content: "DocSnap — one place for the important stuff you own and the documents that go with it",
       },
       {
         name: "twitter:description",
         content:
-          "Scan documents to PDF instantly — no account, no upload, no Adobe license.",
+          "Scan any document to a searchable PDF right in your browser — part of the VeraKeep™ suite.",
       },
       {
         name: "twitter:image",
