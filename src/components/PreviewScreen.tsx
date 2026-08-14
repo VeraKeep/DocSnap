@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FilterToolbar } from "./FilterToolbar";
 import { PageStrip } from "./PageStrip";
 import { PDFActions } from "./PDFActions";
 import type { FilterType } from "../imageFilters";
 import type { PageEntry } from "../hooks/usePages";
-import { RedactionTool, type Redaction } from "./RedactionTool";
+import { recognizePage } from "../ocr";
+import { detectSensitiveInfo } from "../sensitiveDetector";
+import { RedactionTool, mergeRedactions, type Redaction, type SuggestResult } from "./RedactionTool";
 
 interface PreviewScreenProps {
   previewImage: string;
@@ -106,9 +108,49 @@ export function PreviewScreen({
     img.src = previewImage;
   }, [previewImage]);
 
+  // ── Auto-detect sensitive info (Pro) ──────────────────────────────
+  // OCR the SAME imageUrl the RedactionTool canvas displays, so detected
+  // boxes land 1:1 in the canvas's pixel space (image natural dimensions).
+  const [suggest, setSuggest] = useState<SuggestResult>({ status: "idle", message: "", added: 0 });
+  // Refs keep the async completion honest: it merges against the LATEST
+  // redactions (user may draw while scanning) and is discarded if the user
+  // already left redaction mode.
+  const redactionsRef = useRef(redactions);
+  const redactionModeRef = useRef(redactionMode);
+  useEffect(() => { redactionsRef.current = redactions; }, [redactions]);
+  useEffect(() => { redactionModeRef.current = redactionMode; }, [redactionMode]);
+  // Fresh status every time redaction mode opens/closes — no stale results.
+  useEffect(() => { setSuggest({ status: "idle", message: "", added: 0 }); }, [redactionMode]);
+
+  const handleSuggest = useCallback(async () => {
+    if (!isPro || !previewImage) return;
+    setSuggest({ status: "busy", message: "Scanning page for sensitive info…", added: 0 });
+    try {
+      const words = await recognizePage(previewImage);
+      if (!redactionModeRef.current) return; // user left redaction mode mid-scan
+      const items = detectSensitiveInfo(words);
+      if (items.length === 0) {
+        setSuggest({ status: "none", message: "No sensitive info detected", added: 0 });
+        return;
+      }
+      const boxes: Redaction[] = items.map((i) => ({
+        x: i.position.x, y: i.position.y, width: i.position.width, height: i.position.height,
+      }));
+      const current = redactionsRef.current;
+      const merged = mergeRedactions(current, boxes);
+      const added = merged.length - current.length;
+      onRedactionChange(merged);
+      setSuggest({ status: "ok", message: `${added} sensitive item${added === 1 ? "" : "s"} found — added`, added });
+    } catch (err) {
+      console.error("Auto-detect redactions failed:", err);
+      if (!redactionModeRef.current) return;
+      setSuggest({ status: "error", message: "Couldn't scan this page — you can still draw redactions manually", added: 0 });
+    }
+  }, [isPro, previewImage, onRedactionChange]);
+
   return (
     <div className="flex flex-1 flex-col animate-fade-in">
-      {redactionMode ? <RedactionTool imageUrl={previewImage} redactions={redactions} onChange={onRedactionChange} onApply={() => onRedactionModeChange(false)} onCancel={() => onRedactionModeChange(false)} /> : <>
+      {redactionMode ? <RedactionTool imageUrl={previewImage} redactions={redactions} onChange={onRedactionChange} onApply={() => onRedactionModeChange(false)} onCancel={() => onRedactionModeChange(false)} suggestEnabled={isPro} suggest={suggest} onSuggest={handleSuggest} /> : <>
       {/* Image preview */}
       <div className="relative flex-1 bg-black min-h-0">
         {isComputingFilter && (
