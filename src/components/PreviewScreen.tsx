@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { FilterToolbar } from "./FilterToolbar";
 import { PageStrip } from "./PageStrip";
 import { PDFActions } from "./PDFActions";
@@ -53,6 +54,9 @@ interface PreviewScreenProps {
   redactionMode: boolean;
   onRedactionChange: (r: Redaction[]) => void;
   onRedactionModeChange: (open: boolean) => void;
+  /** True when a free user tapped Redact — shows the inline upgrade prompt. */
+  redactionUpgrade: boolean;
+  onRedactionUpgradeDismiss: () => void;
 }
 
 export function PreviewScreen({
@@ -90,8 +94,18 @@ export function PreviewScreen({
   onDocumentNameChange,
   onSaveToCloud,
   onDone,
-  isDesktop, redactions, redactionMode, onRedactionChange, onRedactionModeChange,
+  isDesktop, redactions, redactionMode, onRedactionChange, onRedactionModeChange, redactionUpgrade, onRedactionUpgradeDismiss,
 }: PreviewScreenProps) {
+  // Redactions live in the image's natural pixel space; load the preview to
+  // learn its natural size so the overlay can be letterboxed to match the
+  // object-contain <img> exactly (via an SVG viewBox + preserveAspectRatio).
+  const [natDims, setNatDims] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setNatDims({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = previewImage;
+  }, [previewImage]);
+
   return (
     <div className="flex flex-1 flex-col animate-fade-in">
       {redactionMode ? <RedactionTool imageUrl={previewImage} redactions={redactions} onChange={onRedactionChange} onApply={() => onRedactionModeChange(false)} onCancel={() => onRedactionModeChange(false)} /> : <>
@@ -108,6 +122,26 @@ export function PreviewScreen({
           alt="Document preview"
           className="absolute inset-0 h-full w-full object-contain animate-pulse-filter"
         />
+        {/* Burned redactions for the current page, overlaid in image coordinates */}
+        {redactions.length > 0 && natDims && (
+          <svg
+            className="pointer-events-none absolute inset-0 h-full w-full"
+            viewBox={`0 0 ${natDims.w} ${natDims.h}`}
+            preserveAspectRatio="xMidYMid meet"
+            aria-label="Redacted areas"
+          >
+            {redactions.map((r, i) => (
+              <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height} fill="#000" />
+            ))}
+          </svg>
+        )}
+        {redactions.length > 0 && (
+          <div className="absolute left-3 top-3 z-10">
+            <span className="rounded-full bg-gray-900/70 px-2.5 py-1 text-[11px] text-gray-400 backdrop-blur-sm">
+              ▰ {redactions.length} redaction{redactions.length === 1 ? "" : "s"} applied
+            </span>
+          </div>
+        )}
         {/* Desktop keyboard hint */}
         {isDesktop && (
           <div className="absolute right-3 top-3 z-10">
@@ -165,6 +199,25 @@ export function PreviewScreen({
       />
       <button onClick={() => onRedactionModeChange(true)} className="mx-4 mb-2 rounded-lg border border-red-500/50 bg-red-950/40 px-3 py-2 text-sm font-medium text-red-200">▰ Redact <span className="text-xs text-red-300">(Pro)</span>{redactions.length > 0 && ` · ${redactions.length}`}</button>
       </>}
+
+      {/* Inline upgrade prompt for free users tapping Redact */}
+      {redactionUpgrade && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4" onClick={onRedactionUpgradeDismiss}>
+          <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-900 p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/15">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-white">Redaction is a Pro feature</h3>
+            <p className="mt-1.5 text-sm text-gray-400">Upgrade to permanently black out sensitive information in your scanned documents.</p>
+            <div className="mt-5 flex gap-2">
+              <button onClick={onRedactionUpgradeDismiss} className="flex-1 rounded-lg border border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-300 transition hover:bg-gray-800">Not now</button>
+              <a href={upgradeUrl} className="flex-1 rounded-lg bg-indigo-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-indigo-500">Upgrade</a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
