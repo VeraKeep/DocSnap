@@ -4,6 +4,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "./db";
+import { getVerifiedUserId } from "./serverAuth";
 
 export type Tier = "free" | "personal" | "household" | "complete";
 
@@ -81,8 +82,25 @@ export async function findUserByEmail(email: string): Promise<string | null> {
   } catch (err) { console.error("[subscription] Failed to find user by email:", err); return null; }
 }
 
+/** Fetch the signed-in user's subscription.
+ *  The client-passed clerkUserId validator arg is ignored — the acting
+ *  identity always comes from the verified Clerk session. */
 export const getSubscription = createServerFn().validator((clerkUserId: string) => clerkUserId)
-  .handler(async ({ data }) => getUserSubscription(data));
+  .handler(async () => {
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
+    return getUserSubscription(userId);
+  });
 export const getPortalUrl = createServerFn().handler(async () => process.env.STRIPE_CUSTOMER_PORTAL_URL || null);
+/** Sync the signed-in user's record. The client-passed clerkUserId is ignored
+ *  in favor of the verified session; `email` is still taken from the caller
+ *  (the user's own Clerk profile email, used only to link Stripe checkout
+ *  emails to the user record — low risk, and only ever upserts the row keyed
+ *  by the VERIFIED user id). */
 export const syncUser = createServerFn().validator((params: { clerkUserId: string; email: string }) => params)
-  .handler(async ({ data }) => { await upsertUser(data.clerkUserId, data.email); return { ok: true }; });
+  .handler(async ({ data }) => {
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
+    await upsertUser(userId, data.email);
+    return { ok: true };
+  });
