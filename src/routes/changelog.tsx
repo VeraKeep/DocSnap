@@ -26,6 +26,7 @@ const entries: ChangelogEntry[] = [
       "Password-protected PDFs — encrypt scans with a password",
       "AI document naming — automatic titles generated from OCR text",
       "Expiration detection and reminders — browser notifications when important dates approach",
+      "Auto-detect sensitive info (SSN, card numbers, etc.) and suggest redactions (Pro).",
     ],
   },
   {
