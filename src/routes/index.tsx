@@ -266,12 +266,13 @@ function Home() {
     (async () => { try {
       const res = await runOCR(ocrPagesForProcessing, isPro && passwordEnabled && pdfPassword.length >= 4 ? pdfPassword : undefined);
       if (!cancelled && res?.blob) {
-        // OCR text can reveal an expiration for any user; setting a reminder is Pro-only.
-        if (res.ocrText.trim()) {
+        // AI document naming and expiration detection/reminders are Pro features:
+        // free users never reach the naming/review screen and download directly.
+        if (res.ocrText.trim() && isPro) {
           const s = suggestDocumentName(res.ocrText, res.category);
           const expiration = detectExpirations(res.ocrText)[0] ?? null;
           if (expiration) { setDetectedExpiration(expiration); setReminderDays(null); }
-          if ((isPro && s.kind !== "generic") || expiration) {
+          if (s.kind !== "generic" || expiration) {
             setSuggestedName(s.name);
             setSuggestedKind(s.kind);
             setDocumentName(s.name);
