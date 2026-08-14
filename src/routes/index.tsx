@@ -7,7 +7,7 @@ import { recognizePages as ocrRecognizePages } from "../ocr";
 import { ocrWordsToText } from "../documentCategorizer";
 import { suggestDocumentName, type NamingKind } from "../documentNamer";
 import { detectExpirations, type DetectedExpiration } from "../expirationDetector";
-import { notifyDueReminders, saveReminder, removeReminder, type NotifyBefore } from "../reminders";
+import { notifyDueReminders, requestNotificationPermission, saveReminder, removeReminder, type NotifyBefore } from "../reminders";
 import { generatePlainPDF } from "../searchablePdf";
 import type { Redaction } from "../components/RedactionTool";
 import type { PageEntry } from "../hooks/usePages";
@@ -117,6 +117,7 @@ function Home() {
   const [suggestedKind, setSuggestedKind] = useState<NamingKind | null>(null);
   const [detectedExpiration, setDetectedExpiration] = useState<DetectedExpiration | null>(null);
   const [reminderDays, setReminderDays] = useState<NotifyBefore | null>(null);
+  const [reminderNotificationsBlocked, setReminderNotificationsBlocked] = useState(false);
   const pendingPdfBlobRef = useRef<Blob | null>(null);
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -291,8 +292,26 @@ function Home() {
     setReminderDays(days);
     if (!detectedExpiration || !isPro) return;
     const documentId = `${normalizedDocumentName()}-${detectedExpiration.date.toISOString()}`;
-    if (days == null) removeReminder(`${documentId}-${detectedExpiration.date.toISOString()}`);
-    else saveReminder({ documentId, documentName: normalizedDocumentName(), expirationDate: detectedExpiration.date.toISOString(), notifyBefore: days });
+    if (days == null) {
+      removeReminder(`${documentId}-${detectedExpiration.date.toISOString()}`);
+      return;
+    }
+    saveReminder({ documentId, documentName: normalizedDocumentName(), expirationDate: detectedExpiration.date.toISOString(), notifyBefore: days });
+    // Ask for browser notification permission so the saved reminder can actually fire later.
+    // Fire-and-forget: never block saving the reminder on the prompt result. If the user
+    // denies or the browser doesn't support notifications, the reminder still saves locally —
+    // surface a small hint so they know they won't get pinged.
+    requestNotificationPermission().then((result) => {
+      if (result === "denied" || result === "unsupported") {
+        setReminderNotificationsBlocked(true);
+        console.warn(`DocSnap reminders: browser notifications are ${result} — reminder saved locally but won't notify.`);
+      } else if (result === "granted") {
+        setReminderNotificationsBlocked(false);
+      }
+    }).catch((err) => {
+      setReminderNotificationsBlocked(true);
+      console.warn("DocSnap reminders: could not request notification permission.", err);
+    });
   }, [detectedExpiration, isPro, normalizedDocumentName]);
 
   const downloadNamedPdf = useCallback(() => {
@@ -463,7 +482,7 @@ function Home() {
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 
       {state === "naming" && suggestedName && suggestedKind && (
-        <NameReviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} suggestion={suggestedName} suggestionKind={suggestedKind} pageCount={ocrPagesForProcessing?.length ?? 1} onDownload={downloadNamedPdf} expiration={detectedExpiration ?? undefined} isPro={isPro} reminderDays={reminderDays} onReminderChange={handleReminderChange} upgradeUrl={upgradeUrl} />
+        <NameReviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} suggestion={suggestedName} suggestionKind={suggestedKind} pageCount={ocrPagesForProcessing?.length ?? 1} onDownload={downloadNamedPdf} expiration={detectedExpiration ?? undefined} isPro={isPro} reminderDays={reminderDays} onReminderChange={handleReminderChange} reminderNotificationsBlocked={reminderNotificationsBlocked} upgradeUrl={upgradeUrl} />
       )}
 
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}

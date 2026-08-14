@@ -18,6 +18,8 @@ interface NameReviewScreenProps {
   isPro?: boolean;
   onReminderChange?: (days: NotifyBefore | null) => void;
   reminderDays?: NotifyBefore | null;
+  /** True when the user set a reminder but the browser refused/doesn't support notifications. */
+  reminderNotificationsBlocked?: boolean;
   upgradeUrl?: string;
 }
 
@@ -42,6 +44,7 @@ export function NameReviewScreen({
   isPro = false,
   onReminderChange,
   reminderDays,
+  reminderNotificationsBlocked = false,
   upgradeUrl = "/pricing",
 }: NameReviewScreenProps) {
   const isSuggested = documentName.trim() === suggestion.trim();
@@ -144,7 +147,27 @@ export function NameReviewScreen({
         {expiration && (
           <div className="rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-left">
             <p className="font-semibold text-amber-200">📅 Expiration detected: {formatExpirationDate(expiration.date)}</p>
-            {isPro ? <div className="mt-3 flex items-center gap-2"><span className="text-sm text-gray-300">🔔 Remind me</span><select aria-label="Reminder timing" value={reminderDays == null ? "skip" : String(reminderDays)} onChange={(e) => onReminderChange?.(e.target.value === "skip" ? null : Number(e.target.value) as NotifyBefore)} className="rounded-lg border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-white"><option value="skip">Skip</option><option value="30">30 days before</option><option value="14">14 days before</option><option value="7">7 days before</option><option value="0">On the date</option></select></div> : <p className="mt-2 text-xs text-gray-400">Date tracking is a Pro feature — <a className="text-indigo-300 underline" href={upgradeUrl}>upgrade to set reminders</a></p>}
+            {isPro ? (
+              <div className="mt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-300">🔔 Remind me</span>
+                  <select aria-label="Reminder timing" value={reminderDays == null ? "skip" : String(reminderDays)} onChange={(e) => onReminderChange?.(e.target.value === "skip" ? null : Number(e.target.value) as NotifyBefore)} className="rounded-lg border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-white">
+                    <option value="skip">Skip</option>
+                    <option value="30">30 days before</option>
+                    <option value="14">14 days before</option>
+                    <option value="7">7 days before</option>
+                    <option value="0">On the date</option>
+                  </select>
+                </div>
+                {reminderNotificationsBlocked && reminderDays != null && (
+                  <p className="mt-2 text-xs text-amber-300/90">
+                    Browser notifications are blocked — your reminder is saved, but DocSnap won't be able to ping you. Allow notifications for this site in your browser settings to get reminders.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-gray-400">Date tracking is a Pro feature — <a className="text-indigo-300 underline" href={upgradeUrl}>upgrade to set reminders</a></p>
+            )}
           </div>
         )}
 
