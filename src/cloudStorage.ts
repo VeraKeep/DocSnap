@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { UTApi } from "uploadthing/server";
 import fs from "node:fs";
 import path from "node:path";
+import { getVerifiedUserId } from "./serverAuth";
 
 export interface CloudDocument {
   id: string;
@@ -92,15 +93,19 @@ export const isCloudConfigured = createServerFn().handler(async () => {
   return !!(process.env.UPLOADTHING_SECRET && process.env.CLERK_PUBLISHABLE_KEY);
 });
 
-/** List all saved documents for a user (userId from Clerk client) */
+/** List all saved documents for a user.
+ *  The userId validator arg is kept for client-call compatibility but is
+ *  IGNORED — the real identity always comes from the verified Clerk session. */
 export const listDocuments = createServerFn()
   .validator((userId: string) => userId)
-  .handler(async ({ data: userId }) => {
-    if (!userId) throw new Error("userId required");
+  .handler(async () => {
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
     return readUserDocs(userId);
   });
 
-/** Add a document record after uploading to Uploadthing */
+/** Add a document record after uploading to Uploadthing.
+ *  `data.userId` is ignored in favor of the verified Clerk session id. */
 export const addDocument = createServerFn()
   .validator(
     (doc: {
@@ -115,8 +120,9 @@ export const addDocument = createServerFn()
     }) => doc,
   )
   .handler(async ({ data }) => {
-    if (!data.userId) throw new Error("userId required");
-    const docs = readUserDocs(data.userId);
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
+    const docs = readUserDocs(userId);
     const newDoc: CloudDocument = {
       id: crypto.randomUUID(),
       name: data.name,
@@ -129,11 +135,12 @@ export const addDocument = createServerFn()
       contentHash: data.contentHash || "",
     };
     docs.unshift(newDoc);
-    writeUserDocs(data.userId, docs);
+    writeUserDocs(userId, docs);
     return newDoc;
   });
 
-/** Update a document's user-set category */
+/** Update a document's user-set category.
+ *  `data.userId` is ignored in favor of the verified Clerk session id. */
 export const updateDocumentCategory = createServerFn()
   .validator(
     (params: {
@@ -143,26 +150,29 @@ export const updateDocumentCategory = createServerFn()
     }) => params,
   )
   .handler(async ({ data }) => {
-    if (!data.userId) throw new Error("userId required");
-    const docs = readUserDocs(data.userId);
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
+    const docs = readUserDocs(userId);
     const doc = docs.find((d) => d.id === data.docId);
     if (!doc) throw new Error("Document not found");
 
     doc.userCategory = data.userCategory;
-    writeUserDocs(data.userId, docs);
+    writeUserDocs(userId, docs);
     return { success: true };
   });
 
-/** Delete a document (both metadata and Uploadthing file) */
+/** Delete a document (both metadata and Uploadthing file).
+ *  `data.userId` is ignored in favor of the verified Clerk session id. */
 export const deleteDocument = createServerFn()
   .validator((params: { userId: string; docId: string }) => params)
   .handler(async ({ data }) => {
-    if (!data.userId) throw new Error("userId required");
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
     if (!process.env.UPLOADTHING_SECRET) {
       throw new Error("Uploadthing not configured");
     }
 
-    const docs = readUserDocs(data.userId);
+    const docs = readUserDocs(userId);
     const doc = docs.find((d) => d.id === data.docId);
     if (!doc) {
       throw new Error("Document not found");
@@ -178,6 +188,6 @@ export const deleteDocument = createServerFn()
 
     // Remove from local metadata
     const updated = docs.filter((d) => d.id !== data.docId);
-    writeUserDocs(data.userId, updated);
+    writeUserDocs(userId, updated);
     return { success: true };
   });

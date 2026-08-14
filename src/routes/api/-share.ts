@@ -8,10 +8,11 @@
  *   DELETE /api/share/:id    revoke a share link (owner only)
  *   GET    /api/shares       list the authenticated user's share links
  *
- * Auth convention: the signed-in Clerk user id is passed in the
- * `x-clerk-user-id` header (or body/query `userId`), matching how the app's
- * server functions receive it from the client.
+ * Auth: the authenticated user id is derived server-side from the verified
+ * Clerk session (`getVerifiedUserId(req)`). Client-supplied ids in headers,
+ * body, or query are never trusted as the acting identity.
  */
+import { getVerifiedUserId } from "../../serverAuth";
 import { getUserSubscription } from "../../subscription";
 import { readUserDocuments } from "../../cloudStorage";
 import {
@@ -31,14 +32,6 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: JSON_HEADERS,
   });
-}
-
-function getUserId(req: Request): string | null {
-  const header = req.headers.get("x-clerk-user-id");
-  if (header) return header;
-  const url = new URL(req.url);
-  const query = url.searchParams.get("userId");
-  return query || null;
 }
 
 function buildShareUrl(req: Request, id: string): string {
@@ -70,7 +63,7 @@ function publicShape(link: {
 // POST /api/share
 // ---------------------------------------------------------------------------
 export async function POST(req: Request): Promise<Response> {
-  const userId = getUserId(req);
+  const userId = await getVerifiedUserId(req);
   if (!userId) {
     return json({ error: "Not signed in" }, 401);
   }
@@ -88,20 +81,18 @@ export async function POST(req: Request): Promise<Response> {
     password?: string | null;
     expiresInHours?: number | null;
     maxDownloads?: number | null;
-    userId?: string;
   };
   try {
     body = await req.json();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
-  const resolvedUserId = body.userId || userId;
   const documentId = body.documentId;
   if (!documentId) {
     return json({ error: "documentId is required" }, 400);
   }
-  // Document must exist and belong to the user.
-  const docs = readUserDocuments(resolvedUserId);
+  // Document must exist and belong to the verified user.
+  const docs = readUserDocuments(userId);
   const doc = docs.find((d) => d.id === documentId);
   if (!doc) {
     return json({ error: "Document not found" }, 404);
@@ -125,7 +116,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   const link = await createShareLink({
     documentId,
-    ownerUserId: resolvedUserId,
+    ownerUserId: userId,
     passwordHash,
     expiresAt,
     maxDownloads,
@@ -224,7 +215,7 @@ export async function DELETE(
   req: Request,
   shareId: string,
 ): Promise<Response> {
-  const userId = getUserId(req);
+  const userId = await getVerifiedUserId(req);
   if (!userId) {
     return json({ error: "Not signed in" }, 401);
   }
@@ -242,7 +233,7 @@ export async function DELETE(
 // GET /api/shares
 // ---------------------------------------------------------------------------
 export async function GET_LIST(req: Request): Promise<Response> {
-  const userId = getUserId(req);
+  const userId = await getVerifiedUserId(req);
   if (!userId) {
     return json({ error: "Not signed in" }, 401);
   }
