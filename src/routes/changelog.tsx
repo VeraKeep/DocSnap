@@ -19,6 +19,34 @@ interface ChangelogEntry {
 
 const entries: ChangelogEntry[] = [
   {
+    date: "August 2026",
+    title: "Pro subscription & 4-tier pricing",
+    items: [
+      "Pro subscription with 4-tier pricing — Free ($0), Personal ($7.99/mo), Household ($12.99/mo), and Complete ($19.99/mo)",
+      "Password-protected PDFs — encrypt scans with a password",
+      "AI document naming — automatic titles generated from OCR text",
+      "Expiration detection and reminders — browser notifications when important dates approach",
+    ],
+  },
+  {
+    date: "August 2026",
+    title: "Sharing, redaction & duplicate detection",
+    items: [
+      "Shareable secure links — time-limited, password-protected document sharing",
+      "Redaction tool — draw to redact, permanently burned into the PDF",
+      "Duplicate detection — identifies repeated scans by file hash and OCR similarity",
+    ],
+  },
+  {
+    date: "August 2026",
+    title: "PWA, analytics & SEO",
+    items: [
+      "PWA support — install DocSnap © 2026 on your home screen, with offline support via a service worker",
+      "Privacy-friendly analytics (Plausible) with custom product events",
+      "SEO landing page at /scan with structured data",
+    ],
+  },
+  {
     date: "July 2026",
     title: "Trust pages & polish",
     items: [

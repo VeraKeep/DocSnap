@@ -52,7 +52,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Service is provided "as-is"</h2>
             <p className="mt-3">
-              DocSnap © 2026 is a side project and we do our best, but there are no
+              DocSnap © 2026 is part of the VeraKeep suite and we do our best, but there are no
               guarantees. The service may have bugs, downtime, or limitations.
               We're not liable for any damages resulting from your use of
               DocSnap © 2026, including lost documents. (We'd feel terrible about it,
@@ -90,7 +90,8 @@ function Terms() {
               shall not be liable for any indirect, incidental, special, or
               consequential damages arising from your use of the service. If
               something goes wrong, our total liability is limited to the
-              amount you paid us — which is zero, since the service is free.
+              amount you actually paid for the service in the 12 months
+              preceding the claim, or a nominal amount if you paid nothing.
             </p>
           </section>
 

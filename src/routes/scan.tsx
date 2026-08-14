@@ -388,7 +388,13 @@ function ScanLanding() {
             {[
               {
                 q: "Is DocSnap © 2026 really free?",
-                a: "Yes, completely free. There are no premium tiers, no watermarks, and no hidden fees. Every feature — camera scanning, OCR, multi-page PDFs, filters, and optional cloud sync — is available at no cost.",
+                a: (
+                  <>
+                    Scanning is free — you can capture, crop, filter, OCR, and download PDFs entirely in your browser with no account and no charge. Paid plans (Personal, Household, or Complete) add cloud storage and Pro features like password-protected PDFs, AI document naming, expiration reminders, secure sharing, redaction, and duplicate detection. See{" "}
+                    <Link to="/pricing" className="text-indigo-400 underline">our pricing page</Link>{" "}
+                    for details.
+                  </>
+                ),
               },
               {
                 q: "Do I need to create an account?",
