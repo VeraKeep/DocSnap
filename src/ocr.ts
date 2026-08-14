@@ -70,21 +70,6 @@ export async function initWorker(
   return workerInitPromise;
 }
 
-/**
- * Terminate the Tesseract worker and free memory.
- */
-export async function terminateWorker(): Promise<void> {
-  if (worker) {
-    try {
-      await worker.terminate();
-    } catch {
-      // Worker may already be terminated
-    }
-    worker = null;
-    workerInitPromise = null;
-  }
-}
-
 // ── Recognition ────────────────────────────────────────────────────
 
 /**
