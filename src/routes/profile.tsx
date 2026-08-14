@@ -2,6 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useClerk, useUser } from "@clerk/tanstack-start";
 import { useCloudSync } from "../hooks/useCloudSync";
 import { useSubscription } from "../hooks/useSubscription";
+import type { Tier } from "../subscription";
+
+const TIER_LABELS: Record<Tier, string> = {
+  free: "Free",
+  personal: "Personal",
+  household: "Household",
+  complete: "Complete",
+};
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -29,7 +37,8 @@ function ProfilePage() {
   const { user, isLoaded } = useUser();
   const clerk = useClerk();
   const { myScans, loadingDocs } = useCloudSync();
-  const { isPro, isLoading: subscriptionLoading, upgradeUrl, portalUrl } = useSubscription();
+  const { tier, isPro, isLoading: subscriptionLoading, upgradeUrl, portalUrl } = useSubscription();
+  const planLabel = TIER_LABELS[tier];
 
   const name = user?.fullName || user?.primaryEmailAddress?.emailAddress || "DocSnap © 2026 user";
   const initials = name
@@ -88,8 +97,8 @@ function ProfilePage() {
                 <div>
                   <p className="text-sm text-gray-400">Plan</p>
                   <div className="mt-2 flex items-center gap-3">
-                    <h2 className="text-xl font-semibold">{subscriptionLoading ? "Checking…" : isPro ? "Pro" : "Free"}</h2>
-                    {!subscriptionLoading && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isPro ? "bg-indigo-500/20 text-indigo-300" : "bg-gray-800 text-gray-300"}`}>{isPro ? "Pro" : "Free"}</span>}
+                    <h2 className="text-xl font-semibold">{subscriptionLoading ? "Checking…" : planLabel}</h2>
+                    {!subscriptionLoading && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isPro ? "bg-indigo-500/20 text-indigo-300" : "bg-gray-800 text-gray-300"}`}>{planLabel}</span>}
                   </div>
                 </div>
                 {!subscriptionLoading && !isPro && <Link to={upgradeUrl} className="shrink-0 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold transition hover:bg-indigo-500">Upgrade</Link>}

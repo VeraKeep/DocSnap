@@ -11,8 +11,11 @@
 import { useMemo, useEffect, useState } from "react";
 import { useUser } from "@clerk/tanstack-start";
 import { getPortalUrl, getSubscription, syncUser } from "../subscription";
+import type { Tier } from "../subscription";
 
 export interface SubscriptionState {
+  /** Current plan tier: free | personal | household | complete */
+  tier: Tier;
   /** Whether the user has an active Pro subscription */
   isPro: boolean;
   /** Maximum cloud documents allowed (Infinity for Pro) */
@@ -29,6 +32,7 @@ const FREE_DOC_LIMIT = 25;
 
 /** Default state used when not signed in or while loading. */
 const FREE_STATE: Omit<SubscriptionState, "portalUrl"> = {
+  tier: "free",
   isPro: false,
   docLimit: FREE_DOC_LIMIT,
   upgradeUrl: "/pricing",
@@ -45,6 +49,7 @@ const FREE_STATE: Omit<SubscriptionState, "portalUrl"> = {
 export function useSubscription(): SubscriptionState {
   const { user, isLoaded: clerkLoaded } = useUser();
   const [dbStatus, setDbStatus] = useState<{
+    tier: Tier;
     isPro: boolean;
     expiresAt: string | null;
   } | null>(null);
@@ -118,6 +123,7 @@ export function useSubscription(): SubscriptionState {
     }
 
     return {
+      tier: dbStatus.tier,
       isPro: dbStatus.isPro,
       docLimit: dbStatus.isPro ? Infinity : FREE_DOC_LIMIT,
       upgradeUrl: "/pricing",
