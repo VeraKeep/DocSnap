@@ -49,7 +49,7 @@ const homeStructuredData = {
   "@type": "WebApplication",
   name: "DocSnap © 2026",
   description:
-    "Scan documents to PDF instantly using your camera — no account, no upload, no Adobe license. Everything runs locally in your browser.",
+    "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser, no account or upload needed. Part of the VeraKeep™ suite.",
   url: "https://docsnapapp.com",
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
@@ -65,9 +65,9 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       {
-        title: "DocSnap © 2026 — Scan documents to PDF",
+        title: "DocSnap — one place for the important stuff you own and the documents that go with it",
       },
-      { name: "description", content: "Scan documents to PDF instantly — no account, no upload, no Adobe license. Everything runs locally in your browser." },
+      { name: "description", content: "Scan any document to a searchable PDF right in your browser — no account, no upload, no Adobe license. DocSnap keeps everything you own and its paperwork organized in one place, part of the VeraKeep™ suite." },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/" }],
     scripts: [

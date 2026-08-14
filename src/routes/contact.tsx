@@ -4,7 +4,7 @@ export const Route = createFileRoute("/contact")({
   head: () => ({
     meta: [
       { title: 'Contact — DocSnap © 2026' },
-      { name: "description", content: 'Have questions or feedback about DocSnap © 2026? Reach out via email or GitHub, and help shape the privacy-first document scanner.' },
+      { name: "description", content: 'Have questions or feedback about DocSnap © 2026 — one place for the important stuff you own and the documents that go with it? Reach out via email or GitHub.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/contact" }],
   }) ,

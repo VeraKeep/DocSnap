@@ -4,7 +4,7 @@ export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
       { title: 'About — DocSnap © 2026' },
-      { name: "description", content: 'DocSnap © 2026 is a privacy-first document scanner built by a solo developer. No accounts, no uploads, no Adobe license required.' },
+      { name: "description", content: 'DocSnap © 2026 is the hub of the VeraKeep™ suite — one place for the important stuff you own and the documents that go with it. Built by a solo developer, privacy-first, no Adobe license required.' },
     ],
     links: [{ rel: "canonical", href: "https://docsnapapp.com/about" }],
   }) ,
@@ -42,17 +42,21 @@ function About() {
           <section>
             <h2 className="text-xl font-semibold text-white">What is DocSnap © 2026?</h2>
             <p className="mt-3">
-              DocSnap © 2026 is a free, browser-based document scanner. Point your camera at a
-              document and get a clean, downloadable PDF — instantly. No accounts, no
-              uploads, no Adobe license required. Everything runs locally in your
-              browser.
+              DocSnap © 2026 is the hub of the VeraKeep™ suite — one place for the
+              important stuff you own and the documents that go with it. Point your
+              camera at any document and get a clean, downloadable, searchable PDF —
+              instantly. No accounts, no uploads, no Adobe license required.
+              Everything runs locally in your browser.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white">Tech stack</h2>
             <p className="mt-3">
-              DocSnap © 2026 is built with modern web technologies and open-source libraries:
+              DocSnap © 2026 is built with modern web technologies and open-source libraries.
+              As the hub of the VeraKeep™ suite, it's the one place for the important stuff you
+              own and the documents that go with it — with ReceiptSnap, GarageSnap, and more
+              modules to come:
             </p>
             <ul className="mt-4 space-y-2">
               {[
@@ -96,7 +100,7 @@ function About() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — scan documents instantly, right in your browser</span>
+        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
       </footer>
     </main>
   );

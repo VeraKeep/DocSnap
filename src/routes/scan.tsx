@@ -5,7 +5,7 @@ const structuredData = {
   "@type": "WebApplication",
   name: "DocSnap © 2026",
   description:
-    "Free document scanner — scan documents to PDF online using your camera. Convert paper to searchable PDF with OCR. No account, no uploads — everything runs in your browser.",
+    "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser using your camera. No account, no uploads. Part of the VeraKeep™ suite.",
   url: "https://docsnapapp.com/scan",
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
@@ -21,26 +21,26 @@ export const Route = createFileRoute("/scan")({
   head: () => ({
     meta: [
       {
-        title: "Free Document Scanner — Scan to PDF Online | DocSnap © 2026",
+        title: "DocSnap — One Place for the Important Stuff You Own | Free Document Scanner",
       },
       {
         name: "description",
         content:
-          "Free document scanner — convert paper to searchable PDF online using your camera. OCR document scanner. No account needed, everything runs in your browser.",
+          "Scan any document to a searchable PDF right in your browser — no account needed, everything runs locally. DocSnap is one place for the important stuff you own and the documents that go with it, part of the VeraKeep™ suite.",
       },
       {
         name: "keywords",
         content:
-          "free document scanner, scan documents online, convert paper to searchable PDF, camera to PDF, OCR document scanner free, online document scanner, scan to PDF",
+          "free document scanner, scan documents online, convert paper to searchable PDF, camera to PDF, OCR document scanner free, online document scanner, scan to PDF, organize important documents, document organizer, VeraKeep",
       },
       {
         property: "og:title",
-        content: "Free Document Scanner — Scan to PDF Online | DocSnap © 2026",
+        content: "DocSnap — One Place for the Important Stuff You Own | Free Document Scanner",
       },
       {
         property: "og:description",
         content:
-          "Free document scanner — convert paper to searchable PDF online using your camera. No account needed, everything runs in your browser.",
+          "Scan any document to a searchable PDF right in your browser — no account needed. DocSnap is one place for the important stuff you own and the documents that go with it, part of the VeraKeep™ suite.",
       },
       {
         property: "og:type",
@@ -56,12 +56,12 @@ export const Route = createFileRoute("/scan")({
       },
       {
         name: "twitter:title",
-        content: "Free Document Scanner — Scan to PDF Online | DocSnap © 2026",
+        content: "DocSnap — One Place for the Important Stuff You Own | Free Document Scanner",
       },
       {
         name: "twitter:description",
         content:
-          "Free document scanner — convert paper to searchable PDF online using your camera. No account needed.",
+          "Scan any document to a searchable PDF right in your browser — no account needed. Part of the VeraKeep™ suite.",
       },
     ],
     links: [
@@ -146,14 +146,20 @@ function ScanLanding() {
 
         {/* Heading */}
         <h1 className="relative z-10 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-          Free Document Scanner —{" "}
-          <span className="text-indigo-400">Scan to PDF Online</span>
+          One Place for the Important Stuff You Own —{" "}
+          <span className="text-indigo-400">and the Documents That Go With It</span>
         </h1>
 
         <p className="relative z-10 mt-6 max-w-xl text-lg leading-relaxed text-gray-400">
-          Convert paper to searchable PDF instantly using your camera. No
-          account, no uploads, no Adobe license. Everything runs locally in your
-          browser — it's completely free.
+          Point your camera at any document and get a clean, searchable PDF right
+          in your browser — no account, no uploads, no Adobe license. Everything
+          runs locally, and it's completely free.
+        </p>
+
+        <p className="relative z-10 mt-4 text-sm text-indigo-300/80">
+          DocSnap is the hub of the VeraKeep™ suite — one place for everything you
+          own and the paperwork that goes with it. ReceiptSnap, GarageSnap, and
+          more are coming soon.
         </p>
 
         {/* CTA */}
@@ -295,8 +301,8 @@ function ScanLanding() {
       <section className="border-t border-gray-800/50 px-6 py-20">
         <div className="mx-auto max-w-5xl">
           <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
-            Everything You Need in a{" "}
-            <span className="text-indigo-400">Free Document Scanner</span>
+            Everything You Need to{" "}
+            <span className="text-indigo-400">Scan, Store & Organize</span>
           </h2>
 
           <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -374,6 +380,24 @@ function ScanLanding() {
               </svg>
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* ── Part of the VeraKeep™ Suite ── */}
+      <section className="border-t border-gray-800/50 px-6 py-20">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-xs font-medium uppercase tracking-widest text-indigo-300">
+            Part of the VeraKeep™ Suite
+          </p>
+          <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+            One Place for Everything You Own
+          </h2>
+          <p className="mt-4 text-lg leading-relaxed text-gray-400">
+            DocSnap is the hub of the VeraKeep™ suite — one place for the
+            important stuff you own and the documents that go with it.
+            ReceiptSnap for your receipts, GarageSnap for your vehicle records,
+            and more consumer and home modules are on the way.
+          </p>
         </div>
       </section>
 
