@@ -41,9 +41,7 @@ const sections: Section[] = [
     borderClass: "border-amber-400/30",
     items: [
       "Offline mode — scan and save documents without an internet connection",
-      "PWA support — install DocSnap © 2026 on your home screen like a native app",
       "AI document summaries and Q&A on your scanned documents",
-      "Smart auto-naming and auto-filing for new scans",
     ],
   },
   {
@@ -73,8 +71,15 @@ const sections: Section[] = [
       "Cloud Sync with Clerk authentication and Uploadthing storage",
       "Document naming with date defaults, folder organization, and full-text search",
       "User profiles with storage meters and plan badges",
-      "Pro subscription (Stripe) — unlimited cloud storage, password-protected PDFs, batch scanning, export to Word/Text",
-      "Trust pages, SEO landing page, privacy-first design, and analytics",
+      "Pro subscription (Stripe) with 4-tier pricing — Free, Personal, Household, and Complete",
+      "Password-protected PDFs — encrypt scans with a password",
+      "AI document naming — automatic titles generated from OCR text",
+      "Expiration detection and reminders — browser notifications for important dates",
+      "Shareable secure links — time-limited, password-protected document sharing",
+      "Redaction tool — draw to redact, permanently burned into the PDF",
+      "Duplicate detection — catches repeated scans via file hashes and OCR similarity",
+      "PWA support — install DocSnap © 2026 on your home screen, with an offline banner and service worker",
+      "Trust pages, SEO landing page (/scan) with structured data, privacy-first design, and privacy-friendly analytics",
     ],
   },
 ];
