@@ -1,5 +1,5 @@
 /* DocSnap offline app shell service worker. Bump this when the shell changes. */
-const CACHE_VERSION = "docsnap-v1";
+const CACHE_VERSION = "docsnap-v2";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL_ROUTES = ["/", "/scan", "/manifest.json", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
@@ -41,7 +41,9 @@ function isStaticAsset(request) {
 
 function isNetworkFirst(request) {
   const url = new URL(request.url);
-  return url.pathname.startsWith("/api/") || url.hostname.includes("clerk");
+  // API calls, Clerk auth, and content-hashed build assets must always prefer
+  // the network so a cached stale copy can never mask a fresh deployment.
+  return url.pathname.startsWith("/api/") || url.hostname.includes("clerk") || url.pathname.startsWith("/assets/");
 }
 
 async function networkFirst(request) {
@@ -51,7 +53,9 @@ async function networkFirst(request) {
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch {
-    return (await cache.match(request)) || Response.error();
+    // Fall back to any cached copy (runtime or install-time shell cache) so
+    // the scanner keeps working offline.
+    return (await caches.match(request)) || Response.error();
   }
 }
 
