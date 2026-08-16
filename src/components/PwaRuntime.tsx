@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 
-/** Registers the offline app shell and keeps a quiet online/offline status visible. */
+/**
+ * Registers the offline app shell and keeps a quiet online/offline status visible.
+ *
+ * Offline state is strictly event-driven: we start online and only flip to
+ * offline when the browser actually fires a window "offline" event. We never
+ * trust `navigator.onLine` at init — on mobile it can report false right after
+ * load (especially with a service worker installed), which produced phantom
+ * offline banners on devices that were online.
+ */
 export function PwaRuntime() {
-  const [offline, setOffline] = useState(() =>
-    typeof navigator !== "undefined" ? !navigator.onLine : false,
-  );
+  const [offline, setOffline] = useState(false);
 
   useEffect(() => {
     const setOnline = () => setOffline(false);
@@ -47,7 +53,7 @@ export function PwaRuntime() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed inset-x-0 bottom-0 z-[100] border-t border-amber-400/20 bg-slate-900/95 px-4 py-2 text-center text-xs font-medium text-amber-200 shadow-lg backdrop-blur-sm safe-pb"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] select-none border-t border-amber-400/20 bg-slate-900/95 px-4 py-2 text-center text-xs font-medium text-amber-200 shadow-lg backdrop-blur-sm safe-pb"
     >
       You&apos;re offline — scanning still works!
     </div>
