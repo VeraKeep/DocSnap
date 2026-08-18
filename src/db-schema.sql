@@ -40,3 +40,33 @@ CREATE TABLE IF NOT EXISTS share_links (
   revoked BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_share_links_owner ON share_links(owner_user_id);
+
+-- ReceiptSnap module: personal receipt & purchase records.
+-- Owner-scoped: each receipt belongs to one Clerk user (users.clerk_user_id).
+-- clerk_user_id is intentionally NULLABLE for now: the two pre-existing demo
+-- rows (ACME TEST SUPPLY, Hometown Appliances) are labeled demos with no real
+-- owner, and owner-filtered queries never expose them to authenticated users.
+-- NOT NULL enforcement is deferred until real Clerk identity exists in
+-- production (see the ReceiptSnap integration plan, section 3).
+CREATE TABLE IF NOT EXISTS receipts (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT,
+  merchant TEXT,
+  store_date TEXT,
+  total NUMERIC,
+  currency TEXT,
+  items JSONB NOT NULL DEFAULT '[]',
+  extra JSONB NOT NULL DEFAULT '{}',
+  image_base64 TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_receipts_clerk_user_id_created_at
+  ON receipts (clerk_user_id, created_at DESC);
+
+-- Public marketing waitlist: email capture only, never attached to a receipt
+-- owner. Duplicate emails are ignored at insert time.
+CREATE TABLE IF NOT EXISTS waitlist (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

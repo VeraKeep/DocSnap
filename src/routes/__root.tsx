@@ -12,7 +12,11 @@ import { PwaRuntime } from "~/components/PwaRuntime";
 import { installGlobalErrorHandlers } from "~/lib/errorLogger";
 import appCss from "~/styles/app.css?url";
 
-const clerkPubKey = process.env.CLERK_PUBLISHABLE_KEY ?? "";
+// import.meta.env (not process.env): Vite replaces the whole `process.env`
+// object with {} in the client bundle, so a process.env read here would never
+// reach the browser. NEXT_PUBLIC_ vars are exposed to import.meta.env via
+// envPrefix in vite.config.ts and inlined into both the SSR and client builds.
+const clerkPubKey = import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 const plausibleDomain = process.env.PLAUSIBLE_DOMAIN ?? "";
 
 export const Route = createRootRoute({
