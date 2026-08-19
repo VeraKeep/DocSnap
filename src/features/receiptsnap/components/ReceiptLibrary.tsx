@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   getReceipt,
+  getReceiptsUsage,
   listReceipts,
   saveReceipt,
   searchReceipts,
 } from "../server";
-import { type ReceiptDetail, type ReceiptSummary } from "../types";
+import { type ReceiptDetail, type ReceiptSummary, type ReceiptsUsage } from "../types";
 import { ReceiptDetailModal } from "./ReceiptDetail";
 import { ReceiptRow } from "./ReceiptRow";
 
@@ -92,6 +94,68 @@ function Notice({ children }: { children: string }) {
   );
 }
 
+/** Usage meter: free users see "N of 5 this month" + upgrade CTA; paid see "Unlimited". */
+function UsageMeter({ usage }: { usage: ReceiptsUsage | null }) {
+  if (!usage) return null;
+  if (usage.isPro || usage.allowance === null) {
+    return (
+      <div className="flex items-center gap-2 rounded-2xl border border-gray-800 bg-gray-900/60 px-5 py-3.5 text-sm text-gray-400">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-4 w-4 text-indigo-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
+        </svg>
+        <span>
+          Full ReceiptSnap — <strong className="font-semibold text-gray-200">unlimited receipts</strong>
+        </span>
+      </div>
+    );
+  }
+  const remaining = Math.max(0, usage.allowance - usage.used);
+  const pct = Math.min(100, Math.round((usage.used / usage.allowance) * 100));
+  return (
+    <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-gray-200">
+            {usage.used} of {usage.allowance} receipts this month
+          </p>
+          <p className="mt-0.5 text-xs text-gray-500">
+            {remaining > 0
+              ? `${remaining} ${remaining === 1 ? "receipt" : "receipts"} left on the Free plan.`
+              : "You've used all Free-plan receipts for this month."}
+          </p>
+        </div>
+        <Link
+          to="/pricing"
+          className="inline-flex rounded-full border border-indigo-500/50 px-4 py-2 text-xs font-semibold text-indigo-300 transition hover:bg-indigo-600 hover:text-white"
+        >
+          Upgrade for unlimited
+        </Link>
+      </div>
+      <div
+        className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-800"
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={usage.allowance}
+        aria-valuenow={usage.used}
+        aria-label={`${usage.used} of ${usage.allowance} receipts used this month`}
+      >
+        <div
+          className={pct >= 100 ? "h-full rounded-full bg-red-500" : "h-full rounded-full bg-indigo-500"}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /**
  * ReceiptSnap read-only library: receipt list, search, detail modal, and the
  * capture/save flow. Every state is honest — auth gate, loading, empty,
@@ -110,6 +174,7 @@ export function ReceiptLibrary() {
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<ReceiptDetail | null>(null);
   const [notice, setNotice] = useState("");
+  const [usage, setUsage] = useState<ReceiptsUsage | null>(null);
 
   // Upload state
   const [file, setFile] = useState<File | null>(null);
@@ -145,6 +210,10 @@ export function ReceiptLibrary() {
   useEffect(() => {
     if (!user) return;
     void load("");
+    // Usage meter for the signed-in user (server-resolved, anonymous-safe).
+    void getReceiptsUsage()
+      .then((result) => setUsage(result.usage))
+      .catch(() => setUsage(null));
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
@@ -224,6 +293,10 @@ export function ReceiptLibrary() {
       setUploaded("Receipt saved to your library.");
       setQuery("");
       await load("");
+      // Refresh the usage meter so the count reflects the new save.
+      void getReceiptsUsage()
+        .then((result) => setUsage(result.usage))
+        .catch(() => setUsage(null));
     } catch (error) {
       setUploadError(
         messageFromError(error, "The receipt could not be saved. Please try again."),
@@ -271,6 +344,9 @@ export function ReceiptLibrary() {
           onRetry={() => void load("")}
         />
       )}
+
+      {/* Usage meter: free = "N of 5 this month" + upgrade CTA; paid = unlimited */}
+      <UsageMeter usage={usage} />
 
       {/* Upload / capture */}
       <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">

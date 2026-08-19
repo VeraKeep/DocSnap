@@ -33,6 +33,29 @@ export interface ReceiptDetail extends ReceiptSummary {
   clerk_user_id: string | null;
 }
 
+/** Free-tier allowance: 5 receipts per calendar month. */
+export const FREE_RECEIPTS_PER_MONTH = 5;
+
+/** Clear, honest message shown when a free-tier user hits the monthly cap. */
+export const RECEIPT_LIMIT_MESSAGE =
+  "Free plan: 5 receipts per month — upgrade for unlimited receipts.";
+
+/**
+ * ReceiptSnap usage state for the signed-in user, resolved server-side from
+ * the verified Clerk session (never from the client). `allowance` is null for
+ * paid tiers (unlimited).
+ */
+export interface ReceiptsUsage {
+  /** Current calendar month, "YYYY-MM". */
+  month: string;
+  /** Receipts saved by this user in the current month. */
+  used: number;
+  /** Monthly cap for this user's tier, or null when unlimited. */
+  allowance: number | null;
+  tier: string;
+  isPro: boolean;
+}
+
 /** Render a total with its currency. Tolerant of AI-extracted oddities. */
 export function formatTotal(total: unknown, currency: unknown): string {
   const n = typeof total === "number" ? total : Number(total);

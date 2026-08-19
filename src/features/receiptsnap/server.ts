@@ -14,6 +14,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
+import {
+  RECEIPT_LIMIT_MESSAGE,
+  getReceiptsUsage as getReceiptsUsageForUser,
+  isReceiptLimitReached,
+} from "./usage";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 // ~20 MB decoded image (base64 is ~4/3 of the binary size).
@@ -166,6 +171,18 @@ export const whoAmI = createServerFn({ method: "GET" }).handler(async () => {
   return { userId };
 });
 
+/**
+ * ReceiptSnap usage for the signed-in user: current month, receipts used, and
+ * the tier's allowance (null = unlimited). Identity comes from the verified
+ * Clerk session, never from the client. Anonymous → 401 (fail closed).
+ */
+export const getReceiptsUsage = createServerFn({ method: "GET" }).handler(async () => {
+  const userId = await requireServerFunctionUser();
+  if (!process.env.DATABASE_URL) return { configured: false, usage: null };
+  const usage = await getReceiptsUsageForUser(userId);
+  return { configured: true, usage };
+});
+
 export const listReceipts = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireServerFunctionUser();
   if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
@@ -239,6 +256,12 @@ export const saveReceipt = createServerFn({ method: "POST" })
     const userId = await requireServerFunctionUser();
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    // Usage limit: enforce BEFORE extraction so a blocked upload never spends
+    // AI credits and never creates a row. Paid tiers (isPro) pass unlimited.
+    const usage = await getReceiptsUsageForUser(userId);
+    if (isReceiptLimitReached(usage)) {
+      throw new Error(RECEIPT_LIMIT_MESSAGE);
     }
     const extracted = await extract(opts.data.imageBase64, opts.data.mimeType);
     const rows = (await sql`
