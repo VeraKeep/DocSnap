@@ -58,9 +58,17 @@ function ProfilePage() {
           <Logo />
           DocSnap © 2026
         </Link>
-        <Link to="/" className="text-sm text-gray-400 transition hover:text-gray-200">
-          ← Back to app
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/garage"
+            className="text-sm text-gray-400 transition hover:text-indigo-400"
+          >
+            Garage
+          </Link>
+          <Link to="/" className="text-sm text-gray-400 transition hover:text-gray-200">
+            ← Back to app
+          </Link>
+        </div>
       </header>
 
       <section className="mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-6 sm:py-16">

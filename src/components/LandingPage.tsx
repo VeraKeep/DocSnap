@@ -240,6 +240,13 @@ export function LandingPage({
           <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
             {isSignedIn ? (
               <>
+                <Link
+                  to="/garage"
+                  className="rounded-full border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-indigo-500 hover:text-white"
+                  title="GarageSnap — workshop inventory"
+                >
+                  Garage
+                </Link>
                 <span className="text-xs text-gray-400 hidden sm:inline">
                   {userEmail ?? userName ?? ""}
                 </span>
