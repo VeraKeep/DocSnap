@@ -95,3 +95,30 @@
   0% { opacity: 0; transform: scale(0.95); }
   100% { opacity: 1; transform: scale(1); }
 }
+
+/* ── GarageSnap module (garage-* namespaced; DocSnap dark theme) ────── */
+/* Inventory card grid — responsive auto-fill so the module works on any
+   viewport width without shipping a separate layout system. */
+.garage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.875rem;
+}
+
+/* Thin scrollbars for the detail drawer / add-asset modal panels. */
+.garage-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 transparent;
+}
+.garage-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.garage-scroll::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 3px;
+}
+
+/* Toast pop-in (reuses the app's fadeIn keyframe). */
+.garage-toast {
+  animation: fadeIn 200ms ease-out;
+}

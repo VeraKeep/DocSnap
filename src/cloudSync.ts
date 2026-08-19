@@ -81,3 +81,70 @@ export async function uploadPDFBlob(
     return null;
   }
 }
+
+/**
+ * Upload an asset photo (workshop tool / equipment) to UploadThing using the
+ * same manual presigned flow as `uploadPDFBlob`, with the GarageSnap
+ * `imageUploader` slug (one image, max 8MB). The `/api/uploadthing` endpoint
+ * serves both router entries, so this only changes the `slug` query param.
+ *
+ * Returns null on failure (endpoint unreachable, 501 without
+ * UPLOADTHING_SECRET, or an upload error) so the caller can fall back to
+ * honest demo behavior.
+ */
+export async function uploadAssetImage(
+  file: File,
+): Promise<{ fileKey: string; fileUrl: string } | null> {
+  try {
+    // Ask our route handler for presigned POST info
+    const initRes = await fetch("/api/uploadthing?actionType=upload&slug=imageUploader", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        files: [{ name: file.name, size: file.size, type: file.type }],
+      }),
+    });
+
+    if (!initRes.ok) {
+      console.error("Upload init failed:", await initRes.text());
+      return null;
+    }
+
+    const initData = (await initRes.json()) as {
+      data: Array<{
+        key: string;
+        url: string;
+        fields: Record<string, string>;
+      }>;
+    };
+
+    if (!initData.data || initData.data.length === 0) {
+      return null;
+    }
+
+    const presigned = initData.data[0];
+
+    // Upload the file to the presigned URL
+    const uploadFormData = new FormData();
+    for (const [k, v] of Object.entries(presigned.fields)) {
+      uploadFormData.append(k, v);
+    }
+    uploadFormData.append("file", file);
+
+    const uploadRes = await fetch(presigned.url, {
+      method: "POST",
+      body: uploadFormData,
+    });
+
+    if (!uploadRes.ok) {
+      console.error("Upload failed:", await uploadRes.text());
+      return null;
+    }
+
+    const fileUrl = `https://utfs.io/f/${presigned.key}`;
+    return { fileKey: presigned.key, fileUrl };
+  } catch (err) {
+    console.error("Upload error:", err);
+    return null;
+  }
+}
