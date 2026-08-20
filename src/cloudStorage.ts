@@ -54,16 +54,23 @@ export function getDocCategory(doc: CloudDocument): DocCategory {
   return "Uncategorized";
 }
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// Server-only helper. Computed lazily (not at module scope) so `process.cwd()`
+// never runs in the browser: this module is bundled into the client for its
+// shared types + serverFn entry points, and TanStack strips unreachable
+// server-only code — but a module-scope `process` read would survive into the
+// client and crash with "process is not defined".
+function getDataDir(): string {
+  return path.join(process.cwd(), "data");
+}
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(getDataDir())) {
+    fs.mkdirSync(getDataDir(), { recursive: true });
   }
 }
 
 function getUserDocPath(userId: string): string {
-  return path.join(DATA_DIR, `${userId}.json`);
+  return path.join(getDataDir(), `${userId}.json`);
 }
 
 function readUserDocs(userId: string): CloudDocument[] {
