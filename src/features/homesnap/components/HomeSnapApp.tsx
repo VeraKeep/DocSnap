@@ -1,5 +1,5 @@
 /**
- * HomeSnap — read/write home-record UI.
+ * HomeSnap — read/write home-record UI (phase 2 MVP).
  *
  * A self-contained module view in DocSnap's dark gray/indigo treatment:
  * auth gate, then the user's properties, the objects under a selected
@@ -8,21 +8,27 @@
  * component only handles presentation and form state, and renders
  * every loading/empty/error/unconfigured state honestly (no fabricated rows).
  *
- * This phase ships the core object model + timeline + documents. ReceiptSnap/
- * GarageSnap integrations, maintenance reminders, and inventory are out of
- * scope (later phases).
+ * Phase 2 adds full object CRUD (all key fields, edit, retire, delete),
+ * a chronologically-grouped timeline with add/delete events, and document
+ * add/remove — everything the MVP needs to be fully clickable end-to-end.
+ * ReceiptSnap/GarageSnap integrations, maintenance reminders, and inventory
+ * are out of scope (later phases).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   createDocument,
   createEvent,
   createObject,
   createProperty,
+  deleteDocument,
+  deleteEvent,
+  deleteObject,
   listDocuments,
   listEvents,
   listObjects,
   listProperties,
+  updateObject,
 } from "../server";
 import {
   DOCUMENT_TYPE_LABELS,
@@ -37,6 +43,7 @@ import {
   type EventType,
   type ObjectDocument,
   type ObjectEvent,
+  type ObjectStatus,
   type ObjectType,
   type Property,
   type PropertyObject,
@@ -45,6 +52,10 @@ import {
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
+function money(v: number | null): string {
+  return v == null ? "" : `$${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 function SignInRequired() {
@@ -90,23 +101,41 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry?: () => void
   );
 }
 
+function EmptyState({ icon, title, body }: { icon: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-gray-800 p-8 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gray-800/60 text-2xl">
+        {icon}
+      </div>
+      <h3 className="mt-3 text-sm font-semibold text-gray-200">{title}</h3>
+      <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">{body}</p>
+    </div>
+  );
+}
+
 const inputCls =
   "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-500 transition focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 const labelCls = "mb-1 block text-xs font-medium text-gray-400";
+const btnPrimary =
+  "rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45";
+const btnGhost =
+  "rounded-full border border-gray-700 px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-45";
 
 function selectOptions<T extends string>(map: Record<T, string>): T[] {
   return Object.keys(map) as T[];
 }
 
 /* ---------------------------------------------------------------- */
-/* New-property form                                                 */
+/* Property form                                                     */
 /* ---------------------------------------------------------------- */
-function NewPropertyForm({
+function PropertyForm({
   configured,
   onCreated,
+  onCancel,
 }: {
   configured: boolean;
   onCreated: (p: Property) => void;
+  onCancel?: () => void;
 }) {
   const [nickname, setNickname] = useState("");
   const [propertyType, setPropertyType] = useState<PropertyType>("house");
@@ -178,10 +207,10 @@ function NewPropertyForm({
           </label>
           <input
             id="hs-prop-date"
+            type="date"
             className={inputCls}
             value={purchaseDate}
             onChange={(e) => setPurchaseDate(e.target.value)}
-            placeholder="e.g. 2024-05-01"
           />
         </div>
         <div>
@@ -199,36 +228,48 @@ function NewPropertyForm({
         </div>
       </div>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-      <button
-        type="submit"
-        disabled={busy || !configured}
-        className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
-      >
-        {busy ? "Saving…" : "Add property"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={busy || !configured} className={btnPrimary}>
+          {busy ? "Saving…" : "Add property"}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-sm text-gray-500 transition hover:text-gray-300">
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }
 
 /* ---------------------------------------------------------------- */
-/* New-object form                                                   */
+/* Object form (create + edit)                                       */
 /* ---------------------------------------------------------------- */
-function NewObjectForm({
+function ObjectForm({
   configured,
   propertyId,
-  onCreated,
+  initial,
+  onSaved,
+  onCancel,
 }: {
   configured: boolean;
   propertyId: number;
-  onCreated: (o: PropertyObject) => void;
+  initial?: PropertyObject | null;
+  onSaved: (o: PropertyObject) => void;
+  onCancel?: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [objectType, setObjectType] = useState<ObjectType>("system");
-  const [manufacturer, setManufacturer] = useState("");
-  const [model, setModel] = useState("");
-  const [serial, setSerial] = useState("");
-  const [room, setRoom] = useState("");
-  const [warranty, setWarranty] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [objectType, setObjectType] = useState<ObjectType>(initial?.object_type ?? "system");
+  const [manufacturer, setManufacturer] = useState(initial?.manufacturer ?? "");
+  const [model, setModel] = useState(initial?.model ?? "");
+  const [serial, setSerial] = useState(initial?.serial_number ?? "");
+  const [room, setRoom] = useState(initial?.room_location ?? "");
+  const [purchaseDate, setPurchaseDate] = useState(initial?.purchase_date ?? "");
+  const [installDate, setInstallDate] = useState(initial?.installation_date ?? "");
+  const [price, setPrice] = useState(initial?.purchase_price != null ? String(initial.purchase_price) : "");
+  const [warranty, setWarranty] = useState(initial?.warranty_expiration ?? "");
+  const [status, setStatus] = useState<ObjectStatus>(initial?.status ?? "active");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -236,28 +277,30 @@ function NewObjectForm({
     e.preventDefault();
     setError("");
     setBusy(true);
+    const payload = {
+      object_type: objectType,
+      name,
+      manufacturer: manufacturer || null,
+      model: model || null,
+      serial_number: serial || null,
+      room_location: room || null,
+      purchase_date: purchaseDate || null,
+      installation_date: installDate || null,
+      purchase_price: price || null,
+      warranty_expiration: warranty || null,
+      status,
+      notes: notes || null,
+    };
     try {
-      const { object } = await createObject({
-        data: {
-          property_id: propertyId,
-          object_type: objectType,
-          name,
-          manufacturer: manufacturer || null,
-          model: model || null,
-          serial_number: serial || null,
-          room_location: room || null,
-          warranty_expiration: warranty || null,
-        },
-      });
-      setName("");
-      setManufacturer("");
-      setModel("");
-      setSerial("");
-      setRoom("");
-      setWarranty("");
-      onCreated(object as PropertyObject);
+      if (initial) {
+        const { object } = await updateObject({ data: { id: initial.id, ...payload } });
+        onSaved(object as PropertyObject);
+      } else {
+        const { object } = await createObject({ data: { property_id: propertyId, ...payload } });
+        onSaved(object as PropertyObject);
+      }
     } catch (err) {
-      setError(messageFromError(err, "The object could not be created."));
+      setError(messageFromError(err, "The object could not be saved."));
     } finally {
       setBusy(false);
     }
@@ -294,19 +337,45 @@ function NewObjectForm({
           <label className={labelCls} htmlFor="hs-obj-room">Location</label>
           <input id="hs-obj-room" className={inputCls} value={room} onChange={(e) => setRoom(e.target.value)} placeholder="Basement" />
         </div>
-      </div>
-      <div>
-        <label className={labelCls} htmlFor="hs-obj-warranty">Warranty expiration</label>
-        <input id="hs-obj-warranty" className={inputCls} value={warranty} onChange={(e) => setWarranty(e.target.value)} placeholder="e.g. 2036-02-01" />
+        <div>
+          <label className={labelCls} htmlFor="hs-obj-purchase">Purchase date</label>
+          <input id="hs-obj-purchase" type="date" className={inputCls} value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-obj-install">Installation date</label>
+          <input id="hs-obj-install" type="date" className={inputCls} value={installDate} onChange={(e) => setInstallDate(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-obj-price">Price</label>
+          <input id="hs-obj-price" className={inputCls} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="e.g. 3200" inputMode="decimal" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-obj-warranty">Warranty expiration</label>
+          <input id="hs-obj-warranty" type="date" className={inputCls} value={warranty} onChange={(e) => setWarranty(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-obj-status">Status</label>
+          <select id="hs-obj-status" className={inputCls} value={status} onChange={(e) => setStatus(e.target.value === "retired" ? "retired" : "active")}>
+            <option value="active">Active</option>
+            <option value="retired">Retired</option>
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} htmlFor="hs-obj-notes">Notes</label>
+          <textarea id="hs-obj-notes" rows={2} className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any details worth remembering" />
+        </div>
       </div>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-      <button
-        type="submit"
-        disabled={busy || !configured}
-        className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
-      >
-        {busy ? "Saving…" : "Add object"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={busy || !configured} className={btnPrimary}>
+          {busy ? "Saving…" : initial ? "Save changes" : "Add object"}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-sm text-gray-500 transition hover:text-gray-300">
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }
@@ -314,7 +383,7 @@ function NewObjectForm({
 /* ---------------------------------------------------------------- */
 /* Timeline + documents forms (attached to a selected object)         */
 /* ---------------------------------------------------------------- */
-function NewEventForm({
+function EventForm({
   configured,
   objectId,
   onCreated,
@@ -368,7 +437,7 @@ function NewEventForm({
         </div>
         <div>
           <label className={labelCls} htmlFor="hs-ev-date">Date</label>
-          <input id="hs-ev-date" className={inputCls} value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} placeholder="e.g. 2026-03-15" />
+          <input id="hs-ev-date" type="date" className={inputCls} value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
         </div>
         <div>
           <label className={labelCls} htmlFor="hs-ev-title">Title</label>
@@ -380,18 +449,14 @@ function NewEventForm({
         <input id="hs-ev-notes" className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Replaced air filter, cleaned coils" />
       </div>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-      <button
-        type="submit"
-        disabled={busy || !configured}
-        className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
-      >
+      <button type="submit" disabled={busy || !configured} className={btnPrimary}>
         {busy ? "Adding…" : "Add to timeline"}
       </button>
     </form>
   );
 }
 
-function NewDocumentForm({
+function DocumentForm({
   configured,
   objectId,
   onCreated,
@@ -403,6 +468,7 @@ function NewDocumentForm({
   const [title, setTitle] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("receipt");
   const [fileUrl, setFileUrl] = useState("");
+  const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -417,10 +483,12 @@ function NewDocumentForm({
           document_type: documentType,
           title: title || null,
           file_url: fileUrl,
+          notes: notes || null,
         },
       });
       setTitle("");
       setFileUrl("");
+      setNotes("");
       onCreated(document as ObjectDocument);
     } catch (err) {
       setError(messageFromError(err, "The document could not be added."));
@@ -446,20 +514,27 @@ function NewDocumentForm({
         </div>
         <div>
           <label className={labelCls} htmlFor="hs-doc-url">Link / URL</label>
-          <input id="hs-doc-url" className={inputCls} value={fileUrl} onChange={(e) => setFileUrl(e.target.value)} placeholder="https://…" required />
+          <input id="hs-doc-url" type="url" className={inputCls} value={fileUrl} onChange={(e) => setFileUrl(e.target.value)} placeholder="https://…" required />
         </div>
       </div>
+      <div>
+        <label className={labelCls} htmlFor="hs-doc-notes">Notes</label>
+        <input id="hs-doc-notes" className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. paid in full — keep for warranty" />
+      </div>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-      <button
-        type="submit"
-        disabled={busy || !configured}
-        className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
-      >
+      <button type="submit" disabled={busy || !configured} className={btnPrimary}>
         {busy ? "Adding…" : "Attach document"}
       </button>
     </form>
   );
 }
+
+const EVENT_BADGE: Record<EventType, string> = {
+  installed: "bg-emerald-900/40 text-emerald-300",
+  serviced: "bg-sky-900/40 text-sky-300",
+  repaired: "bg-amber-900/40 text-amber-300",
+  other: "bg-indigo-900/40 text-indigo-300",
+};
 
 /* ---------------------------------------------------------------- */
 /* Object detail: timeline + documents                               */
@@ -500,10 +575,54 @@ function ObjectDetail({
     void load(object);
   }, [object, load]);
 
+  // Chronological by occurred_on (fall back to created_at), oldest first.
+  const sortedEvents = useMemo(
+    () =>
+      [...events].sort((a, b) =>
+        (a.occurred_on ?? a.created_at).localeCompare(b.occurred_on ?? b.created_at),
+      ),
+    [events],
+  );
+
+  // Group by date for visual scanning.
+  const groups = useMemo(() => {
+    const map = new Map<string, ObjectEvent[]>();
+    for (const ev of sortedEvents) {
+      const date = (ev.occurred_on ?? ev.created_at ?? "").slice(0, 10);
+      const key = date || "No date";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ev);
+    }
+    return Array.from(map.entries());
+  }, [sortedEvents]);
+
+  async function removeEvent(ev: ObjectEvent) {
+    if (!window.confirm("Delete this timeline entry?")) return;
+    try {
+      await deleteEvent({ data: { id: ev.id } });
+      setEvents((prev) => prev.filter((e) => e.id !== ev.id));
+    } catch (err) {
+      window.alert(messageFromError(err, "The entry could not be deleted."));
+    }
+  }
+
+  async function removeDocument(doc: ObjectDocument) {
+    if (!window.confirm("Remove this document from the object?")) return;
+    try {
+      await deleteDocument({ data: { id: doc.id } });
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+    } catch (err) {
+      window.alert(messageFromError(err, "The document could not be removed."));
+    }
+  }
+
   const warranty = object.warranty_expiration
     ? ` · Warranty until ${object.warranty_expiration}`
     : "";
-  const meta = [object.manufacturer, object.model]
+  const purchase = object.purchase_price != null
+    ? ` · $${object.purchase_price.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+    : "";
+  const meta = [object.manufacturer, object.model, object.room_location]
     .filter(Boolean)
     .join(" · ");
 
@@ -525,11 +644,15 @@ function ObjectDetail({
         <p className="mt-1 text-sm text-gray-400">
           {OBJECT_TYPE_LABELS[object.object_type]}
           {meta ? ` · ${meta}` : ""}
-          {object.room_location ? ` · ${object.room_location}` : ""}
           {warranty}
+          {purchase}
         </p>
-        {object.serial_number && (
-          <p className="mt-1 text-xs text-gray-500">Serial: {object.serial_number}</p>
+        {((object.serial_number) || (object.purchase_date) || (object.installation_date)) && (
+          <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
+            {object.serial_number && <span>Serial: {object.serial_number}</span>}
+            {object.purchase_date && <span>Bought {object.purchase_date}</span>}
+            {object.installation_date && <span>Installed {object.installation_date}</span>}
+          </p>
         )}
         {object.notes && <p className="mt-2 text-sm text-gray-300">{object.notes}</p>}
       </div>
@@ -538,96 +661,199 @@ function ObjectDetail({
 
       {/* Timeline */}
       <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5">
-        <h4 className="font-semibold">Timeline</h4>
-        <div className="mt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold">Timeline</h4>
+          <span className="text-xs text-gray-500">{sortedEvents.length} entries</span>
+        </div>
+
+        <div className="mt-4 space-y-4">
           {status === "loading" ? (
-            <div className="h-14 animate-pulse rounded-xl border border-gray-800 bg-gray-800/40" aria-label="Loading timeline" />
-          ) : events.length ? (
-            events.map((ev) => (
-              <div key={ev.id} className="flex gap-3 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
-                <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-indigo-900/40 px-2 py-0.5 text-xs font-medium text-indigo-300">
-                      {EVENT_TYPE_LABELS[ev.event_type]}
-                    </span>
-                    <span className="text-sm font-medium text-gray-200">
-                      {ev.title ?? "Untitled event"}
-                    </span>
-                    {ev.occurred_on && (
-                      <span className="text-xs text-gray-500">{ev.occurred_on}</span>
-                    )}
-                  </div>
-                  {ev.notes && <p className="mt-1 text-sm text-gray-400">{ev.notes}</p>}
+            <div className="h-20 animate-pulse rounded-xl border border-gray-800 bg-gray-800/40" aria-label="Loading timeline" />
+          ) : groups.length ? (
+            groups.map(([date, items]) => (
+              <div key={date}>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{date}</p>
+                <div className="space-y-2">
+                  {items.map((ev) => (
+                    <div key={ev.id} className="group flex gap-3 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+                      <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${EVENT_BADGE[ev.event_type]}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${EVENT_BADGE[ev.event_type]}`}>
+                            {EVENT_TYPE_LABELS[ev.event_type]}
+                          </span>
+                          <span className="text-sm font-medium text-gray-200">
+                            {ev.title ?? "Untitled event"}
+                          </span>
+                        </div>
+                        {ev.notes && <p className="mt-1 text-sm text-gray-400">{ev.notes}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void removeEvent(ev)}
+                        aria-label={`Delete ${(ev.title ?? "event")}`}
+                        className="self-start rounded-md px-2 py-1 text-xs text-gray-600 transition hover:bg-red-900/30 hover:text-red-300"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))
           ) : (
-            <p className="rounded-xl border border-dashed border-gray-800 p-4 text-center text-sm text-gray-500">
-              {!configured
-                ? "Timeline entries will appear here once storage is connected."
-                : "No timeline entries yet. Add one below."}
-            </p>
+            <EmptyState
+              icon="🗓️"
+              title="No timeline entries yet"
+              body={
+                configured
+                  ? "Add the story of this object — when it was installed, serviced, or repaired."
+                  : "Timeline entries will appear here once storage is connected."
+              }
+            />
           )}
         </div>
-        {events.length < 3 && (
-          <details className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-indigo-300">
-              Add a timeline entry
-            </summary>
-            <NewEventForm
-              configured={configured}
-              objectId={object.id}
-              onCreated={(ev) => setEvents((prev) => [...prev, ev])}
-            />
-          </details>
-        )}
+
+        <details className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-indigo-300">
+            Add a timeline entry
+          </summary>
+          <EventForm
+            configured={configured}
+            objectId={object.id}
+            onCreated={(ev) => setEvents((prev) => [...prev, ev])}
+          />
+        </details>
       </section>
 
       {/* Documents */}
       <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5">
-        <h4 className="font-semibold">Documents</h4>
-        <div className="mt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold">Documents</h4>
+          <span className="text-xs text-gray-500">{documents.length} attached</span>
+        </div>
+
+        <div className="mt-4 space-y-2">
           {status === "loading" ? (
             <div className="h-14 animate-pulse rounded-xl border border-gray-800 bg-gray-800/40" aria-label="Loading documents" />
           ) : documents.length ? (
             documents.map((doc) => (
-              <div key={doc.id} className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
-                <span className="rounded-full bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-300">
+              <div key={doc.id} className="group flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+                <span className="shrink-0 rounded-full bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-300">
                   {DOCUMENT_TYPE_LABELS[doc.document_type]}
                 </span>
-                <a
-                  href={doc.file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="min-w-0 truncate text-sm font-medium text-indigo-300 transition hover:text-indigo-200"
+                <div className="min-w-0 flex-1">
+                  <a
+                    href={doc.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block truncate text-sm font-medium text-indigo-300 transition hover:text-indigo-200"
+                  >
+                    {doc.title ?? doc.file_url}
+                  </a>
+                  {doc.notes && <p className="truncate text-xs text-gray-500">{doc.notes}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void removeDocument(doc)}
+                  aria-label={`Remove ${(doc.title ?? "document")}`}
+                  className="shrink-0 rounded-md px-2 py-1 text-xs text-gray-600 transition hover:bg-red-900/30 hover:text-red-300"
                 >
-                  {doc.title ?? doc.file_url}
-                </a>
-                {doc.notes && <span className="ml-auto hidden text-xs text-gray-500 sm:block">{doc.notes}</span>}
+                  Remove
+                </button>
               </div>
             ))
           ) : (
-            <p className="rounded-xl border border-dashed border-gray-800 p-4 text-center text-sm text-gray-500">
-              {!configured
-                ? "Documents will appear here once storage is connected."
-                : "No documents attached yet."}
-            </p>
+            <EmptyState
+              icon="📎"
+              title="No documents attached"
+              body={
+                configured
+                  ? "Attach receipts, manuals, warranties, and photos so they live with this object."
+                  : "Documents will appear here once storage is connected."
+              }
+            />
           )}
         </div>
-        {documents.length < 3 && (
-          <details className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-indigo-300">
-              Attach a document
-            </summary>
-            <NewDocumentForm
-              configured={configured}
-              objectId={object.id}
-              onCreated={(d) => setDocuments((prev) => [...prev, d])}
-            />
-          </details>
-        )}
+
+        <details className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-indigo-300">
+            Attach a document
+          </summary>
+          <DocumentForm
+            configured={configured}
+            objectId={object.id}
+            onCreated={(d) => setDocuments((prev) => [...prev, d])}
+          />
+        </details>
       </section>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* Object card + management                                          */
+/* ---------------------------------------------------------------- */
+function ObjectCard({
+  object,
+  selected,
+  onSelect,
+  onEdit,
+  onToggleStatus,
+  onDelete,
+}: {
+  object: PropertyObject;
+  selected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onToggleStatus: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={`rounded-xl border p-4 transition ${
+        selected ? "border-indigo-600 bg-indigo-950/30" : "border-gray-800 bg-gray-950/40 hover:border-gray-700"
+      }`}
+    >
+      <button type="button" onClick={onSelect} className="w-full text-left">
+        <span className="block truncate text-sm font-medium text-gray-100">{object.name}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              object.status === "retired"
+                ? "bg-gray-800 text-gray-400"
+                : "bg-emerald-900/40 text-emerald-300"
+            }`}
+          >
+            {object.status === "retired" ? "Retired" : "Active"}
+          </span>
+          {OBJECT_TYPE_LABELS[object.object_type]}
+          {object.room_location ? ` · ${object.room_location}` : ""}
+        </span>
+      </button>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-200 transition hover:bg-gray-700"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={onToggleStatus}
+          className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-200 transition hover:bg-gray-700"
+        >
+          {object.status === "retired" ? "Activate" : "Retire"}
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition hover:bg-red-900/30 hover:text-red-300"
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
@@ -645,6 +871,8 @@ export function HomeSnapApp() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const [showNewProperty, setShowNewProperty] = useState(false);
+  const [showNewObject, setShowNewObject] = useState(false);
+  const [editingObject, setEditingObject] = useState<PropertyObject | null>(null);
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
@@ -687,7 +915,35 @@ export function HomeSnapApp() {
   function selectProperty(propertyId: number) {
     setSelectedPropertyId(propertyId);
     setSelectedObjectId(null);
+    setEditingObject(null);
+    setShowNewObject(false);
     void loadObjects(propertyId, false);
+  }
+
+  async function toggleObjectStatus(obj: PropertyObject) {
+    const nextStatus: ObjectStatus = obj.status === "retired" ? "active" : "retired";
+    try {
+      const { object } = await updateObject({
+        data: { id: obj.id, status: nextStatus },
+      });
+      setObjects((prev) => prev.map((o) => (o.id === obj.id ? (object as PropertyObject) : o)));
+    } catch (err) {
+      window.alert(messageFromError(err, "The status could not be changed."));
+    }
+  }
+
+  async function removeObject(obj: PropertyObject) {
+    if (!window.confirm(`Delete "${obj.name}"? Its timeline and documents will be removed too.`)) {
+      return;
+    }
+    try {
+      await deleteObject({ data: { id: obj.id } });
+      setObjects((prev) => prev.filter((o) => o.id !== obj.id));
+      if (selectedObjectId === obj.id) setSelectedObjectId(null);
+      if (editingObject?.id === obj.id) setEditingObject(null);
+    } catch (err) {
+      window.alert(messageFromError(err, "The object could not be deleted."));
+    }
   }
 
   if (!isLoaded) {
@@ -721,7 +977,7 @@ export function HomeSnapApp() {
             <button
               type="button"
               onClick={() => setShowNewProperty(true)}
-              className="rounded-full border border-gray-700 px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-800"
+              className={btnGhost}
             >
               + Add property
             </button>
@@ -730,18 +986,10 @@ export function HomeSnapApp() {
 
         {showNewProperty && (
           <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-200">New property</h3>
-              <button
-                type="button"
-                onClick={() => setShowNewProperty(false)}
-                className="text-xs text-gray-500 transition hover:text-gray-300"
-              >
-                Cancel
-              </button>
-            </div>
-            <NewPropertyForm
+            <h3 className="text-sm font-semibold text-gray-200">New property</h3>
+            <PropertyForm
               configured={configured}
+              onCancel={() => setShowNewProperty(false)}
               onCreated={(p) => {
                 setProperties((prev) => [p, ...prev]);
                 setShowNewProperty(false);
@@ -773,15 +1021,19 @@ export function HomeSnapApp() {
                     {p.purchase_date ? ` · purchased ${p.purchase_date}` : ""}
                   </span>
                 </span>
-                <span className="text-xs text-indigo-300">{p.purchase_price ? `$${p.purchase_price.toLocaleString()}` : ""}</span>
+                <span className="text-xs text-indigo-300">{money(p.purchase_price)}</span>
               </button>
             ))
           ) : (
-            <p className="rounded-xl border border-dashed border-gray-800 p-6 text-center text-sm text-gray-500">
-              {!configured
-                ? "Your properties will appear here once storage is connected."
-                : "No properties yet. Add your first home to start keeping its record."}
-            </p>
+            <EmptyState
+              icon="🏠"
+              title="No properties yet"
+              body={
+                configured
+                  ? "Add your first home to start keeping its permanent record."
+                  : "Your properties will appear here once storage is connected."
+              }
+            />
           )}
         </div>
       </section>
@@ -789,51 +1041,89 @@ export function HomeSnapApp() {
       {/* Selected property: objects */}
       {selectedProperty && (
         <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
-          <h2 className="font-semibold">Objects in {selectedProperty.nickname}</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Systems, appliances, fixtures, and improvements — each with its own
-            documents and history.
-          </p>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {objects.length ? (
-              objects.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => setSelectedObjectId(o.id)}
-                  className={`rounded-xl border px-4 py-3 text-left transition ${
-                    o.id === selectedObjectId
-                      ? "border-indigo-600 bg-indigo-950/30"
-                      : "border-gray-800 bg-gray-950/40 hover:border-gray-700"
-                  }`}
-                >
-                  <span className="block truncate text-sm font-medium text-gray-100">{o.name}</span>
-                  <span className="block truncate text-xs text-gray-500">
-                    {OBJECT_TYPE_LABELS[o.object_type]}
-                    {o.room_location ? ` · ${o.room_location}` : ""}
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="col-span-full rounded-xl border border-dashed border-gray-800 p-6 text-center text-sm text-gray-500">
-                No objects yet in this property.
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-semibold">Objects in {selectedProperty.nickname}</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Systems, appliances, fixtures, and improvements — each with its own
+                documents and history.
               </p>
+            </div>
+            {!showNewObject && !editingObject && (
+              <button type="button" onClick={() => setShowNewObject(true)} className={btnGhost}>
+                + Add object
+              </button>
             )}
           </div>
 
-          <details className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-            <summary className="cursor-pointer text-sm font-medium text-indigo-300">
-              Add an object
-            </summary>
-            <NewObjectForm
-              configured={configured}
-              propertyId={selectedProperty.id}
-              onCreated={(o) => {
-                setObjects((prev) => [o, ...prev]);
-                setSelectedObjectId(o.id);
-              }}
-            />
-          </details>
+          {(showNewObject || editingObject) && (
+            <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-200">
+                  {editingObject ? `Edit ${editingObject.name}` : "New object"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewObject(false);
+                    setEditingObject(null);
+                  }}
+                  className="text-xs text-gray-500 transition hover:text-gray-300"
+                >
+                  Close
+                </button>
+              </div>
+              <ObjectForm
+                configured={configured}
+                propertyId={selectedProperty.id}
+                initial={editingObject}
+                onCancel={() => {
+                  setShowNewObject(false);
+                  setEditingObject(null);
+                }}
+                onSaved={(o) => {
+                  setObjects((prev) => {
+                    const exists = prev.some((x) => x.id === o.id);
+                    return exists ? prev.map((x) => (x.id === o.id ? o : x)) : [o, ...prev];
+                  });
+                  setShowNewObject(false);
+                  setEditingObject(null);
+                  setSelectedObjectId(o.id);
+                }}
+              />
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {objects.length ? (
+              objects.map((o) => (
+                <ObjectCard
+                  key={o.id}
+                  object={o}
+                  selected={o.id === selectedObjectId}
+                  onSelect={() => setSelectedObjectId(o.id)}
+                  onEdit={() => {
+                    setShowNewObject(false);
+                    setEditingObject(o);
+                  }}
+                  onToggleStatus={() => void toggleObjectStatus(o)}
+                  onDelete={() => void removeObject(o)}
+                />
+              ))
+            ) : (
+              <div className="col-span-full">
+                <EmptyState
+                  icon="📦"
+                  title="No objects in this home yet"
+                  body={
+                    configured
+                      ? "Add a system, appliance, fixture, or improvement to start its record."
+                      : "Objects will appear here once storage is connected."
+                  }
+                />
+              </div>
+            )}
+          </div>
         </section>
       )}
 
