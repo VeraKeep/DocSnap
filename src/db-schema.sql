@@ -15,12 +15,18 @@ CREATE TABLE IF NOT EXISTS users (
   -- NOT bundled into any tier; this flag is the ONLY thing that unlocks
   -- /receipts. Fails closed: default false and any missing row = locked.
   addon_receiptsnap BOOLEAN NOT NULL DEFAULT false,
+  -- MeetingSnap is intentionally INDEPENDENT from DocSnap's
+  -- subscription_status: it has its own 4-tier model
+  -- ('free' | 'personal' | 'pro' | 'team'). Fails closed: default 'free'
+  -- and any missing row resolves to free.
+  meeting_subscription_status TEXT DEFAULT 'free',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 -- Safe upgrade for databases created before the add-on flag existed
 -- (CREATE TABLE IF NOT EXISTS does not alter existing tables).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_receiptsnap BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_subscription_status TEXT DEFAULT 'free';
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id SERIAL PRIMARY KEY,
@@ -81,6 +87,9 @@ CREATE TABLE IF NOT EXISTS meetings (
   clerk_user_id TEXT NOT NULL,
   title TEXT,
   source_text TEXT NOT NULL,
+  -- Reserved for the future "priority processing" Pro feature: a flagged
+  -- meeting is queued/processed ahead of others. Unused by Chunk A.
+  priority BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_meetings_clerk_user_id_created_at
