@@ -133,6 +133,73 @@ export async function setReceiptSnapAddon(clerkUserId: string, owned: boolean): 
   } catch (err) { console.error("[subscription] Failed to set ReceiptSnap add-on:", err); }
 }
 
+/**
+ * GarageSnap add-on entitlement.
+ *
+ * GarageSnap is a PAID ADD-ON sold on the DocSnap side (owner decision,
+ * business-plan rev 16). It is NOT bundled into any DocSnap tier: a paid
+ * subscriber does NOT automatically get GarageSnap. Access to /garage is a
+ * hard entitlement gate that unlocks ONLY when the user's record has the
+ * add-on flag (addon_garagesnap) set.
+ */
+/** Single source of truth for whether a user owns the GarageSnap add-on.
+ *  FAILS CLOSED: a missing users row, a NULL/false flag, or any DB error all
+ *  resolve to `false` (locked). Only an explicit `addon_garagesnap = true`
+ *  grants access. A paid DocSnap tier does NOT unlock GarageSnap. */
+export async function hasGarageSnapAddon(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT addon_garagesnap FROM users WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `;
+    const row = rows[0] as { addon_garagesnap?: unknown } | undefined;
+    return row?.addon_garagesnap === true;
+  } catch (err) {
+    console.error("[subscription] Failed to read GarageSnap add-on:", err);
+    return false;
+  }
+}
+/** Grant or revoke the GarageSnap add-on entitlement (webhook/admin use). */
+export async function setGarageSnapAddon(clerkUserId: string, owned: boolean): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, addon_garagesnap)
+      VALUES (${clerkUserId}, ${owned})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET addon_garagesnap = ${owned}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set GarageSnap add-on:", err); }
+}
+
+/** MeetingSnap's independent 4-tier model (mirrors features/meetingsnap). */
+export type MeetingTier = "free" | "personal" | "pro" | "team";
+/** Grant/revoke the MEETING_SNAP independent subscription tier (webhook use).
+ *  This is intentionally SEPARATE from DocSnap's subscription_status column —
+ *  it writes the parallel `meeting_subscription_status` column. Fails closed:
+ *  any DB error is logged and the tier is left unchanged. */
+export async function setMeetingSubscriptionTier(
+  clerkUserId: string,
+  tier: MeetingTier,
+): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, meeting_subscription_status)
+      VALUES (${clerkUserId}, ${tier})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET meeting_subscription_status = ${tier}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set MeetingSnap tier:", err); }
+}
+
+/** GarageSnap entitlement for the signed-in user — the /garage UI gate
+ *  channel (reports state rather than throwing; the caller renders the
+ *  locked/upgrade screen). `hasAddon` is true only when the user owns the
+ *  add-on. Anonymous → 401 (fail closed). */
+export const getGarageEntitlement = createServerFn({ method: "GET" }).handler(async (): Promise<{ configured: boolean; hasAddon: boolean }> => {
+  const userId = await getVerifiedUserId();
+  if (!userId) throw new Error("Not signed in");
+  if (!process.env.DATABASE_URL) return { configured: false, hasAddon: false };
+  const hasAddon = await hasGarageSnapAddon(userId);
+  return { configured: true, hasAddon };
+});
+
 /** Fetch the signed-in user's subscription.
  *  The client-passed clerkUserId validator arg is ignored — the acting
  *  identity always comes from the verified Clerk session. */
