@@ -6,7 +6,7 @@ import {
   type CloudDocument,
   type DocCategory,
   getDocCategory,
-} from "../cloudStorage";
+} from "../cloudTypes";
 
 // ── Folder config for badges ────────────────────────────────────────
 

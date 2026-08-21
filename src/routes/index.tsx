@@ -19,7 +19,7 @@ import { useSubscription } from "../hooks/useSubscription";
 import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
 import { trackEvent } from "../analytics";
 import { findDuplicate, hashImageData } from "../duplicateDetector";
-import type { DocCategory } from "../cloudStorage";
+import type { DocCategory } from "../cloudTypes";
 import { CameraView } from "../components/CameraView";
 import { PreviewScreen } from "../components/PreviewScreen";
 import { OCRProgress } from "../components/OCRProgress";

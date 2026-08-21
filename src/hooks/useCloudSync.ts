@@ -14,9 +14,8 @@ import {
   addDocument,
   deleteDocument,
   updateDocumentCategory,
-  type CloudDocument,
-  type DocCategory,
 } from "../cloudStorage";
+import type { CloudDocument, DocCategory } from "../cloudTypes";
 
 export function useCloudSync() {
   const { isSignedIn, isLoaded: authLoaded } = useAuth();

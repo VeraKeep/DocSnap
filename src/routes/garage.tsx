@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { SignInButton, UserButton } from "@clerk/tanstack-start";
-import { nextAssetId, type Asset, type DocumentRef } from "~/assetStorage";
-import type { CloudDocument } from "~/cloudStorage";
+import { nextAssetId, type Asset, type DocumentRef } from "~/assetStore";
+import type { CloudDocument } from "~/cloudTypes";
 import { useAssetSync } from "~/hooks/useAssetSync";
 
 export const Route = createFileRoute("/garage")({

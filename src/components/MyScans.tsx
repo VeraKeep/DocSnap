@@ -4,7 +4,7 @@ import {
   type DocCategory,
   ALL_CATEGORIES,
   getDocCategory,
-} from "../cloudStorage";
+} from "../cloudTypes";
 import { DocumentSearch } from "./DocumentSearch";
 import { ShareDialog } from "./ShareDialog";
 

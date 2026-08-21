@@ -3,67 +3,33 @@ import { UTApi } from "uploadthing/server";
 import fs from "node:fs";
 import path from "node:path";
 import { getVerifiedUserId } from "./serverAuth";
+import type { CloudDocument, DocCategory } from "./cloudTypes";
+import { ALL_CATEGORIES, getDocCategory } from "./cloudTypes";
 
-export interface CloudDocument {
-  id: string;
-  name: string;
-  pageCount: number;
-  date: string;
-  fileKey: string;
-  fileUrl: string;
-  thumbnailUrl?: string;
-  /** Auto-detected category from OCR (empty string if no OCR was run) */
-  autoCategory?: string;
-  /** User-set category override. If set, this takes precedence over autoCategory */
-  userCategory?: string;
-  /** OCR-extracted full text for search (empty string if no OCR was run) */
-  ocrText?: string;
-  /** Lightweight image/content hash used for duplicate detection */
-  contentHash?: string;
-  /** Number of other documents sharing this document's hash */
-  duplicateCount?: number;
+// Re-export the client-safe document types/helpers so existing importers of
+// this module keep working. Client code should import them from
+// `~/cloudTypes` (this module is server-only: it evaluates Node APIs).
+export type { CloudDocument, DocCategory } from "./cloudTypes";
+export { ALL_CATEGORIES, getDocCategory } from "./cloudTypes";
+
+/**
+ * Server-only: resolve the per-user data directory. Deliberately lazy — this
+ * module is imported by client bundles for its server functions, so any
+ * module-scope Node evaluation (`path.join(process.cwd(), ...)`) would run in
+ * the browser and throw "process is not defined" on cold page loads.
+ */
+function getDataDir(): string {
+  return path.join(process.cwd(), "data");
 }
-
-export type DocCategory =
-  | "Receipts"
-  | "Insurance"
-  | "Taxes"
-  | "Medical"
-  | "School"
-  | "Military"
-  | "Manuals"
-  | "Uncategorized";
-
-export const ALL_CATEGORIES: DocCategory[] = [
-  "Receipts",
-  "Insurance",
-  "Taxes",
-  "Medical",
-  "School",
-  "Military",
-  "Manuals",
-  "Uncategorized",
-];
-
-/** Get the effective display category for a document */
-export function getDocCategory(doc: CloudDocument): DocCategory {
-  const cat = doc.userCategory || doc.autoCategory;
-  if (cat && ALL_CATEGORIES.includes(cat as DocCategory)) {
-    return cat as DocCategory;
-  }
-  return "Uncategorized";
-}
-
-const DATA_DIR = path.join(process.cwd(), "data");
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(getDataDir())) {
+    fs.mkdirSync(getDataDir(), { recursive: true });
   }
 }
 
 function getUserDocPath(userId: string): string {
-  return path.join(DATA_DIR, `${userId}.json`);
+  return path.join(getDataDir(), `${userId}.json`);
 }
 
 function readUserDocs(userId: string): CloudDocument[] {
