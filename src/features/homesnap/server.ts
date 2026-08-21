@@ -14,10 +14,12 @@
  * (src/db-schema.sql), and degrades gracefully to a no-op when DATABASE_URL is
  * unset (the UI reports storage as not configured rather than crashing).
  *
- * NOTE — pricing/gating: HomeSnap's monetization (free vs paid add-on, like
- * ReceiptSnap's addon_receiptsnap flag) is a business decision that is NOT
- * decided yet (awaiting the owner). This phase ships the module auth-gated
- * only — signed-in users can use it. No hard gate is applied here.
+ * NOTE — pricing/gating: HomeSnap is a paid add-on (business-plan rev 2):
+ * $3.99/month or $39.99/year, gated by an addon_homesnap flag on the user
+ * (mirroring ReceiptSnap/GarageSnap). The checkout links stay empty and the
+ * hard add-on gate is NOT applied in this phase — any signed-in user can use
+ * the module. Pricing display is wired in src/modules.ts; the gate and the
+ * real Stripe links land in phase 3.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
@@ -301,6 +303,82 @@ export const createObject = createServerFn({ method: "POST" })
     return { object: toObject(rows[0]) };
   });
 
+export const updateObject = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as {
+      id?: unknown;
+      object_type?: unknown;
+      name?: unknown;
+      manufacturer?: unknown;
+      model?: unknown;
+      serial_number?: unknown;
+      room_location?: unknown;
+      purchase_date?: unknown;
+      installation_date?: unknown;
+      purchase_price?: unknown;
+      warranty_expiration?: unknown;
+      status?: unknown;
+      notes?: unknown;
+    };
+    const status: ObjectStatus = d.status === "retired" ? "retired" : "active";
+    return {
+      id: positiveId(d.id, "Object id"),
+      object_type: (text(d.object_type) ?? "other") as ObjectType,
+      name: requiredText(d.name, "Object name").slice(0, 300),
+      manufacturer: text(d.manufacturer)?.slice(0, 200) ?? null,
+      model: text(d.model)?.slice(0, 200) ?? null,
+      serial_number: text(d.serial_number)?.slice(0, 200) ?? null,
+      room_location: text(d.room_location)?.slice(0, 200) ?? null,
+      purchase_date: text(d.purchase_date)?.slice(0, 40) ?? null,
+      installation_date: text(d.installation_date)?.slice(0, 40) ?? null,
+      purchase_price: price(d.purchase_price),
+      warranty_expiration: text(d.warranty_expiration)?.slice(0, 40) ?? null,
+      status,
+      notes: text(d.notes)?.slice(0, 2000) ?? null,
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireOwnedObject(userId, data.id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const rows = (await sql`
+      UPDATE property_objects SET
+        object_type = ${data.object_type},
+        name = ${data.name},
+        manufacturer = ${data.manufacturer},
+        model = ${data.model},
+        serial_number = ${data.serial_number},
+        room_location = ${data.room_location},
+        purchase_date = ${data.purchase_date},
+        installation_date = ${data.installation_date},
+        purchase_price = ${data.purchase_price},
+        warranty_expiration = ${data.warranty_expiration},
+        status = ${data.status},
+        notes = ${data.notes}
+      WHERE id = ${data.id}
+      RETURNING *
+    `) as Record<string, unknown>[];
+    if (!rows[0]) throw new Error("Object not found.");
+    return { object: toObject(rows[0]) };
+  });
+
+export const deleteObject = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown };
+    return { id: positiveId(d.id, "Object id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireOwnedObject(userId, data.id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    await sql`DELETE FROM property_objects WHERE id = ${data.id}`;
+    return { deleted: true };
+  });
+
 /* ------------------------------------------------------------------ */
 /* Documents                                                           */
 /* ------------------------------------------------------------------ */
@@ -353,6 +431,34 @@ export const createDocument = createServerFn({ method: "POST" })
     return { document: toDocument(rows[0]) };
   });
 
+export const deleteDocument = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown };
+    return { id: positiveId(d.id, "Document id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    // Scope the document through its owning object (which must belong to an
+    // owned property) before deleting — never delete by bare id.
+    const doc = (await sql`
+      SELECT od.id FROM object_documents od
+      JOIN property_objects po ON po.id = od.object_id
+      JOIN properties p ON p.id = po.property_id
+      WHERE od.id = ${data.id} AND p.clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!doc[0]) {
+      throw new Response(
+        JSON.stringify({ error: "Document not found." }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    await sql`DELETE FROM object_documents WHERE id = ${data.id}`;
+    return { deleted: true };
+  });
+
 /* ------------------------------------------------------------------ */
 /* Events (timeline)                                                   */
 /* ------------------------------------------------------------------ */
@@ -403,4 +509,31 @@ export const createEvent = createServerFn({ method: "POST" })
       RETURNING *
     `) as Record<string, unknown>[];
     return { event: toEvent(rows[0]) };
+  });
+
+export const deleteEvent = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown };
+    return { id: positiveId(d.id, "Event id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    // Scope the event through its owning object/property before deleting.
+    const ev = (await sql`
+      SELECT oe.id FROM object_events oe
+      JOIN property_objects po ON po.id = oe.object_id
+      JOIN properties p ON p.id = po.property_id
+      WHERE oe.id = ${data.id} AND p.clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!ev[0]) {
+      throw new Response(
+        JSON.stringify({ error: "Event not found." }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    await sql`DELETE FROM object_events WHERE id = ${data.id}`;
+    return { deleted: true };
   });
