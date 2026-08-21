@@ -242,6 +242,41 @@ export async function setBillSnapAddon(clerkUserId: string, owned: boolean): Pro
   } catch (err) { console.error("[subscription] Failed to set BillSnap add-on:", err); }
 }
 
+/**
+ * ContractSnap add-on entitlement.
+ *
+ * ContractSnap is a PAID ADD-ON sold on the DocSnap side (owner decision,
+ * business-plan rev 3): $4.99/mo or $49.99/yr. It is NOT bundled into any
+ * DocSnap tier: a paid subscriber does NOT automatically get ContractSnap.
+ * Access to /contracts is a hard entitlement gate that unlocks ONLY when the
+ * user's record has the add-on flag (addon_contractsnap) set.
+ */
+/** Single source of truth for whether a user owns the ContractSnap add-on.
+ *  FAILS CLOSED: a missing users row, a NULL/false flag, or any DB error all
+ *  resolve to `false` (locked). Only an explicit `addon_contractsnap = true`
+ *  grants access. A paid DocSnap tier does NOT unlock ContractSnap. */
+export async function hasContractSnapAddon(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT addon_contractsnap FROM users WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `;
+    const row = rows[0] as { addon_contractsnap?: unknown } | undefined;
+    return row?.addon_contractsnap === true;
+  } catch (err) {
+    console.error("[subscription] Failed to read ContractSnap add-on:", err);
+    return false;
+  }
+}
+/** Grant or revoke the ContractSnap add-on entitlement (webhook/admin use). */
+export async function setContractSnapAddon(clerkUserId: string, owned: boolean): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, addon_contractsnap)
+      VALUES (${clerkUserId}, ${owned})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET addon_contractsnap = ${owned}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set ContractSnap add-on:", err); }
+}
 /** MeetingSnap's independent 4-tier model (mirrors features/meetingsnap). */
 export type MeetingTier = "free" | "personal" | "pro" | "team";
 /** Grant/revoke the MEETING_SNAP independent subscription tier (webhook use).

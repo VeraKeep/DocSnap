@@ -23,6 +23,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
+import { hasContractSnapAddon } from "~/subscription";
 import {
   type ContractClause,
   type ContractDetail,
@@ -40,6 +41,28 @@ import {
 const MAX_TITLE_LENGTH = 200;
 const MAX_TEXT_LENGTH = 400_000; // generous safe cap on a contract's raw text
 const MAX_LISTS = 100;
+/* ------------------------------------------------------------------ */
+/* Hard add-on entitlement gate (business-plan rev 3)                  */
+/* ------------------------------------------------------------------ */
+export const ADDON_LOCKED_MESSAGE =
+  "ContractSnap is a paid add-on. You don't own it yet - upgrade to use /contracts.";
+export const ADDON_LOCKED_CODE = "contractsnap_addon_required";
+/**
+ * HARD entitlement gate (business-plan rev 3). ContractSnap is a paid add-on,
+ * NOT bundled into any DocSnap tier. Fails CLOSED with HTTP 403 for any
+ * signed-in user who does not own the add-on - including every paid
+ * (Personal/Household/Complete) subscriber. Anonymous callers are already
+ * rejected with 401 by requireServerFunctionUser.
+ */
+async function requireContractSnapAddon(userId: string): Promise<void> {
+  const owned = await hasContractSnapAddon(userId);
+  if (!owned) {
+    throw new Response(
+      JSON.stringify({ error: ADDON_LOCKED_MESSAGE, code: ADDON_LOCKED_CODE }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Small robust parsing helpers (same convention as MeetingSnap)       */
@@ -352,10 +375,12 @@ function asDateFromFact(v: unknown): string | null {
 
 export const getContractsEntitlement = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ configured: boolean; hasAddon: boolean; aiConfigured: boolean }> => {
-    await requireServerFunctionUser();
+    const userId = await requireServerFunctionUser();
+    if (!process.env.DATABASE_URL) return { configured: false, hasAddon: false, aiConfigured: false };
+    const hasAddon = await hasContractSnapAddon(userId);
     return {
-      configured: !!process.env.DATABASE_URL,
-      hasAddon: !!process.env.DATABASE_URL,
+      configured: true,
+      hasAddon,
       aiConfigured: !!process.env.OPENAI_API_KEY,
     };
   },
@@ -363,6 +388,7 @@ export const getContractsEntitlement = createServerFn({ method: "GET" }).handler
 
 export const listContracts = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireServerFunctionUser();
+  await requireContractSnapAddon(userId);
   if (!process.env.DATABASE_URL) return { configured: false, contracts: [] };
   const rows = (await sql`
     SELECT id, title, contract_type, effective_date, expiration_date, renewal_date,
@@ -383,6 +409,7 @@ export const getContract = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    await requireContractSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, contract: null };
     const rows = (await sql`
       SELECT c.id, c.title, c.contract_type, c.effective_date, c.expiration_date,
@@ -478,6 +505,7 @@ export const createContract = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    await requireContractSnapAddon(userId);
     const aiConfigured = !!process.env.OPENAI_API_KEY;
 
     let extraction: ContractExtraction | null = null;
@@ -596,6 +624,7 @@ export const searchContracts = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    await requireContractSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, contracts: [] };
     const q = `%${opts.data.query}%`;
     const rows = (await sql`
@@ -632,6 +661,7 @@ export const deleteContract = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    await requireContractSnapAddon(userId);
     if (!process.env.DATABASE_URL) throw new Error("Storage isn't connected yet.");
     const rows = (await sql`
       DELETE FROM contracts WHERE id = ${opts.data.id} AND clerk_user_id = ${userId}
