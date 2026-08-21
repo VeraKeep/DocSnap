@@ -12,6 +12,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
 
+// API route handlers that serve.ts mounts directly (TanStack Start excludes
+// "-" prefixed files from its route tree). On Vercel there is no serve.ts: this
+// single function receives every path on the domain, so the Stripe webhook is
+// mounted here (below) to make real checkout purchases auto-grant entitlements
+// in production. Everything else still falls through to the SSR handler.
+import { POST as stripePOST } from "./src/routes/api/-stripe-webhook";
+
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
 };
@@ -42,7 +49,29 @@ export default async function vercelHandler(
   res: ServerResponse,
 ): Promise<void> {
   try {
-    const webRes = await fetchHandler.fetch(toWebRequest(req));
+    const webRequest = toWebRequest(req);
+
+    // Mount the Stripe webhook here: config.json routes EVERY path on the
+    // domain to this one function (single render.func, no per-path rewrite), so
+    // POST /api/stripe-webhook must be intercepted inside this entry for Stripe
+    // to reach the handler. Every other path falls through unchanged to SSR.
+    if (req.method === "POST" && webRequest.url.endsWith("/api/stripe-webhook")) {
+      const webhookRes = await stripePOST(webRequest);
+      res.statusCode = webhookRes.status;
+      webhookRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webhookRes.body) {
+        const reader = webhookRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+
+    const webRes = await fetchHandler.fetch(webRequest);
     res.statusCode = webRes.status;
     webRes.headers.forEach((value, key) => res.setHeader(key, value));
     if (webRes.body) {

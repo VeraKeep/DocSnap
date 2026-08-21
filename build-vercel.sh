@@ -26,7 +26,19 @@ cp -R dist/client .vercel/output/static
 rm -f .vercel/output/static/index.html   # SSR owns "/", not a static shell
 
 echo "[3/3] bundle SSR handler + deps into the render function"
+# vercel-entry now also mounts the Stripe webhook, which imports source
+# subscription/serverAuth helpers that pull in the real @tanstack/react-start +
+# @clerk server runtime. Those reference TanStack Start's Vite-injected VIRTUAL
+# module ids (#tanstack-*, tanstack-start-manifest:v). Bun's bundler cannot
+# resolve them, but they only ever execute inside createStartHandler.loadEntries
+# — never reached by the webhook flow — so we keep just those virtual ids
+# external. The webhook + stripe/db/subscription deps are still fully bundled;
+# the dist SSR bundle references none of these virtual ids (Vite already
+# inlined them as ./assets/* relative imports), so SSR is unaffected.
 bun build vercel-entry.ts --target node \
+  --external "#tanstack-*" \
+  --external "tanstack-start-manifest:*" \
+  --external "tanstack-start-*" \
   --outfile .vercel/output/functions/render.func/index.mjs
 
 cat > .vercel/output/functions/render.func/.vc-config.json <<'JSON'
