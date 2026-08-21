@@ -15,12 +15,12 @@
  *   PERSONAL_MONTHLY: "https://buy.stripe.com/..." // TODO(lead): insert real URL
  */
 export const CHECKOUT_URLS = {
-  /** Personal — $5.99/month recurring. TODO(lead): insert real URL. */
-  PERSONAL_MONTHLY: "",
-  /** Personal — $59.99/year recurring. TODO(lead): insert real URL. */
-  PERSONAL_ANNUAL: "",
-  /** Family — $8.99/month recurring. TODO(lead): insert real URL. */
-  FAMILY_MONTHLY: "",
-  /** Family — $89.99/year recurring. TODO(lead): insert real URL. */
-  FAMILY_ANNUAL: "",
+  /** Personal — $5.99/month recurring. */
+  PERSONAL_MONTHLY: "https://buy.stripe.com/9B6fZj4KN3IL7bxdOm7Re0g",
+  /** Personal — $59.99/year recurring. */
+  PERSONAL_ANNUAL: "https://buy.stripe.com/9B69AVdhj1AD67t11A7Re0e",
+  /** Family — $8.99/month recurring. */
+  FAMILY_MONTHLY: "https://buy.stripe.com/00w3cxgtv5QTbrNeSq7Re0f",
+  /** Family — $89.99/year recurring. */
+  FAMILY_ANNUAL: "https://buy.stripe.com/bJe14pa57bbd3ZlaCa7Re0d",
 } as const;
