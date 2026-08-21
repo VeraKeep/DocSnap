@@ -150,3 +150,80 @@ CREATE TABLE IF NOT EXISTS waitlist (
   email TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- HomeSnap module: a permanent digital record of a home, organized around
+-- "objects" (systems, appliances, fixtures, improvements) rather than loose
+-- documents. Owner-scoped like receipts: each property belongs to one Clerk
+-- user (users.clerk_user_id), and objects/documents/events hang off a property
+-- via foreign keys. clerk_user_id is intentionally NULLABLE to match the
+-- receipts convention (so no cross-user reads are possible — every list query
+-- filters by the server-resolved owner id), and is reserved for demo rows
+-- without a real owner. NOT NULL enforcement is deferred until real Clerk
+-- identity exists consistently in production, same as receipts.
+--
+-- Date fields (purchase_date, installation_date, warranty_expiration,
+-- occurred_on) are free-text TEXT to match the receipts store_date convention:
+-- users type dates naturally and the app stores them verbatim rather than
+-- forcing a strict locale parse.
+
+-- A home a user owns/maintains (e.g. "Maple St House").
+CREATE TABLE IF NOT EXISTS properties (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT,
+  nickname TEXT NOT NULL,
+  property_type TEXT NOT NULL DEFAULT 'house', -- house/condo/townhouse/apartment/other
+  purchase_date TEXT,
+  purchase_price NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_properties_clerk_user_id_created_at
+  ON properties (clerk_user_id, created_at DESC);
+
+-- A tracked thing in the home: an HVAC system, a stove, a door, a renovation.
+-- Belongs to exactly one property. All access is mediated through the owning
+-- property (and thus the owner's clerk_user_id), never straight by object id.
+CREATE TABLE IF NOT EXISTS property_objects (
+  id SERIAL PRIMARY KEY,
+  property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  object_type TEXT NOT NULL DEFAULT 'system', -- system/appliance/fixture/improvement/other
+  name TEXT NOT NULL,
+  manufacturer TEXT,
+  model TEXT,
+  serial_number TEXT,
+  room_location TEXT,
+  purchase_date TEXT,
+  installation_date TEXT,
+  purchase_price NUMERIC,
+  warranty_expiration TEXT,
+  status TEXT NOT NULL DEFAULT 'active', -- active/retired
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_property_objects_property_id_created_at
+  ON property_objects (property_id, created_at DESC);
+
+-- A receipt/invoice/warranty/manual/photo/contract attached to one object.
+CREATE TABLE IF NOT EXISTS object_documents (
+  id SERIAL PRIMARY KEY,
+  object_id INTEGER NOT NULL REFERENCES property_objects(id) ON DELETE CASCADE,
+  document_type TEXT NOT NULL DEFAULT 'other', -- receipt/invoice/warranty/manual/photo/contract/other
+  title TEXT,
+  file_url TEXT NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_object_documents_object_id_created_at
+  ON object_documents (object_id, created_at DESC);
+
+-- A timeline entry for an object: installed → serviced → repaired, etc.
+CREATE TABLE IF NOT EXISTS object_events (
+  id SERIAL PRIMARY KEY,
+  object_id INTEGER NOT NULL REFERENCES property_objects(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL DEFAULT 'other', -- installed/serviced/repaired/other
+  occurred_on TEXT,
+  title TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_object_events_object_id_created_at
+  ON object_events (object_id, created_at DESC);

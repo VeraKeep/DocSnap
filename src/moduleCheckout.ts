@@ -31,9 +31,17 @@ export const MODULE_CHECKOUT_URLS = {
   MEETINGSNAP_PRO_MONTHLY: "https://buy.stripe.com/7sYdRb7WZ6UX9jFcKi7Re05",
   /** MeetingSnap Pro — $149.99/year recurring. */
   MEETINGSNAP_PRO_ANNUAL: "https://buy.stripe.com/cNi4gBb9b935brNaCa7Re04",
-  /** BillSnap — pricing TBD (per business plan, set after MVP validation).
-   *  TODO(lead): insert the real monthly Stripe payment-link URL once priced. */
-  BILLSNAP_MONTHLY: "",
-  /** BillSnap — annual. TODO(lead): insert the real annual URL once priced. */
-  BILLSNAP_ANNUAL: "",
+/** BillSnap — pricing TBD (per business plan, set after MVP validation).
+ *  TODO(lead): insert the real monthly Stripe payment-link URL once priced. */
+BILLSNAP_MONTHLY: "",
+/** BillSnap — annual. TODO(lead): insert the real annual URL once priced. */
+BILLSNAP_ANNUAL: "",
+/** HomeSnap — PAID ADD-ON (owner decision, business-plan rev 2): $3.99/mo or
+ *  $39.99/yr, gated by an addon_homesnap flag. These checkout URLs are left
+ *  EMPTY until the lead inserts the real monthly + annual Stripe payment
+ *  links (phase 3) — no fabricated buy.stripe.com URL. The module ships
+ *  phase-1 auth-gated (any signed-in user can use it); the hard add-on gate
+ *  lands in phase 3. */
+HOMESNAP_MONTHLY: "",
+HOMESNAP_ANNUAL: "",
 } as const;

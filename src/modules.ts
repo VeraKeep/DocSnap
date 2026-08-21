@@ -10,7 +10,7 @@ export interface Module {
   tagline: string;
   description: string;
   /** App route the module lives at. */
-  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills";
+route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;
@@ -73,6 +73,26 @@ export const MODULES: Module[] = [
     checkout: {
       monthly: MODULE_CHECKOUT_URLS.BILLSNAP_MONTHLY,
       annual: MODULE_CHECKOUT_URLS.BILLSNAP_ANNUAL,
+    },
+  },
+  {
+    name: "HomeSnap",
+    emoji: "🏡",
+    tagline: "Your home, permanently on record",
+    description:
+      "Track every system, appliance, fixture, and improvement in your home — warranties, receipts, manuals, and repair history, organized by the things in your home.",
+    route: "/homesnap",
+    // PAID ADD-ON (owner decision, business-plan rev 2): $3.99/mo or $39.99/yr,
+    // gated by an addon_homesnap flag on the user, mirroring ReceiptSnap/GarageSnap.
+    // Checkout URLs are populated in moduleCheckout.ts; until the real Stripe
+    // payment links are inserted the Buy/upgrade buttons stay inert (no fabricated
+    // URL). The module ships phase-1 auth-gated (any signed-in user can use it);
+    // the hard add-on gate lands in phase 3.
+    priceMonthly: "$3.99",
+    priceAnnual: "$39.99",
+    checkout: {
+      monthly: MODULE_CHECKOUT_URLS.HOMESNAP_MONTHLY,
+      annual: MODULE_CHECKOUT_URLS.HOMESNAP_ANNUAL,
     },
   },
 ];
