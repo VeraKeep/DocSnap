@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- NOT bundled into any tier; this flag is the ONLY thing that unlocks
   -- /garage. Fails closed: default false and any missing row = locked.
   addon_garagesnap BOOLEAN NOT NULL DEFAULT false,
+  -- HomeSnap is a PAID ADD-ON (owner decision, business-plan rev 2): $3.99/mo
+  -- or $39.99/yr, NOT bundled into any tier. This flag is the ONLY thing that
+  -- unlocks /homesnap. Fails closed: default false and any missing row = locked.
+  addon_homesnap BOOLEAN NOT NULL DEFAULT false,
   -- MeetingSnap is intentionally INDEPENDENT from DocSnap's
   -- subscription_status: it has its own 4-tier model
   -- ('free' | 'personal' | 'pro' | 'team'). Fails closed: default 'free'
@@ -37,6 +41,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- (CREATE TABLE IF NOT EXISTS does not alter existing tables).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_receiptsnap BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_garagesnap BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_homesnap BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_subscription_status TEXT DEFAULT 'free';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_billsnap BOOLEAN NOT NULL DEFAULT false;
 

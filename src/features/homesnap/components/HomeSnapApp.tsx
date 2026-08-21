@@ -15,6 +15,7 @@
  * are out of scope (later phases).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   createDocument,
@@ -24,6 +25,7 @@ import {
   deleteDocument,
   deleteEvent,
   deleteObject,
+  getHomeEntitlement,
   listDocuments,
   listEvents,
   listObjects,
@@ -78,6 +80,38 @@ function SignInRequired() {
           Sign in
         </button>
       </SignInButton>
+    </div>
+  );
+}
+
+/**
+ * Locked / upgrade screen — shown to a signed-in user WITHOUT the HomeSnap
+ * add-on. HomeSnap is a paid add-on sold on the DocSnap side (business-plan
+ * rev 2) and is NOT bundled into any tier, so even a paid subscriber sees this
+ * until they own the add-on. The buy link is /pricing for now; the real
+ * checkout link comes from the owner later (button stays inert until then).
+ */
+function AddonLocked() {
+  return (
+    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center sm:p-12">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600/20 text-3xl">
+        🏡
+      </div>
+      <h2 className="mt-5 text-xl font-semibold">HomeSnap is a paid add-on</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-400">
+        HomeSnap isn't included in DocSnap plans — it's a separate add-on.
+        Purchase it to keep a permanent, searchable record of your home's
+        systems, appliances, warranties, and repair history.
+      </p>
+      <Link
+        to="/pricing"
+        className="mt-6 inline-flex rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+      >
+        See plans &amp; buy HomeSnap
+      </Link>
+      <p className="mt-4 text-xs text-gray-600">
+        Your home records stay private to your DocSnap account.
+      </p>
     </div>
   );
 }
@@ -863,6 +897,9 @@ function ObjectCard({
 /* ---------------------------------------------------------------- */
 export function HomeSnapApp() {
   const { user, isLoaded } = useUser();
+  // HomeSnap add-on entitlement: null = resolving, true = unlocked,
+  // false = locked (show the upgrade screen).
+  const [entitled, setEntitled] = useState<boolean | null>(null);
   const [configured, setConfigured] = useState(true);
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
@@ -891,9 +928,23 @@ export function HomeSnapApp() {
     }
   }, []);
 
+  // First resolve the add-on entitlement: a user without the HomeSnap add-on
+  // sees the locked screen and never loads the library.
   useEffect(() => {
     if (!user) return;
-    void load();
+    setEntitled(null);
+    setStatus("loading");
+    void getHomeEntitlement()
+      .then((result) => {
+        const has = result.configured && result.hasAddon;
+        setEntitled(has);
+        if (has) void load();
+      })
+      .catch(() => {
+        setEntitled(false);
+        setStatus("error");
+        setLoadError("HomeSnap couldn't be unlocked right now. Please try again.");
+      });
   }, [user, load]);
 
   async function loadObjects(propertyId: number, keepSelection: boolean) {
@@ -953,6 +1004,20 @@ export function HomeSnapApp() {
   }
 
   if (!user) return <SignInRequired />;
+
+  // Entitlement gate UI: locked users (including paid tiers without the
+  // add-on) never see the home-record UI — only the add-on upgrade screen.
+  if (entitled === null) {
+    return (
+      <div
+        className="mt-8 h-40 animate-pulse rounded-2xl border border-gray-800 bg-gray-900/60"
+        aria-label="Loading HomeSnap"
+      />
+    );
+  }
+  if (!entitled) {
+    return <AddonLocked />;
+  }
 
   return (
     <div className="mt-8 space-y-8">
