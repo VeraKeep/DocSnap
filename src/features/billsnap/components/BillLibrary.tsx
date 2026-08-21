@@ -8,8 +8,10 @@
  * Every extracted field stays editable. If extraction isn't configured
  * (OPENAI_API_KEY missing) or the bill can't be read, the flow degrades
  * gracefully to the empty editable form with a small "fill this in manually"
- * note — a broken upload path is never shown. PDFs are not rasterized yet, so
- * they open the manual editable form directly. The "Try a sample bill" button
+ * note — a broken upload path is never shown. PDFs are rasterized client-side
+ * (first page → PNG) and fed through the same vision extraction, so they
+ * auto-fill just like photos; if rasterization or extraction fails they fall
+ * back to the manual editable form. The "Try a sample bill" button
  * loads a realistic Lumbee River EMC electric bill for a keyless demo, and
  * "Load demo series" seeds a 3-bill sample series (clearly demo data) so the
  * change-detection smart feature is visible on the detail.
@@ -26,6 +28,7 @@ import {
   type BillExtraction,
 } from "../server";
 import { type Bill, type BillDraft, type BillStatus, BILL_CATEGORIES, BILL_STATUSES } from "../types";
+import { pdfFirstPageToPng } from "../pdf";
 import { BillDetailModal } from "./BillDetail";
 import { BillRow } from "./BillRow";
 
@@ -84,9 +87,6 @@ function Notice({ children }: { children: string }) {
 function inputCls() {
   return "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 }
-
-/** Image types the base64 vision API reads directly (mirrors billsnap/server.ts). */
-const EXTRACTABLE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 /** Reads a File as base64 (sans the `data:...;base64,` prefix) like ReceiptSnap. */
 function readAsBase64(file: File): Promise<string> {
@@ -230,18 +230,18 @@ export function BillLibrary() {
     setExtractNote("");
     setShowForm(true);
 
-    // PDFs (and any non-image) aren't rasterized yet — open the manual form.
-    if (!EXTRACTABLE_IMAGE_TYPES.includes(f.type)) {
-      setExtractNote(
-        "Auto-extraction reads JPG, PNG, or WebP photos — you can fill this PDF in manually.",
-      );
-      return;
-    }
-
     setExtracting(true);
     try {
-      const imageBase64 = await readAsBase64(f);
-      const extracted = await extractBillFromImage({ data: { imageBase64, mimeType: f.type } });
+      // PDFs are rasterized client-side (first page → PNG) and fed through the
+      // same vision extraction as photos; images go straight through. Anything
+      // else falls through to the server validator, which rejects gracefully
+      // and lands us in the fallback below (never a broken upload path).
+      const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+      const imageBase64 = isPdf
+        ? await pdfFirstPageToPng(f)
+        : await readAsBase64(f);
+      const mimeType = isPdf ? "image/png" : f.type;
+      const extracted = await extractBillFromImage({ data: { imageBase64, mimeType } });
       setDraft(draftFromExtraction(extracted));
       setExtractNote(
         "Fields auto-extracted from your bill — review and edit anything before confirming.",
