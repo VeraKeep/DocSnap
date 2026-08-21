@@ -15,16 +15,16 @@
  *   RECEIPTSNAP_MONTHLY: "https://buy.stripe.com/..." // TODO(lead): insert real URL
  */
 export const MODULE_CHECKOUT_URLS = {
-  /** ReceiptSnap — $2.99/month recurring. TODO(lead): insert real URL. */
-  RECEIPTSNAP_MONTHLY: "",
-  /** ReceiptSnap — $29.99/year recurring. TODO(lead): insert real URL. */
-  RECEIPTSNAP_ANNUAL: "",
-  /** GarageSnap — $2.99/month recurring. TODO(lead): insert real URL. */
-  GARAGESNAP_MONTHLY: "",
-  /** GarageSnap — $29.99/year recurring. TODO(lead): insert real URL. */
-  GARAGESNAP_ANNUAL: "",
-  /** MeetingSnap Personal — $5.99/month recurring. TODO(lead): insert real URL. */
-  MEETINGSNAP_PERSONAL_MONTHLY: "",
-  /** MeetingSnap Personal — $59.99/year recurring. TODO(lead): insert real URL. */
-  MEETINGSNAP_PERSONAL_ANNUAL: "",
+  /** ReceiptSnap — $2.99/month recurring. */
+  RECEIPTSNAP_MONTHLY: "https://buy.stripe.com/8x2dRb7WZbbd1Rd6lU7Re0c",
+  /** ReceiptSnap — $29.99/year recurring. */
+  RECEIPTSNAP_ANNUAL: "https://buy.stripe.com/dRm7sN3GJbbd2Vh5hQ7Re0b",
+  /** GarageSnap — $2.99/month recurring. */
+  GARAGESNAP_MONTHLY: "https://buy.stripe.com/8x2aEZ913cfheDZcKi7Re0a",
+  /** GarageSnap — $29.99/year recurring. */
+  GARAGESNAP_ANNUAL: "https://buy.stripe.com/aFacN7dhjenp1Rd39I7Re09",
+  /** MeetingSnap Personal — $5.99/month recurring. */
+  MEETINGSNAP_PERSONAL_MONTHLY: "https://buy.stripe.com/00waEZdhjbbd53peSq7Re07",
+  /** MeetingSnap Personal — $59.99/year recurring. */
+  MEETINGSNAP_PERSONAL_ANNUAL: "https://buy.stripe.com/00wdRb4KNbbdgM7dOm7Re06",
 } as const;
