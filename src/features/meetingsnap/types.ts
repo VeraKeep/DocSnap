@@ -75,3 +75,24 @@ export interface MeetingDetail extends MeetingSummary {
   sourceText: string;
   extraction: MeetingExtraction;
 }
+
+/** One hit from a keyword search over the user's saved meetings. */
+export interface MeetingSearchResult extends MeetingSummary {
+  /** Whether the match came from the title or from meeting content. */
+  matchedOn: "title" | "content";
+}
+
+/** A grounded, per-user answer from "Ask AI" over the user's saved meetings. */
+export interface AskAIResult {
+  answer: string;
+  /** The meeting ids/titles whose content support the answer (empty = none). */
+  references: { id: number; title: string }[];
+  /** True only when the answer is directly supported by the meetings. */
+  grounded: boolean;
+}
+
+/** A follow-up email DRAFT — never sent automatically, only shown for copy/edit. */
+export interface FollowUpDraft {
+  subject: string;
+  body: string;
+}

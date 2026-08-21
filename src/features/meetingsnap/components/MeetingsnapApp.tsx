@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
-import { analyzeMeeting, getMeeting, listMeetings } from "../server";
+import {
+  analyzeMeeting,
+  askAI,
+  draftFollowUpEmail,
+  getMeeting,
+  listMeetings,
+  searchMeetings,
+} from "../server";
+import {
+  actionListToMarkdown,
+  downloadText,
+  meetingToMarkdown,
+  meetingToPdf,
+} from "./exporters";
 import {
   isLowConfidence,
+  type AskAIResult,
+  type FollowUpDraft,
   type MeetingActionItem,
   type MeetingDecision,
   type MeetingDetail,
   type MeetingExtraction,
   type MeetingQuestion,
   type MeetingRisk,
+  type MeetingSearchResult,
   type MeetingSummary,
 } from "../types";
 
@@ -186,10 +202,167 @@ function RiskCard({ r }: { r: MeetingRisk }) {
   );
 }
 
+function safeFilename(title: string): string {
+  return (title || "meeting").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "meeting";
+}
+
+function ExportToolbar({ meeting }: { meeting: MeetingDetail }) {
+  const base = safeFilename(meeting.title);
+  const [poof, setPoof] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const [draft, setDraft] = useState<FollowUpDraft | null>(null);
+  const [draftState, setDraftState] = useState<
+    "idle" | "busy" | "not-enabled" | "none-open" | "ready"
+  >("idle");
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-sm font-semibold text-gray-200">Export</span>
+        <button
+          type="button"
+          onClick={() => {
+            downloadText(meetingToMarkdown(meeting), `${base}-minutes.md`, "text/markdown;charset=utf-8");
+            setPoof(true);
+            window.setTimeout(() => setPoof(false), 1500);
+          }}
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-200 transition hover:border-indigo-500"
+        >
+          Minutes (.md)
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            downloadText(actionListToMarkdown(meeting), `${base}-actions.md`, "text/markdown;charset=utf-8")
+          }
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-200 transition hover:border-indigo-500"
+        >
+          Action list (.md)
+        </button>
+        <button
+          type="button"
+          disabled={pdfBusy}
+          onClick={async () => {
+            setPdfBusy(true);
+            setExportError("");
+            try {
+              const blob = await meetingToPdf(meeting);
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${base}-minutes.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            } catch (e) {
+              setExportError(messageFromError(e, "PDF export failed."));
+            } finally {
+              setPdfBusy(false);
+            }
+          }}
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
+        >
+          {pdfBusy ? "Building PDF…" : "Minutes (.pdf)"}
+        </button>
+
+        <span className="mx-2 h-4 w-px bg-gray-700" aria-hidden="true" />
+
+        <button
+          type="button"
+          disabled={draftState === "busy"}
+          onClick={async () => {
+            setDraftState("busy");
+            setDraft(null);
+            try {
+              const res = await draftFollowUpEmail({ data: { id: meeting.id } });
+              if (!res.configured) {
+                setDraftState("not-enabled");
+              } else if (res.noneOpen) {
+                setDraftState("none-open");
+              } else if (res.draft) {
+                setDraft(res.draft);
+                setDraftState("ready");
+              } else {
+                setDraftState("idle");
+              }
+            } catch (e) {
+              setExportError(messageFromError(e, "Could not draft the follow-up email."));
+              setDraftState("idle");
+            }
+          }}
+          className="rounded-lg border border-indigo-600 bg-indigo-600/20 px-3 py-1.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-600/30 disabled:opacity-50"
+        >
+          {draftState === "busy" ? "Drafting…" : "Draft follow-up email"}
+        </button>
+      </div>
+
+      {exportError && (
+        <p role="alert" className="mt-3 text-xs text-red-300">{exportError}</p>
+      )}
+      {poof && <p role="status" className="mt-3 text-xs text-emerald-300">Downloaded your meeting minutes.</p>}
+
+      {draftState === "not-enabled" && (
+        <p role="status" className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+          Follow-up email drafting isn't enabled yet — the AI backend (OPENAI_API_KEY) isn't connected. Drafts
+          are never sent automatically; ask the team to connect AI and this will appear as a copyable draft.
+        </p>
+      )}
+      {draftState === "none-open" && (
+        <p className="mt-3 text-sm text-gray-400">
+          This meeting has no open action items, so there's nothing to follow up on.
+        </p>
+      )}
+      {draft && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-gray-200">Follow-up email draft</p>
+            <p className="text-xs text-gray-500">A draft only — review before sending.</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500">Subject</p>
+            <input
+              value={draft.subject}
+              onChange={(e) => setDraft((d) => (d ? { ...d, subject: e.target.value } : d))}
+              className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500">Body (copy &amp; edit)</p>
+            <textarea
+              value={draft.body}
+              onChange={(e) => setDraft((d) => (d ? { ...d, body: e.target.value } : d))}
+              rows={10}
+              className="mt-1 w-full resize-y rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 font-mono text-xs leading-relaxed text-gray-300 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(`${draft.subject}\n\n${draft.body}`);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              }}
+              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+            >
+              {copied ? "Copied!" : "Copy draft"}
+            </button>
+            <p className="text-xs text-gray-600">This is never emailed automatically.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResultsView({ meeting }: { meeting: MeetingDetail }) {
   const ex: MeetingExtraction = meeting.extraction;
   return (
     <div className="mt-8 space-y-8">
+      <ExportToolbar meeting={meeting} />
       <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
         <h3 className="font-semibold text-indigo-300">Executive summary</h3>
         <p className="mt-2 leading-relaxed text-gray-300">
@@ -312,6 +485,19 @@ export function MeetingsnapApp() {
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Ask AI
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [askNotEnabled, setAskNotEnabled] = useState(false);
+  const [askResult, setAskResult] = useState<AskAIResult | null>(null);
+  const [askError, setAskError] = useState("");
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchResults, setSearchResults] = useState<MeetingSearchResult[] | null>(null);
+  const [searchError, setSearchError] = useState("");
+
   const loadMeetings = useCallback(async () => {
     if (!user) return;
     try {
@@ -371,6 +557,39 @@ export function MeetingsnapApp() {
       }
     } catch (e) {
       setError(messageFromError(e, "That meeting could not be opened."));
+    }
+  }
+
+  async function runAsk() {
+    setAskError("");
+    setAskResult(null);
+    setAskNotEnabled(false);
+    setAskBusy(true);
+    try {
+      const res = await askAI({ data: { question: askQuestion } });
+      if (!res.configured) {
+        setAskNotEnabled(true);
+      } else if (res.result) {
+        setAskResult(res.result);
+      }
+    } catch (e) {
+      setAskError(messageFromError(e, "Couldn't answer that. Please try again."));
+    } finally {
+      setAskBusy(false);
+    }
+  }
+
+  async function runSearch() {
+    setSearchError("");
+    setSearchBusy(true);
+    try {
+      const res = await searchMeetings({ data: { query: searchQuery } });
+      setSearchResults(res.meetings as MeetingSearchResult[]);
+    } catch (e) {
+      setSearchError(messageFromError(e, "Search failed. Please try again."));
+      setSearchResults(null);
+    } finally {
+      setSearchBusy(false);
     }
   }
 
@@ -478,9 +697,127 @@ export function MeetingsnapApp() {
       {/* Results */}
       {result ? <ResultsView meeting={result} /> : null}
 
-      {/* Saved meetings */}
+      {/* Ask AI */}
+      <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
+        <h2 className="font-semibold">Ask AI about your meetings</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Ask a natural-language question, e.g. “What did Bob agree to?” The
+          answer is grounded only in your saved meetings — if it isn't in them,
+          it will say so.
+        </p>
+        {askError && (
+          <p role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            {askError}
+          </p>
+        )}
+        {askNotEnabled && (
+          <p role="status" className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+            Ask AI isn't enabled yet — the AI backend (OPENAI_API_KEY) isn't
+            connected here. Answers are grounded only in your own meetings and
+            are never sent elsewhere.
+          </p>
+        )}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="text"
+            value={askQuestion}
+            onChange={(e) => setAskQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && askQuestion.trim().length >= 3 && !askBusy) void runAsk();
+            }}
+            placeholder="e.g. What did Bob agree to?"
+            className="w-full flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <button
+            type="button"
+            disabled={askBusy || askQuestion.trim().length < 3}
+            onClick={() => void runAsk()}
+            className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {askBusy ? "Asking…" : "Ask"}
+          </button>
+        </div>
+        {askResult && (
+          <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+            <p className="text-sm leading-relaxed text-gray-200">{askResult.answer}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {askResult.grounded ? (
+                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                  Grounded in your meetings
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                  Not found in your meetings
+                </span>
+              )}
+              {askResult.references.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => void openMeeting(r.id)}
+                  className="rounded-full border border-gray-700 bg-gray-900 px-2.5 py-0.5 text-[10px] font-medium text-indigo-300 transition hover:border-indigo-500"
+                >
+                  {r.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Saved meetings + search */}
       <section>
         <h2 className="text-xl font-semibold">Your meetings</h2>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && searchQuery.trim() && !searchBusy) void runSearch();
+            }}
+            placeholder="Search your meetings (title, summary, decisions, action items)…"
+            className="w-full flex-1 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <button
+            type="button"
+            disabled={searchBusy || !searchQuery.trim()}
+            onClick={() => void runSearch()}
+            className="rounded-lg bg-gray-800 px-5 py-2 text-sm font-medium text-gray-200 transition hover:border hover:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {searchBusy ? "Searching…" : "Search"}
+          </button>
+        </div>
+        {searchError && (
+          <p role="alert" className="mt-3 text-sm text-red-300">{searchError}</p>
+        )}
+        {searchResults !== null && (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs text-gray-500">
+              {searchResults.length
+                ? `${searchResults.length} match${searchResults.length === 1 ? "" : "es"} for “${searchQuery}”`
+                : `No meetings match “${searchQuery}”.`}
+            </p>
+            {searchResults.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => void openMeeting(m.id)}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-gray-800 bg-gray-900/60 p-4 text-left transition hover:border-indigo-500/50"
+              >
+                <span>
+                  <span className="font-medium text-gray-200">{m.title}</span>
+                  <span className="mt-0.5 block text-[10px] text-gray-500">
+                    Matched on {m.matchedOn === "title" ? "title" : "summary / decisions / action items"}
+                  </span>
+                </span>
+                <span className="text-xs text-gray-500">
+                  {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-4 space-y-2">
           {meetings.length ? (
             meetings.map((m) => (
