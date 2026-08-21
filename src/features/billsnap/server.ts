@@ -224,12 +224,13 @@ async function extractBill(imageBase64: string, mimeType: string): Promise<BillE
 }
 
 /**
- * Server function the capture flow calls to extract a real bill photo. Restricts
+ * Server function the capture flow calls to extract a real bill. Restricts
  * input to the image types the base64 vision API reads directly (JPEG/PNG/WebP,
- * like ReceiptSnap). PDFs are not rasterized yet — they stay on the manual
- * editable path in the UI. Automatically sees OPENAI_API_KEY when the lead wires
- * it; without it the handler throws a clear "not connected" message and the UI
- * falls back to the empty editable form.
+ * like ReceiptSnap). PDFs arrive here already rasterized client-side to a PNG
+ * (first page) by BillLibrary aka src/features/billsnap/pdf.ts, so this
+ * validator still accepts them as "image/png". Automatically sees OPENAI_API_KEY
+ * when the lead wires it; without it the handler throws a clear "not connected"
+ * message and the UI falls back to the empty editable form.
  */
 export const extractBillFromImage = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
