@@ -2,21 +2,27 @@
  * BillSnap — main module UI: Capture → Identify → Extract → Confirm → Track →
  * Remind → Archive, all upload-based and client-driven.
  *
- * For the MVP, extraction from a real upload is scaffolded (the OCR/AI layer
- * that turns an arbitrary photo/PDF into structured fields is a documented
- * TODO — see server.ts); the loop is fully demonstrable via the built-in
- * "Try a sample bill" button, which loads a realistic Lumbee River EMC
- * electric bill into the editable Confirm form. Every extracted field stays
- * editable. A "Load demo series" action seeds a 3-bill sample series (clearly
- * demo data) so the change-detection smart feature is visible on the detail.
+ * Real extraction: when a user uploads a photo (JPG/PNG/WebP), BillSnap sends it
+ * to the server's vision extraction (`extractBillFromImage`) and pre-fills the
+ * editable Confirm form with the returned vendor, amount due, due date, etc.
+ * Every extracted field stays editable. If extraction isn't configured
+ * (OPENAI_API_KEY missing) or the bill can't be read, the flow degrades
+ * gracefully to the empty editable form with a small "fill this in manually"
+ * note — a broken upload path is never shown. PDFs are not rasterized yet, so
+ * they open the manual editable form directly. The "Try a sample bill" button
+ * loads a realistic Lumbee River EMC electric bill for a keyless demo, and
+ * "Load demo series" seeds a 3-bill sample series (clearly demo data) so the
+ * change-detection smart feature is visible on the detail.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   createBill,
+  extractBillFromImage,
   getBillsEntitlement,
   listBills,
   seedDemoSeries,
+  type BillExtraction,
 } from "../server";
 import { type Bill, type BillDraft, type BillStatus, BILL_CATEGORIES, BILL_STATUSES } from "../types";
 import { BillDetailModal } from "./BillDetail";
@@ -78,6 +84,39 @@ function inputCls() {
   return "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 }
 
+/** Image types the base64 vision API reads directly (mirrors billsnap/server.ts). */
+const EXTRACTABLE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Reads a File as base64 (sans the `data:...;base64,` prefix) like ReceiptSnap. */
+function readAsBase64(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      resolve(result.includes(",") ? result.split(",")[1] : result);
+    };
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("The image could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Maps server extraction output onto the editable Confirm draft (blank = empty). */
+function draftFromExtraction(extracted: BillExtraction): BillDraft {
+  return {
+    vendor: extracted.vendor ?? "",
+    category: extracted.category ?? "",
+    account_reference: extracted.account_reference ?? "",
+    statement_date: extracted.statement_date ?? "",
+    due_date: extracted.due_date ?? "",
+    amount_due: extracted.amount_due == null ? "" : String(extracted.amount_due),
+    minimum_payment:
+      extracted.minimum_payment == null ? "" : String(extracted.minimum_payment),
+    billing_period: extracted.billing_period ?? "",
+    autopay_status: extracted.autopay_status ?? "Unknown",
+  };
+}
+
 export function BillLibrary() {
   const { user, isLoaded } = useUser();
 
@@ -95,6 +134,9 @@ export function BillLibrary() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
   const [seeding, setSeeding] = useState(false);
+  // Auto-extraction status while a real upload is being read (blank = idle).
+  const [extracting, setExtracting] = useState(false);
+  const [extractNote, setExtractNote] = useState("");
 
   // Status filter ("All" + the working buckets)
   const [filter, setFilter] = useState<"All" | BillStatus>("All");
@@ -146,29 +188,52 @@ export function BillLibrary() {
       });
   }, [user, load]);
 
-  function chooseFile(f?: File | null) {
+  async function chooseFile(f?: File | null) {
     setFormError("");
     if (!f) return;
     setFileName(f.name);
-    // MVP scaffold: a real upload fills the editable form with placeholder
-    // values clearly labeled as awaiting OCR — never guesses real data.
-    setDraft({
-      vendor: "",
-      category: "",
-      account_reference: "",
-      statement_date: "",
-      due_date: "",
-      amount_due: "",
-      minimum_payment: "",
-      billing_period: "",
-      autopay_status: "Unknown",
-    });
+    setDraft(emptyDraft());
+    setExtractNote("");
     setShowForm(true);
+
+    // PDFs (and any non-image) aren't rasterized yet — open the manual form.
+    if (!EXTRACTABLE_IMAGE_TYPES.includes(f.type)) {
+      setExtractNote(
+        "Auto-extraction reads JPG, PNG, or WebP photos — you can fill this PDF in manually.",
+      );
+      return;
+    }
+
+    setExtracting(true);
+    try {
+      const imageBase64 = await readAsBase64(f);
+      const extracted = await extractBillFromImage({ data: { imageBase64, mimeType: f.type } });
+      setDraft(draftFromExtraction(extracted));
+      setExtractNote(
+        "Fields auto-extracted from your bill — review and edit anything before confirming.",
+      );
+    } catch (error) {
+      // Degrade gracefully: keep the empty editable form, never break upload.
+      setDraft(emptyDraft());
+      const msg = messageFromError(error, "");
+      const unavailable =
+        /OPENAI_API_KEY|Extraction isn't enabled|could not be read as structured data|Unsupported image/i.test(
+          msg,
+        );
+      setExtractNote(
+        unavailable
+          ? "Auto-extraction unavailable — you can fill this in manually."
+          : "Auto-extraction couldn't read this bill — you can fill this in manually.",
+      );
+    } finally {
+      setExtracting(false);
+    }
   }
 
   /** Try a sample bill — fills the editable Confirm form with realistic data. */
   function loadSample() {
     setFormError("");
+    setExtractNote("");
     const today = new Date();
     const due = new Date(today);
     due.setDate(due.getDate() + 10);
@@ -221,6 +286,8 @@ export function BillLibrary() {
       setShowForm(false);
       setFileName(null);
       setDraft(emptyDraft());
+      setExtractNote("");
+      setExtracting(false);
       setNotice("Bill confirmed and added to your tracker.");
       await load();
     } catch (error) {
@@ -279,7 +346,7 @@ export function BillLibrary() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
-            chooseFile(e.dataTransfer.files?.[0]);
+            void chooseFile(e.dataTransfer.files?.[0]);
           }}
           onClick={() => inputRef.current?.click()}
           className="mt-4 cursor-pointer rounded-2xl border-2 border-dashed border-gray-700 p-5 text-center transition hover:border-indigo-500/60"
@@ -289,7 +356,7 @@ export function BillLibrary() {
             className="hidden"
             type="file"
             accept="image/*,.pdf"
-            onChange={(e) => chooseFile(e.target.files?.[0])}
+            onChange={(e) => void chooseFile(e.target.files?.[0])}
           />
           <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gray-800 text-xl text-gray-300">↑</div>
           <p className="mt-3 text-sm font-medium text-gray-200">
@@ -327,6 +394,16 @@ export function BillLibrary() {
           <p className="mt-1 text-sm text-gray-500">
             These are the extracted fields. Edit anything before confirming.
           </p>
+          {extracting && (
+            <p role="status" className="mt-3 rounded-xl border border-indigo-900/60 bg-indigo-950/30 px-4 py-3 text-sm text-indigo-200">
+              Reading your bill and extracting fields… this can take a moment.
+            </p>
+          )}
+          {!extracting && extractNote && (
+            <p role="status" className="mt-3 rounded-xl border border-indigo-900/60 bg-indigo-950/30 px-4 py-3 text-sm text-indigo-200">
+              {extractNote}
+            </p>
+          )}
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block sm:col-span-2">
               <span className="text-xs font-medium text-gray-400">Vendor *</span>
@@ -383,6 +460,8 @@ export function BillLibrary() {
                 setFormError("");
                 setFileName(null);
                 setDraft(emptyDraft());
+                setExtractNote("");
+                setExtracting(false);
               }}
               className="rounded-full border border-gray-700 px-5 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-gray-500"
             >
