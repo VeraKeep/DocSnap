@@ -28,10 +28,44 @@ import {
   type MeetingRisk,
 } from "./types";
 
-/** Hard cap on how much transcript text we'll send to the model. */
-const MAX_SOURCE_TEXT_LENGTH = 200_000;
+import {
+  MAX_TIER_TRANSCRIPT_CHARS,
+  MEETING_TIERS,
+  normalizeMeetingTier,
+  type MeetingTier,
+} from "./tiers";
+import {
+  getMeetingsUsage,
+  isMeetingLimitReached,
+  type MeetingUsage,
+} from "./usage";
+/**
+ * Absolute server-side guard vs. the widest tier's cap (1M chars); the precise
+ * per-tier cap is enforced in the handler (see getUserMeetingTier).
+ */
 const MAX_TITLE_LENGTH = 200;
 const MAX_LISTS = 100;
+
+/**
+ * Resolve a user's MeetingSnap tier from the independent
+ * `users.meeting_subscription_status` column (a parallel to getUserSubscription
+ * in ~/subscription.ts, but for MeetingSnap's own 4-tier model). Fails closed:
+ * a missing row, unknown value, or DB error resolves to 'free'.
+ */
+export async function getUserMeetingTier(clerkUserId: string): Promise<MeetingTier> {
+  try {
+    const rows = (await sql`
+      SELECT meeting_subscription_status FROM users
+      WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `) as Record<string, unknown>[];
+    return normalizeMeetingTier(
+      rows[0]?.meeting_subscription_status as string | null | undefined,
+    );
+  } catch (err) {
+    console.error("[meetingsnap] Failed to fetch meeting tier:", err);
+    return "free";
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Small robust parsing helpers (ported from ReceiptSnap.server)       */
@@ -246,7 +280,9 @@ async function extractWithAI(sourceText: string, title: string): Promise<Meeting
 /** Auth-contract proof: resolves the caller's Clerk user ID, or fails 401. */
 export const whoAmI = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireServerFunctionUser();
-  return { userId };
+  const meetingTier = await getUserMeetingTier(userId);
+  const usage = await getMeetingsUsage(userId);
+  return { userId, meetingTier, usage };
 });
 
 /** The signed-in user's saved meetings (titles + dates), newest first. */
@@ -320,13 +356,35 @@ export const analyzeMeeting = createServerFn({ method: "POST" })
     if (sourceText.trim().length < 20) {
       throw new Error("Please paste or upload a transcript with at least a few lines of text.");
     }
-    if (sourceText.length > MAX_SOURCE_TEXT_LENGTH) {
-      throw new Error("That transcript is too long. Please use one under 200,000 characters.");
+    // Absolute guard: reject anything above the widest tier's transcript cap
+    // before auth/tier resolution. The exact per-tier cap is enforced in the
+    // handler for the authenticated user's own tier.
+    if (sourceText.length > MAX_TIER_TRANSCRIPT_CHARS) {
+      throw new Error("That transcript is too long. Please use one under 1,000,000 characters.");
     }
     return { title, sourceText: sourceText.trim() };
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    // Resolve the user's MeetingSnap tier + monthly usage BEFORE calling the
+    // model, so a capped/blocked user never burns AI credits.
+    const meetingTier = await getUserMeetingTier(userId);
+    const tierConfig = MEETING_TIERS[meetingTier];
+    const usage = await getMeetingsUsage(userId);
+
+    if (opts.data.sourceText.length > tierConfig.maxTranscriptChars) {
+      throw new Error(
+        `That transcript is ${opts.data.sourceText.length.toLocaleString()} characters — over the ${tierConfig.maxTranscriptChars.toLocaleString()}-character limit for your ${tierConfig.label} plan. Upgrade for larger transcripts.`,
+      );
+    }
+    if (isMeetingLimitReached(usage)) {
+      const remaining =
+        usage.allowed === Infinity ? "unlimited" : String(usage.allowed - usage.usedThisMonth);
+      throw new Error(
+        `You've used all ${usage.allowed} meetings this month on the ${tierConfig.label} plan. Upgrade for more — or wait until next month.`,
+      );
+    }
+
     const extracted = await extractWithAI(opts.data.sourceText, opts.data.title);
     // Demo path: no DATABASE_URL → sql() no-ops; return a session-only meeting.
     if (!process.env.DATABASE_URL) {
@@ -339,6 +397,8 @@ export const analyzeMeeting = createServerFn({ method: "POST" })
           sourceText: opts.data.sourceText,
           extraction: extracted,
         },
+        usage,
+        meetingTier,
       };
     }
     const insert = (await sql`
@@ -362,6 +422,8 @@ export const analyzeMeeting = createServerFn({ method: "POST" })
         sourceText: opts.data.sourceText,
         extraction: extracted,
       },
+      usage,
+      meetingTier,
     };
   });
 
