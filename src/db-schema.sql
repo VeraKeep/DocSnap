@@ -236,6 +236,30 @@ CREATE TABLE IF NOT EXISTS object_events (
 CREATE INDEX IF NOT EXISTS idx_object_events_object_id_created_at
   ON object_events (object_id, created_at DESC);
 
+-- A recurring maintenance task on an object (e.g. "Main HVAC — replace filter
+-- every 3 months", "Water heater — flush annually", "Smoke detectors — replace
+-- batteries every 6 months"). Marks a task done sets last_done to the current
+-- date and advances next_due by the interval. Date fields (last_done, next_due)
+-- are free-text TEXT in yyyy-mm-dd from the date inputs, matching the repo's
+-- store_date / warranty_expiration convention; interval is a positive integer
+-- in a unit of days/months/years.
+CREATE TABLE IF NOT EXISTS maintenance_schedules (
+  id SERIAL PRIMARY KEY,
+  object_id INTEGER NOT NULL REFERENCES property_objects(id) ON DELETE CASCADE,
+  task_type TEXT NOT NULL DEFAULT 'other', -- filter/flush/battery/annual/inspection/clean/other
+  title TEXT,
+  interval_value INTEGER NOT NULL,   -- e.g. 3
+  interval_unit TEXT NOT NULL DEFAULT 'months', -- days/months/years
+  last_done TEXT,
+  next_due TEXT NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_maintenance_schedules_object_id_next_due
+  ON maintenance_schedules (object_id, next_due);
+CREATE INDEX IF NOT EXISTS idx_maintenance_schedules_next_due
+  ON maintenance_schedules (next_due);
+
 -- ContractSnap module: structured contract records with trust-tagged AI
 -- extractions and a contract timeline.
 -- Owner-scoped: each contract belongs to one Clerk user (users.clerk_user_id),
