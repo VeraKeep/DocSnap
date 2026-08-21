@@ -82,6 +82,54 @@ export async function findUserByEmail(email: string): Promise<string | null> {
   } catch (err) { console.error("[subscription] Failed to find user by email:", err); return null; }
 }
 
+/**
+ * ReceiptSnap add-on entitlement.
+ *
+ * ReceiptSnap is a PAID ADD-ON sold on the DocSnap side (owner decision,
+ * business-plan rev 15, 2026-08-21). It is NOT bundled into any DocSnap tier:
+ * a Personal/Household/Complete subscriber does NOT automatically get
+ * ReceiptSnap. Access to /receipts is a hard entitlement gate that unlocks
+ * ONLY when the user's record has the add-on flag (addon_receiptsnap) set.
+ *
+ * The add-on product/price id that the Stripe webhook matches against is the
+ * owner's DocSnap-side Stripe product — it hasn't been created yet, so it is a
+ * clearly-marked config placeholder read from env with an empty default. Until
+ * the owner provides `RECEIPTSNAP_ADDON_PRODUCT_ID`, the webhook treats it as
+ * unconfigured and no-ops (see src/routes/api/-stripe-webhook.ts). This is an
+ * expected, non-blocking gap.
+ */
+export const RECEIPTSNAP_ADDON_PRODUCT_ID = process.env.RECEIPTSNAP_ADDON_PRODUCT_ID ?? "";
+
+/**
+ * Single source of truth for whether a user owns the ReceiptSnap add-on.
+ * FAILS CLOSED: a missing users row, a NULL/false flag, or any DB error all
+ * resolve to `false` (locked). Only an explicit `addon_receiptsnap = true`
+ * grants access. isPro/paid tier does NOT unlock ReceiptSnap.
+ */
+export async function hasReceiptSnapAddon(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT addon_receiptsnap FROM users WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `;
+    const row = rows[0] as { addon_receiptsnap?: unknown } | undefined;
+    return row?.addon_receiptsnap === true;
+  } catch (err) {
+    console.error("[subscription] Failed to read ReceiptSnap add-on:", err);
+    return false;
+  }
+}
+
+/** Grant or revoke the ReceiptSnap add-on entitlement (admin/webhook use). */
+export async function setReceiptSnapAddon(clerkUserId: string, owned: boolean): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, addon_receiptsnap)
+      VALUES (${clerkUserId}, ${owned})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET addon_receiptsnap = ${owned}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set ReceiptSnap add-on:", err); }
+}
+
 /** Fetch the signed-in user's subscription.
  *  The client-passed clerkUserId validator arg is ignored — the acting
  *  identity always comes from the verified Clerk session. */
