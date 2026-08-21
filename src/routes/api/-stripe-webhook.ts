@@ -18,6 +18,8 @@ import {
   setFreeSubscription,
   findUserByEmail,
   findUserByStripeCustomerId,
+  setReceiptSnapAddon,
+  RECEIPTSNAP_ADDON_PRODUCT_ID,
 } from "../../subscription";
 import type { Tier } from "../../subscription";
 
@@ -129,6 +131,19 @@ async function handleCheckoutCompleted(
 
   // Payment links may provide price_id in metadata; otherwise retrieve line items.
   const priceId = session.metadata?.price_id ?? await getCheckoutPriceId(session);
+
+  // ReceiptSnap add-on grant. When the checkout was for the add-on product, set
+  // the entitlement flag (this is what unlocks /receipts) and stop — we don't
+  // touch the DocSnap tier. The add-on product id is a config placeholder
+  // (RECEIPTSNAP_ADDON_PRODUCT_ID from env); until the owner provides the real
+  // DocSnap-side Stripe id it's empty, and this gracefully no-ops (logged) so
+  // normal DocSnap subscription checkouts keep working untouched.
+  if (priceId && RECEIPTSNAP_ADDON_PRODUCT_ID && priceId === RECEIPTSNAP_ADDON_PRODUCT_ID) {
+    await setReceiptSnapAddon(clerkUserId, true);
+    console.log(`[stripe-webhook] Granted ReceiptSnap add-on for user ${clerkUserId}`);
+    return;
+  }
+
   const tier = priceTier(priceId);
   await setSubscriptionTier(clerkUserId, tier, stripeCustomerId ?? "");
   console.log(`[stripe-webhook] Set ${tier} for user ${clerkUserId}`);

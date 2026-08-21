@@ -33,27 +33,17 @@ export interface ReceiptDetail extends ReceiptSummary {
   clerk_user_id: string | null;
 }
 
-/** Free-tier allowance: 5 receipts per calendar month. */
-export const FREE_RECEIPTS_PER_MONTH = 5;
-
-/** Clear, honest message shown when a free-tier user hits the monthly cap. */
-export const RECEIPT_LIMIT_MESSAGE =
-  "Free plan: 5 receipts per month — upgrade for unlimited receipts.";
-
 /**
- * ReceiptSnap usage state for the signed-in user, resolved server-side from
- * the verified Clerk session (never from the client). `allowance` is null for
- * paid tiers (unlimited).
+ * ReceiptSnap entitlement state for the signed-in user, resolved server-side
+ * from the verified Clerk session (never from the client). Access to /receipts
+ * is a HARD add-on gate (owner decision, rev 15) — there is no free monthly
+ * allowance anymore and paid DocSnap tiers do NOT unlock ReceiptSnap. Only
+ * `hasAddon === true` unlocks the library.
  */
-export interface ReceiptsUsage {
-  /** Current calendar month, "YYYY-MM". */
-  month: string;
-  /** Receipts saved by this user in the current month. */
-  used: number;
-  /** Monthly cap for this user's tier, or null when unlimited. */
-  allowance: number | null;
-  tier: string;
-  isPro: boolean;
+export interface ReceiptsEntitlement {
+  configured: boolean;
+  /** True only when the user's record owns the ReceiptSnap add-on. */
+  hasAddon: boolean;
 }
 
 /** Render a total with its currency. Tolerant of AI-extracted oddities. */

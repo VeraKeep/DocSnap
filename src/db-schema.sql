@@ -11,9 +11,16 @@ CREATE TABLE IF NOT EXISTS users (
   subscription_status TEXT DEFAULT 'free',
   subscription_expires_at TIMESTAMPTZ,
   stripe_customer_id TEXT,
+  -- ReceiptSnap is a PAID ADD-ON (owner decision, business-plan rev 15). It is
+  -- NOT bundled into any tier; this flag is the ONLY thing that unlocks
+  -- /receipts. Fails closed: default false and any missing row = locked.
+  addon_receiptsnap BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Safe upgrade for databases created before the add-on flag existed
+-- (CREATE TABLE IF NOT EXISTS does not alter existing tables).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_receiptsnap BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id SERIAL PRIMARY KEY,

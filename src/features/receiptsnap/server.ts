@@ -12,15 +12,53 @@
  * (src/db-schema.sql). The waitlist stays public (marketing capture).
  */
 import { createServerFn } from "@tanstack/react-start";
+import { getStartContext } from "@tanstack/start-storage-context";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
-import {
-  RECEIPT_LIMIT_MESSAGE,
-  getReceiptsUsage as getReceiptsUsageForUser,
-  isReceiptLimitReached,
-} from "./usage";
+import { hasReceiptSnapAddon, setReceiptSnapAddon } from "~/subscription";
+import { type ReceiptsEntitlement } from "./types";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Clear, honest message for users without the add-on. */
+export const ADDON_LOCKED_MESSAGE =
+  "ReceiptSnap is a paid add-on — purchase it to unlock.";
+/** Machine-readable code the UI can use to render the locked/upgrade screen. */
+export const ADDON_LOCKED_CODE = "receiptsnap_addon_required";
+
+/**
+ * HARD entitlement gate (business-plan rev 15). ReceiptSnap is a paid add-on,
+ * NOT bundled into any DocSnap tier. Fails CLOSED with HTTP 403 for any
+ * signed-in user who does not own the add-on — including every paid
+ * (Personal/Household/Complete) subscriber. Anonymous callers are already
+ * rejected with 401 by requireServerFunctionUser.
+ */
+async function requireReceiptSnapAddon(userId: string): Promise<void> {
+  const owned = await hasReceiptSnapAddon(userId);
+  if (!owned) {
+    throw new Response(
+      JSON.stringify({ error: ADDON_LOCKED_MESSAGE, code: ADDON_LOCKED_CODE }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
+
+/**
+ * Reads the acting request's `Authorization: Bearer <token>` header, used to
+ * scope the admin grant/revoke server function. The acting identity always
+ * comes from the verified Clerk session for normal features; this admin
+ * channel is intentionally separate, secret-gated, and never user-facing.
+ */
+function adminTokenFromRequest(): string | null {
+  const request = getStartContext({ throwIfNotFound: false })?.request as
+    | Request
+    | undefined;
+  if (!request || typeof request.headers?.get !== "function") return null;
+  const header = request.headers.get("authorization") ?? "";
+  if (!header.trim()) return null;
+  const bearer = header.match(/^Bearer\s+(.+)$/i);
+  return bearer ? bearer[1].trim() : header.trim();
+}
 // ~20 MB decoded image (base64 is ~4/3 of the binary size).
 const MAX_IMAGE_BASE64_LENGTH = 28_000_000;
 
@@ -172,19 +210,50 @@ export const whoAmI = createServerFn({ method: "GET" }).handler(async () => {
 });
 
 /**
- * ReceiptSnap usage for the signed-in user: current month, receipts used, and
- * the tier's allowance (null = unlimited). Identity comes from the verified
- * Clerk session, never from the client. Anonymous → 401 (fail closed).
+ * ReceiptSnap entitlement for the signed-in user. This is the UI's gate
+ * channel (does not throw for a locked user — it reports the state). `hasAddon`
+ * is true only when the user owns the add-on. Anonymous → 401 (fail closed).
  */
-export const getReceiptsUsage = createServerFn({ method: "GET" }).handler(async () => {
+export const getReceiptsEntitlement = createServerFn({ method: "GET" }).handler(async (): Promise<ReceiptsEntitlement> => {
   const userId = await requireServerFunctionUser();
-  if (!process.env.DATABASE_URL) return { configured: false, usage: null };
-  const usage = await getReceiptsUsageForUser(userId);
-  return { configured: true, usage };
+  if (!process.env.DATABASE_URL) return { configured: false, hasAddon: false };
+  const hasAddon = await hasReceiptSnapAddon(userId);
+  return { configured: true, hasAddon };
 });
+
+/**
+ * Admin-only grant/revoke of the ReceiptSnap add-on (owner/tests). Gated by the
+ * `RECEIPTSNAP_ADMIN_TOKEN` env secret presented as `Authorization: Bearer`.
+ * When that env is unset the endpoint is disabled (fail closed). This is a
+ * private operational channel — never surfaced in any user-facing UI.
+ */
+export const adminSetReceiptSnapAddon = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { clerkUserId?: unknown; granted?: unknown };
+    if (typeof d.clerkUserId !== "string" || d.clerkUserId.trim().length === 0) {
+      throw new Error("clerkUserId is required.");
+    }
+    return { clerkUserId: d.clerkUserId.trim(), granted: d.granted !== false };
+  })
+  .handler(async ({ data }) => {
+    const expected = process.env.RECEIPTSNAP_ADMIN_TOKEN;
+    if (!expected) {
+      throw new Response("Admin add-on grants are disabled on this instance.", { status: 403 });
+    }
+    const provided = adminTokenFromRequest();
+    if (!provided || provided !== expected) {
+      throw new Response("Unauthorized", { status: 403 });
+    }
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    await setReceiptSnapAddon(data.clerkUserId, data.granted);
+    return { ok: true, clerkUserId: data.clerkUserId, granted: data.granted };
+  });
 
 export const listReceipts = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireServerFunctionUser();
+  await requireReceiptSnapAddon(userId);
   if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
   const rows = (await sql`
     SELECT id, merchant, store_date, total, currency, items, extra, created_at
@@ -205,6 +274,7 @@ export const searchReceipts = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    await requireReceiptSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
     const q = `%${opts.data.query}%`;
     const rows = (await sql`
@@ -228,6 +298,7 @@ export const getReceipt = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    await requireReceiptSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, receipt: null };
     const rows = (await sql`
       SELECT * FROM receipts
@@ -254,14 +325,13 @@ export const saveReceipt = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    // HARD add-on gate: only add-on owners may save. This replaces the old
+    // free "5 receipts/month" meter entirely — there is no count cap anymore;
+    // ownership of the add-on is the ONLY thing that matters. Enforced before
+    // extraction so a locked upload never spends AI credits or creates a row.
+    await requireReceiptSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
-    }
-    // Usage limit: enforce BEFORE extraction so a blocked upload never spends
-    // AI credits and never creates a row. Paid tiers (isPro) pass unlimited.
-    const usage = await getReceiptsUsageForUser(userId);
-    if (isReceiptLimitReached(usage)) {
-      throw new Error(RECEIPT_LIMIT_MESSAGE);
     }
     const extracted = await extract(opts.data.imageBase64, opts.data.mimeType);
     const rows = (await sql`
