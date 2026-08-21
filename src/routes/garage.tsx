@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { SignInButton, UserButton } from "@clerk/tanstack-start";
 import { nextAssetId, type Asset, type DocumentRef } from "~/assetStore";
 import type { CloudDocument } from "~/cloudTypes";
 import { useAssetSync } from "~/hooks/useAssetSync";
+import { getGarageEntitlement } from "~/subscription";
 
 export const Route = createFileRoute("/garage")({
   head: () => ({
@@ -48,6 +49,136 @@ function Logo() {
   );
 }
 
+/** Entitlement gate screen shell — DocSnap header + centered panel. */
+function GarageGate({ children }: { children: ReactNode }) {
+  return (
+    <main className="flex min-h-screen flex-col bg-gray-950 text-white">
+      <header className="flex items-center justify-between border-b border-gray-800/50 px-4 py-4 sm:px-6">
+        <Link
+          to="/"
+          className="flex items-center gap-2 text-lg font-semibold text-white transition hover:text-indigo-400"
+        >
+          <Logo />
+          DocSnap
+        </Link>
+        <div className="flex items-center gap-3">
+          <SignInButton mode="modal">
+            <button className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white">
+              Sign in
+            </button>
+          </SignInButton>
+          <Link
+            to="/"
+            className="text-sm text-gray-400 transition hover:text-gray-200"
+          >
+            ← Back to app
+          </Link>
+        </div>
+      </header>
+      <section className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+        {children}
+      </section>
+    </main>
+  );
+}
+
+/** Sign-in gate — shown to anonymous visitors (mirrors /receipts). */
+function GarageSignInRequired() {
+  return (
+    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center sm:p-12">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600/20">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-7 w-7 text-indigo-300"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2Z"
+          />
+        </svg>
+      </div>
+      <h2 className="mt-5 text-xl font-semibold">Sign in to use GarageSnap</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-400">
+        GarageSnap is tied to your DocSnap account. After signing in you'll see
+        your workshop inventory — every tool, its location, and the manuals and
+        warranties that go with it.
+      </p>
+      <SignInButton mode="modal">
+        <button
+          type="button"
+          className="mt-6 inline-flex rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+        >
+          Sign in
+        </button>
+      </SignInButton>
+      <p className="mt-4 text-xs text-gray-600">
+        GarageSnap can't be used without signing in.
+      </p>
+    </div>
+  );
+}
+
+/** Locked / upgrade screen — signed-in user WITHOUT the GarageSnap add-on. */
+function GarageAddonLocked() {
+  return (
+    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center sm:p-12">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600/20">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-7 w-7 text-indigo-300"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M13.5 15.944 21 8.444l-3-3-7.5 7.5L9 16.5l1.5.5.5-1.5Z"
+          />
+        </svg>
+      </div>
+      <h2 className="mt-5 text-xl font-semibold">GarageSnap is a paid add-on</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-400">
+        GarageSnap isn't included in DocSnap plans — it's a separate add-on.
+        Purchase it to remember every tool and piece of equipment you own,
+        where it lives, and the warranties that go with it.
+      </p>
+      <Link
+        to="/pricing"
+        className="mt-6 inline-flex rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+      >
+        See plans &amp; buy GarageSnap
+      </Link>
+      <p className="mt-4 text-xs text-gray-600">
+        Your workshop inventory stays private to your DocSnap account.
+      </p>
+    </div>
+  );
+}
+
+/** Loading skeleton while the gate resolves. */
+function GarageGateLoading() {
+  return (
+    <div
+      className="mt-8 h-40 animate-pulse rounded-2xl border border-gray-800 bg-gray-900/60"
+      aria-label="Loading GarageSnap"
+    />
+  );
+}
+
 function GaragePage() {
   // Assets come from the sync hook: localStorage seed/fallback when
   // unauthenticated (clearly demo data), per-user server store when signed in
@@ -74,6 +205,31 @@ function GaragePage() {
   const [adding, setAdding] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
+
+  // GarageSnap is a PAID ADD-ON (owner decision). The page is hard-gated,
+  // mirroring /receipts: a signed-out visitor sees a sign-in screen and a
+  // signed-in user who doesn't own the add-on sees the upgrade screen.
+  // `garageGate` is null while loading / when not signed in.
+  const [garageGate, setGarageGate] = useState<{ configured: boolean; hasAddon: boolean } | null>(null);
+  useEffect(() => {
+    if (!authLoaded) return;
+    if (!isSignedIn) {
+      setGarageGate(null);
+      return;
+    }
+    let cancelled = false;
+    getGarageEntitlement()
+      .then((r) => {
+        if (!cancelled) setGarageGate(r);
+      })
+      .catch(() => {
+        // Fail closed: any error resolves to locked (no add-on).
+        if (!cancelled) setGarageGate({ configured: true, hasAddon: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoaded, isSignedIn]);
 
   const filtered = useMemo(
     () =>
@@ -119,6 +275,32 @@ function GaragePage() {
     setConfirmDeleteId(null);
     showNotice(ok ? "Asset deleted" : "Couldn't delete — try again");
   };
+
+  // Entitlement gate — FAILS CLOSED. Until auth resolves we render nothing for
+  // the gate (keeps from flashing the app to a locked/anon user). Signed-out →
+  // sign-in screen; signed-in without the add-on → upgrade screen.
+  if (!authLoaded) return null;
+  if (!isSignedIn) {
+    return (
+      <GarageGate>
+        <GarageSignInRequired />
+      </GarageGate>
+    );
+  }
+  if (garageGate === null) {
+    return (
+      <GarageGate>
+        <GarageGateLoading />
+      </GarageGate>
+    );
+  }
+  if (!garageGate.hasAddon) {
+    return (
+      <GarageGate>
+        <GarageAddonLocked />
+      </GarageGate>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col bg-gray-950 text-white">

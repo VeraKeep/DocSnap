@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- NOT bundled into any tier; this flag is the ONLY thing that unlocks
   -- /receipts. Fails closed: default false and any missing row = locked.
   addon_receiptsnap BOOLEAN NOT NULL DEFAULT false,
+  -- GarageSnap is a PAID ADD-ON (owner decision, business-plan rev 16). It is
+  -- NOT bundled into any tier; this flag is the ONLY thing that unlocks
+  -- /garage. Fails closed: default false and any missing row = locked.
+  addon_garagesnap BOOLEAN NOT NULL DEFAULT false,
   -- MeetingSnap is intentionally INDEPENDENT from DocSnap's
   -- subscription_status: it has its own 4-tier model
   -- ('free' | 'personal' | 'pro' | 'team'). Fails closed: default 'free'
@@ -26,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Safe upgrade for databases created before the add-on flag existed
 -- (CREATE TABLE IF NOT EXISTS does not alter existing tables).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_receiptsnap BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_garagesnap BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_subscription_status TEXT DEFAULT 'free';
 
 CREATE TABLE IF NOT EXISTS webhook_events (
