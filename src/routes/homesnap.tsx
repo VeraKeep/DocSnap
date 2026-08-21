@@ -1,7 +1,23 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { HomeSnapApp } from "~/features/homesnap/components/HomeSnapApp";
 
+/** Coerce a URL query value into a positive integer, else undefined. */
+function optionalId(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    const n = Number(value.trim());
+    if (Number.isInteger(n) && n > 0) return n;
+  }
+  return undefined;
+}
 export const Route = createFileRoute("/homesnap")({
+  // Optional ?property=<id>&object=<id> params let integrations (e.g. the
+  // ReceiptSnap → HomeSnap "Add this appliance" flow) drop the user straight
+  // onto a specific property/object after creating it.
+  validateSearch: (search: Record<string, unknown>) => ({
+    property: optionalId(search.property),
+    object: optionalId(search.object),
+  }),
   head: () => ({
     meta: [
       { title: "HomeSnap — DocSnap" },

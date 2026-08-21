@@ -1,4 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import {
+  createObjectFromReceipt,
+  getHomeEntitlement,
+} from "../../homesnap/server";
 import {
   type ReceiptDetail,
   type ReceiptItem,
@@ -131,6 +136,112 @@ interface ReceiptDetailModalProps {
  * Detail modal: the original receipt image beside every extracted field and
  * line item. Closes on backdrop click, the × button, or Escape.
  */
+/**
+ * ReceiptSnap → HomeSnap integration card.
+ *
+ * Shown on a receipt that looks like a home purchase (has a product line or a
+ * non-trivial total). Resolves the HomeSnap add-on entitlement server-side
+ * (fails closed): unlocked owners get a prominent "Add this appliance to
+ * HomeSnap?" button that creates the object from the receipt and drops them
+ * into HomeSnap on the new object; locked users get a friendly upgrade CTA to
+ * the module/buy flow instead.
+ */
+function AddToHomeSnapCard({ receipt, onDone }: { receipt: ReceiptDetail; onDone: () => void }) {
+  const navigate = useNavigate();
+  // HomeSnap entitlement: null = resolving (render nothing to avoid flashing
+  // the locked state before we know), true/false = decided.
+  const [homeSnap, setHomeSnap] = useState<boolean | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (homeSnap !== null) return;
+    void getHomeEntitlement()
+      .then((result) => setHomeSnap(result.configured && result.hasAddon))
+      .catch(() => setHomeSnap(false));
+  }, [homeSnap]);
+  // Looks like a home purchase: has at least one product line item, or a
+  // non-trivial total. Guards the card so grocery/coffee receipts don't
+  // nag about tracking appliances.
+  const items = Array.isArray(receipt.items) ? (receipt.items as ReceiptItem[]) : [];
+  const looksLikeHomePurchase =
+    items.length > 0 ||
+    (typeof receipt.total === "number" && receipt.total > 0);
+  if (!looksLikeHomePurchase || homeSnap === null) return null;
+  if (!homeSnap) {
+    return (
+      <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-5">
+        <p className="text-sm font-semibold text-gray-100">
+          Get HomeSnap to track this appliance
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-gray-400">
+          HomeSnap keeps a permanent record of your home's systems and
+          appliances — manufacturer, model, serial number, warranty, and this
+          receipt — all in one place. It's a separate DocSnap add-on.
+        </p>
+        <Link
+          to="/pricing"
+          className="mt-3 inline-flex rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+        >
+          See plans &amp; buy HomeSnap
+        </Link>
+      </div>
+    );
+  }
+  async function addToHomeSnap() {
+    setAdding(true);
+    setError("");
+    try {
+      const result = await createObjectFromReceipt({
+        data: { receipt_id: receipt.id },
+      });
+      onDone();
+      await navigate({
+        to: "/homesnap",
+        search: { property: result.property_id, object: result.object.id },
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message.trim()
+          ? err.message
+          : "The appliance could not be added. Please try again.",
+      );
+    } finally {
+      setAdding(false);
+    }
+  }
+  const firstItem = items[0];
+  const preview =
+    displayText(firstItem?.name) ??
+    displayText(receipt.extra?.manufacturer) ??
+    displayText(receipt.extra?.brand) ??
+    "this purchase";
+  return (
+    <div className="rounded-2xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/40 to-gray-950/40 p-5">
+      <p className="text-sm font-semibold text-gray-100">
+        Add this appliance to HomeSnap?
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-gray-400">
+        Create a HomeSnap record for “{preview}” with this receipt attached, so
+        its model, serial, warranty, and history live with your home.
+      </p>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+      <button
+        type="button"
+        disabled={adding}
+        onClick={() => void addToHomeSnap()}
+        className="mt-3 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+      >
+        {adding ? (
+          "Adding…"
+        ) : (
+          <>
+            <span aria-hidden="true">🏡</span> Add to HomeSnap
+          </>
+        )}
+      </button>
+    </div>
+  );
+}
 export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps) {
   useLockScroll(true);
 
@@ -185,6 +296,7 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
           </button>
         </div>
 
+        <AddToHomeSnapCard receipt={receipt} onDone={onClose} />
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           {/* Original image */}
           {receipt.image_base64 ? (

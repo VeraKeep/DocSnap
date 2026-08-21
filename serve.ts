@@ -21,6 +21,7 @@ import {
   DELETE as shareDELETE,
   GET_LIST as sharesGET,
 } from "./src/routes/api/-share";
+import { GET as receiptImageGET } from "./src/routes/api/-receipt-image";
 
 const PORT = 3000;
 const HOST = "0.0.0.0";
@@ -61,6 +62,11 @@ for (let attempt = 1; ; attempt++) {
         if (shareMatch) {
           if (req.method === "GET") return shareGET(req, shareMatch[1]);
           if (req.method === "DELETE") return shareDELETE(req, shareMatch[1]);
+        }
+        // Receipt image — serve an owned receipt's saved image by id.
+        const receiptImageMatch = pathname.match(/^\/api\/receipts\/([^/]+)\/image$/);
+        if (receiptImageMatch && req.method === "GET") {
+          return receiptImageGET(req, receiptImageMatch[1]);
         }
 
         // Static files.

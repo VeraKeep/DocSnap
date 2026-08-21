@@ -15,7 +15,7 @@
  * are out of scope (later phases).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   createDocument,
@@ -897,6 +897,9 @@ function ObjectCard({
 /* ---------------------------------------------------------------- */
 export function HomeSnapApp() {
   const { user, isLoaded } = useUser();
+  // Optional ?property=<id>&object=<id> params let integrations (e.g. the
+  // ReceiptSnap → HomeSnap flow) drop the user straight onto a created object.
+  const search = useSearch({ from: "/homesnap" });
   // HomeSnap add-on entitlement: null = resolving, true = unlocked,
   // false = locked (show the upgrade screen).
   const [entitled, setEntitled] = useState<boolean | null>(null);
@@ -919,14 +922,32 @@ export function HomeSnapApp() {
     try {
       const result = await listProperties();
       setConfigured(result.configured);
-      setProperties(result.properties as Property[]);
+      const props = (result.properties as Property[]) ?? [];
+      setProperties(props);
       setStatus("ready");
       setLoadError("");
+      // Integration preselect: ?property=<id>&object=<id> → open that
+      // property/object so a newly added receipt lands straight on the
+      // created appliance. Plain /homesnap navigation (no params) keeps the
+      // original "pick a property first" behavior.
+      if (search.property != null && props.some((p) => p.id === search.property)) {
+        setSelectedPropertyId(search.property);
+        setShowNewObject(false);
+        const objResult = await listObjects({ data: { property_id: search.property } });
+        setConfigured(objResult.configured);
+        const objs = (objResult.objects as PropertyObject[]) ?? [];
+        setObjects(objs);
+        setSelectedObjectId(
+          search.object != null && objs.some((o) => o.id === search.object)
+            ? search.object
+            : (objs[0]?.id ?? null),
+        );
+      }
     } catch (err) {
       setStatus("error");
       setLoadError(messageFromError(err, "Your properties could not be loaded."));
     }
-  }, []);
+  }, [search.property, search.object]);
 
   // First resolve the add-on entitlement: a user without the HomeSnap add-on
   // sees the locked screen and never loads the library.
