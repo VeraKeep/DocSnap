@@ -31,4 +31,9 @@ export const MODULE_CHECKOUT_URLS = {
   MEETINGSNAP_PRO_MONTHLY: "https://buy.stripe.com/7sYdRb7WZ6UX9jFcKi7Re05",
   /** MeetingSnap Pro — $149.99/year recurring. */
   MEETINGSNAP_PRO_ANNUAL: "https://buy.stripe.com/cNi4gBb9b935brNaCa7Re04",
+  /** BillSnap — pricing TBD (per business plan, set after MVP validation).
+   *  TODO(lead): insert the real monthly Stripe payment-link URL once priced. */
+  BILLSNAP_MONTHLY: "",
+  /** BillSnap — annual. TODO(lead): insert the real annual URL once priced. */
+  BILLSNAP_ANNUAL: "",
 } as const;

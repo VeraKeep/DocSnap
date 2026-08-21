@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- ('free' | 'personal' | 'pro' | 'team'). Fails closed: default 'free'
   -- and any missing row resolves to free.
   meeting_subscription_status TEXT DEFAULT 'free',
+  -- BillSnap add-on flag (RESERVED for future). BillSnap pricing is not set
+  -- yet (business plan: "pricing to be set once the MVP is validated"), so the
+  -- MVP is NOT gated on this flag. When the lead locks pricing, gate /bills on
+  -- this exactly like `addon_receiptsnap` gates /receipts. Fails closed:
+  -- default false and any missing row = locked.
+  addon_billsnap BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -32,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_receiptsnap BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_garagesnap BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_subscription_status TEXT DEFAULT 'free';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_billsnap BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id SERIAL PRIMARY KEY,
@@ -108,6 +115,33 @@ CREATE TABLE IF NOT EXISTS meeting_extractions (
 );
 CREATE INDEX IF NOT EXISTS idx_meeting_extractions_meeting_id
   ON meeting_extractions (meeting_id, created_at DESC);
+
+-- BillSnap module: structured bill records.
+-- Owner-scoped: each bill belongs to one Clerk user (users.clerk_user_id).
+-- This is the MVP table backing the Capture → Extract → Confirm → Track →
+-- Remind → Archive loop and the change-detection smart feature. Status buckets
+-- are Upcoming / Due Soon / Overdue / Paid / Archived. `reminder_lead_days` is
+-- 0 (on due date) or 1/3/7 days before. amount_due/minimum_payment are kept as
+-- NUMERIC so change detection can compare amounts across a vendor's series.
+CREATE TABLE IF NOT EXISTS bills (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT NOT NULL,
+  vendor TEXT,
+  category TEXT,
+  account_reference TEXT,
+  statement_date TEXT,
+  due_date TEXT,
+  amount_due NUMERIC,
+  minimum_payment NUMERIC,
+  billing_period TEXT,
+  status TEXT NOT NULL DEFAULT 'Upcoming',
+  autopay_status TEXT NOT NULL DEFAULT 'Unknown',
+  confidence_score NUMERIC,
+  reminder_lead_days INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bills_clerk_user_id_created_at
+  ON bills (clerk_user_id, created_at DESC);
 
 -- Public marketing waitlist: email capture only, never attached to a receipt
 -- owner. Duplicate emails are ignored at insert time.
