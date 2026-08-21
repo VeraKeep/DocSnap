@@ -27,36 +27,15 @@ import {
   type MeetingSearchResult,
   type MeetingSummary,
 } from "../types";
+import { extractFileText } from "../textExtract";
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
 
-/* ------------------------------------------------------------------ */
-/* Text extraction from an uploaded file (best-effort, client-side)    */
-/* ------------------------------------------------------------------ */
-const TEXT_EXTENSIONS = ["txt", "text", "md", "vtt", "srt", "log"];
-
-async function readFileText(file: File): Promise<string> {
-  const name = file.name.toLowerCase();
-  const ext = name.split(".").pop() ?? "";
-  if (TEXT_EXTENSIONS.includes(ext)) {
-    return await file.text();
-  }
-  // PDF / DOCX (and anything else): attempt a plain-text decode so that a
-  // genuinely text-based export still works, but fail honestly when the bytes
-  // are binary (which a naive UTF-8 decode of a real PDF/DOCX will be).
-  const buf = await file.arrayBuffer();
-  const text = new TextDecoder("utf-8").decode(buf);
-  const printable = (text.match(/[\x20-\x7E\n\r\t]/g) ?? []).length;
-  const ratio = text.length ? printable / text.length : 0;
-  if (text.trim().length < 20 || ratio < 0.7) {
-    throw new Error(
-      `${file.name} looks like a binary ${ext.toUpperCase()} file. This MVP parses TXT exports and pasted text — export your transcript as .txt or paste it below.`,
-    );
-  }
-  return text;
-}
+/* Text extraction for uploaded files (TXT / PDF / DOCX) lives in
+   ../textExtract.ts - reads real text out of .pdf/.docx and feeds
+   the SAME analyze -> AI-extraction -> persist pipeline unchanged. */
 
 /* ------------------------------------------------------------------ */
 /* Small presentational helpers                                        */
@@ -519,7 +498,7 @@ export function MeetingsnapApp() {
     setFile(file);
     setTitle((t) => t || file.name.replace(/\.[^.]+$/, ""));
     try {
-      setSourceText(await readFileText(file));
+      setSourceText(await extractFileText(file));
     } catch (e) {
       setError(messageFromError(e, "That file could not be read."));
     }
