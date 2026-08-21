@@ -68,8 +68,8 @@ export const MODULES: Module[] = [
     description:
       "Turn bill photos and PDFs into structured records — vendor, amount due, due date, payment status, reminders, and automatic charge-change detection.",
     route: "/bills",
-    priceMonthly: "TBD",
-    priceAnnual: "TBD",
+    priceMonthly: "$2.99",
+    priceAnnual: "$29.99",
     checkout: {
       monthly: MODULE_CHECKOUT_URLS.BILLSNAP_MONTHLY,
       annual: MODULE_CHECKOUT_URLS.BILLSNAP_ANNUAL,
