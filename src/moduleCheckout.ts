@@ -27,4 +27,8 @@ export const MODULE_CHECKOUT_URLS = {
   MEETINGSNAP_PERSONAL_MONTHLY: "https://buy.stripe.com/00waEZdhjbbd53peSq7Re07",
   /** MeetingSnap Personal — $59.99/year recurring. */
   MEETINGSNAP_PERSONAL_ANNUAL: "https://buy.stripe.com/00wdRb4KNbbdgM7dOm7Re06",
+  /** MeetingSnap Pro — $14.99/month recurring. */
+  MEETINGSNAP_PRO_MONTHLY: "https://buy.stripe.com/7sYdRb7WZ6UX9jFcKi7Re05",
+  /** MeetingSnap Pro — $149.99/year recurring. */
+  MEETINGSNAP_PRO_ANNUAL: "https://buy.stripe.com/cNi4gBb9b935brNaCa7Re04",
 } as const;

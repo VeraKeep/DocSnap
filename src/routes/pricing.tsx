@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSubscription } from "../hooks/useSubscription";
 import { CHECKOUT_URLS } from "../checkout";
 import { MODULES } from "../modules";
+import { ALL_ACCESS_CHECKOUT_URLS } from "../allAccessCheckout";
 
 type BillingCadence = "monthly" | "annual";
 
@@ -188,6 +189,125 @@ function PricingPage() {
             </ul>
           </div>
         ))}
+      </section>
+
+      {/* VeraKeep All Access bundle */}
+      <section className="border-t border-gray-800/50 bg-indigo-950/20 px-4 py-16 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-900/40 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-300">
+              ✨ Best value
+            </span>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+              VeraKeep All Access
+            </h2>
+            <p className="mx-auto mt-4 max-w-3xl leading-relaxed text-gray-400">
+              Everything in DocSnap Personal + ReceiptSnap + GarageSnap +
+              MeetingSnap Personal in one bundle. Get the whole VeraKeep™ suite
+              for one simple price —{" "}
+              <span className="font-semibold text-green-400">
+                ~33% less than buying separately.
+              </span>
+            </p>
+          </div>
+
+          <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2">
+            {/* Individual bundle */}
+            <div className="relative flex flex-col rounded-2xl border border-indigo-500/60 bg-gray-900/60 p-6 sm:p-7">
+              <span className="absolute -top-3 left-5 rounded-full bg-indigo-600 px-3 py-1 text-xs font-bold">
+                Most Popular
+              </span>
+              <h3 className="text-xl font-bold">All Access</h3>
+              <p className="mt-2 text-sm text-gray-400">
+                The entire VeraKeep™ suite for one person. $11.99/mo — everything
+                in DocSnap Personal + ReceiptSnap + GarageSnap + MeetingSnap Personal.
+              </p>
+
+              <div className="mt-5 flex items-baseline gap-1">
+                <span className="text-4xl font-bold">
+                  {billing === "monthly" ? "$11.99" : "$119.99"}
+                </span>
+                <span className="text-sm text-gray-400">
+                  {billing === "monthly" ? "/month" : "/year"}
+                </span>
+              </div>
+
+              <a
+                href={ALL_ACCESS_CHECKOUT_URLS[
+                  billing === "monthly" ? "BUNDLE_INDIVIDUAL_MONTHLY" : "BUNDLE_INDIVIDUAL_ANNUAL"
+                ]}
+                className="mt-6 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
+              >
+                Get All Access
+              </a>
+
+              <ul className="mt-7 space-y-3">
+                {[
+                  "DocSnap Personal — scanning, OCR, cloud storage",
+                  "ReceiptSnap — receipts, warranties, returns",
+                  "GarageSnap — tools, equipment, maintenance",
+                  "MeetingSnap Personal — AI meeting summaries",
+                  "~33% savings vs. buying separately",
+                ].map((feature) => (
+                  <li key={feature} className="flex items-start gap-3 text-sm text-gray-300">
+                    <CheckIcon />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Family bundle */}
+            <div className="relative flex flex-col rounded-2xl border border-gray-800 bg-gray-900/60 p-6 sm:p-7">
+              <h3 className="text-xl font-bold">All Access Family</h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Everything in All Access, plus a shared household for the whole
+                family — multiple members, shared assets, receipts, warranties,
+                documents, and emergency info.
+              </p>
+
+              <div className="mt-5 flex items-baseline gap-1">
+                <span className="text-4xl font-bold">
+                  {billing === "monthly" ? "$17.99" : "$179.99"}
+                </span>
+                <span className="text-sm text-gray-400">
+                  {billing === "monthly" ? "/month" : "/year"}
+                </span>
+              </div>
+
+              <a
+                href={ALL_ACCESS_CHECKOUT_URLS[
+                  billing === "monthly" ? "BUNDLE_FAMILY_MONTHLY" : "BUNDLE_FAMILY_ANNUAL"
+                ]}
+                className="mt-6 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
+              >
+                Get All Access Family
+              </a>
+
+              <ul className="mt-7 space-y-3">
+                {[
+                  "Everything in All Access",
+                  "Shared household storage",
+                  "Multiple family members",
+                  "Shared assets, receipts & warranties",
+                  "Shared documents & emergency info",
+                ].map((feature) => (
+                  <li key={feature} className="flex items-start gap-3 text-sm text-gray-300">
+                    <CheckIcon />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <p className="mt-8 text-center text-sm text-gray-500">
+            Prefer to buy individually? Pick a module below, or{" "}
+            <Link to="/meetingsnap-pricing" className="font-semibold text-indigo-300 hover:underline">
+              see all MeetingSnap plans →
+            </Link>
+          </p>
+        </div>
       </section>
 
       {/* VeraKeep add-on modules */}

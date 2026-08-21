@@ -464,6 +464,45 @@ export function LandingPage({
         )}
       </div>
 
+      {/* VeraKeep All Access — flagship bundle CTA */}
+      <section className="relative border-t border-gray-800/50 px-6 py-16 sm:px-6">
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            background: "radial-gradient(ellipse 70% 60% at 50% 40%, rgba(79,70,229,0.3) 0%, rgba(3,7,18,0) 70%)",
+          }}
+        />
+        <div className="relative mx-auto max-w-4xl rounded-3xl border border-indigo-500/40 bg-indigo-950/30 p-8 text-center sm:p-12">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-900/40 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-300">
+            ✨ Best value
+          </span>
+          <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+            Get the whole suite with VeraKeep All Access
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl leading-relaxed text-gray-400">
+            One bundle, everything you own. DocSnap Personal + ReceiptSnap +
+            GarageSnap + MeetingSnap Personal for one simple price —{" "}
+            <span className="font-semibold text-green-400">
+              ~33% less than buying separately.
+            </span>
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              to="/pricing"
+              className="inline-flex items-center rounded-full bg-indigo-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-600/30 transition-all hover:bg-indigo-500 active:scale-95"
+            >
+              See All Access pricing
+            </Link>
+            <Link
+              to="/meetingsnap-pricing"
+              className="inline-flex items-center rounded-full border border-gray-600 bg-gray-800 px-6 py-3.5 text-base font-semibold text-gray-200 transition hover:border-gray-400 hover:bg-gray-700"
+            >
+              MeetingSnap plans →
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* VeraKeep modules */}
       <section className="relative border-t border-gray-800/50 px-6 py-16 sm:px-6">
         <div className="mx-auto max-w-6xl">
