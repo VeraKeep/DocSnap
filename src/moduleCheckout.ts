@@ -44,4 +44,8 @@ BILLSNAP_ANNUAL: "",
  *  lands in phase 3. */
 HOMESNAP_MONTHLY: "",
 HOMESNAP_ANNUAL: "",
+/** ContractSnap — priced add-on ($4.99/mo or $49.99/yr). TODO(lead): insert
+ *  the real monthly + annual Stripe payment-link URLs once the product ships. */
+CONTRACTSNAP_MONTHLY: "",
+CONTRACTSNAP_ANNUAL: "",
 } as const;
