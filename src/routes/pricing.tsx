@@ -332,34 +332,43 @@ function PricingPage() {
                 </div>
                 <h3 className="mt-4 text-lg font-bold">{m.name}</h3>
                 <p className="mt-1 text-sm font-medium text-indigo-300">{m.tagline}</p>
-
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">
-                    {billing === "monthly" ? m.priceMonthly : m.priceAnnual}
-                  </span>
-                  <span className="text-sm text-gray-400">
-                    {billing === "monthly" ? "/month" : "/year"}
-                  </span>
-                </div>
+                {!m.comingSoon && (
+                  <div className="mt-4 flex items-baseline gap-1">
+                    <span className="text-3xl font-bold">
+                      {billing === "monthly" ? m.priceMonthly : m.priceAnnual}
+                    </span>
+                    <span className="text-sm text-gray-400">
+                      {billing === "monthly" ? "/month" : "/year"}
+                    </span>
+                  </div>
+                )}
 
                 <p className="mt-3 flex-1 text-sm leading-relaxed text-gray-300">{m.description}</p>
 
                 <div className="mt-6 flex flex-col gap-2">
-                  <a
-                    href={m.checkout[billing] || "#"}
-                    onClick={(e) => {
-                      if (!m.checkout[billing]) e.preventDefault();
-                    }}
-                    className="inline-flex justify-center rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
-                  >
-                    Buy
-                  </a>
-                  <Link
-                    to={m.route}
-                    className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
-                  >
-                    Open {m.name}
-                  </Link>
+                  {m.comingSoon ? (
+                    <span className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-400">
+                      Coming soon
+                    </span>
+                  ) : (
+                    <>
+                      <a
+                        href={m.checkout[billing] || "#"}
+                        onClick={(e) => {
+                          if (!m.checkout[billing]) e.preventDefault();
+                        }}
+                        className="inline-flex justify-center rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                      >
+                        Buy
+                      </a>
+                      <Link
+                        to={m.route}
+                        className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+                      >
+                        Open {m.name}
+                      </Link>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
