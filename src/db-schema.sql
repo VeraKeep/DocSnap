@@ -63,6 +63,31 @@ CREATE TABLE IF NOT EXISTS receipts (
 CREATE INDEX IF NOT EXISTS idx_receipts_clerk_user_id_created_at
   ON receipts (clerk_user_id, created_at DESC);
 
+-- MeetingSnap module: meeting transcripts and their AI extractions.
+-- Owner-scoped: each meeting belongs to one Clerk user (users.clerk_user_id).
+-- meetings.source_text is the ORIGINAL transcript (the immutable source of
+-- truth). Each meeting has one or more versioned derived extractions in
+-- meeting_extractions (JSONB); re-processing a meeting writes a new row rather
+-- than mutating history.
+CREATE TABLE IF NOT EXISTS meetings (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT NOT NULL,
+  title TEXT,
+  source_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_meetings_clerk_user_id_created_at
+  ON meetings (clerk_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS meeting_extractions (
+  id SERIAL PRIMARY KEY,
+  meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  extraction JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_meeting_extractions_meeting_id
+  ON meeting_extractions (meeting_id, created_at DESC);
+
 -- Public marketing waitlist: email capture only, never attached to a receipt
 -- owner. Duplicate emails are ignored at insert time.
 CREATE TABLE IF NOT EXISTS waitlist (
