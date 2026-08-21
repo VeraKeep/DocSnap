@@ -80,6 +80,154 @@ function statusOf(v: unknown, fallback: BillStatus = "Upcoming"): BillStatus {
   return BILL_STATUSES.includes(v as BillStatus) ? (v as BillStatus) : fallback;
 }
 
+/** Image types the base64 vision API can read directly (mirrors ReceiptSnap). */
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+// ~20 MB decoded image (base64 is ~4/3 of the binary size).
+const MAX_IMAGE_BASE64_LENGTH = 28_000_000;
+
+/** Parses a JSON-ish string from the model, tolerating code fences / wrappers. */
+function cleanJson(text: string) {
+  const stripped = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(stripped.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+/** Coerces the model's autopay answer into the canonical three-state enum. */
+function autopayOf(v: unknown): AutopayStatus {
+  if (v == null) return "Unknown";
+  const s = String(v).trim().toLowerCase();
+  if (s.includes("not")) return "Not Detected";
+  if (/detect|auto.?pay|enrolled|yes/.test(s)) return "Detected";
+  return "Unknown";
+}
+
+/** Structured fields returned by bill extraction (client pre-fills these). */
+export interface BillExtraction {
+  vendor: string | null;
+  category: string | null;
+  account_reference: string | null;
+  statement_date: string | null;
+  due_date: string | null;
+  amount_due: number | null;
+  minimum_payment: number | null;
+  billing_period: string | null;
+  autopay_status: AutopayStatus;
+  confidence_score: number | null;
+}
+
+/**
+ * Reads a bill photo with OpenAI's vision API and returns the structured BillSnap
+ * fields, ready to pre-fill the editable Confirm form. Mirrors ReceiptSnap's
+ * `extract` (src/features/receiptsnap/server.ts) exactly: same endpoint, model,
+ * temperature, and json_object response format. Throws a clear message when the
+ * OPENAI_API_KEY isn't connected, and readable errors on non-OK responses or
+ * unparseable output — the UI degrades to the manual form on any of these.
+ */
+async function extractBill(imageBase64: string, mimeType: string): Promise<BillExtraction> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("Extraction isn't enabled yet — OPENAI_API_KEY is not connected.");
+  }
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Extract bill payment data with careful visual reading. Return strict JSON only with fields: vendor, category, account_reference, statement_date, due_date, amount_due, minimum_payment, billing_period, autopay_status, confidence_score. autopay_status must be exactly one of 'Detected', 'Not Detected', or 'Unknown'. confidence_score is a number from 0 to 1. Copy values exactly as printed on the bill — especially the account reference (including any prefix and ending digits), statement/due dates, billing period, and money amounts (do not round or alter them). Use null when a value is unreadable or not present.",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Read every meaningful field from this bill image." },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    let reason = detail;
+    try {
+      const j = JSON.parse(detail);
+      if (j?.error?.message) reason = j.error.message;
+    } catch {
+      /* keep raw body */
+    }
+    throw new Error(
+      `Extraction failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""}): ${reason.slice(0, 300)}`,
+    );
+  }
+  const body = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const parsed = cleanJson(body.choices?.[0]?.message?.content ?? "");
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("The bill could not be read as structured data.");
+  }
+  const p = parsed as Record<string, unknown>;
+  return {
+    vendor: text(p.vendor),
+    category: text(p.category),
+    account_reference: text(p.account_reference),
+    statement_date: text(p.statement_date),
+    due_date: text(p.due_date),
+    amount_due: num(p.amount_due),
+    minimum_payment: num(p.minimum_payment),
+    billing_period: text(p.billing_period),
+    autopay_status: autopayOf(p.autopay_status),
+    confidence_score: num(p.confidence_score),
+  };
+}
+
+/**
+ * Server function the capture flow calls to extract a real bill photo. Restricts
+ * input to the image types the base64 vision API reads directly (JPEG/PNG/WebP,
+ * like ReceiptSnap). PDFs are not rasterized yet — they stay on the manual
+ * editable path in the UI. Automatically sees OPENAI_API_KEY when the lead wires
+ * it; without it the handler throws a clear "not connected" message and the UI
+ * falls back to the empty editable form.
+ */
+export const extractBillFromImage = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { imageBase64?: unknown; mimeType?: unknown };
+    if (typeof d.imageBase64 !== "string" || d.imageBase64.length === 0) {
+      throw new Error("Please choose a bill image.");
+    }
+    if (d.imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
+      throw new Error("That image is too large. Please use a photo under 20 MB.");
+    }
+    const mimeType = typeof d.mimeType === "string" ? d.mimeType : "image/jpeg";
+    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
+      throw new Error("Unsupported image type. Please use a JPEG, PNG, or WebP photo.");
+    }
+    return { imageBase64: d.imageBase64, mimeType };
+  })
+  .handler(async (opts): Promise<BillExtraction> => {
+    await requireServerFunctionUser();
+    return extractBill(opts.data.imageBase64, opts.data.mimeType);
+  });
+
 /**
  * BillSnap entitlement/config for the signed-in user. This is the UI's gate
  * channel. For the MVP there is no paid add-on, so `hasAddon` is legacy-parity
