@@ -31,4 +31,14 @@ export const MODULE_CHECKOUT_URLS = {
   MEETINGSNAP_PRO_MONTHLY: "https://buy.stripe.com/7sYdRb7WZ6UX9jFcKi7Re05",
   /** MeetingSnap Pro — $149.99/year recurring. */
   MEETINGSNAP_PRO_ANNUAL: "https://buy.stripe.com/cNi4gBb9b935brNaCa7Re04",
+  /**
+   * HomeSnap — PRICING/GATING PENDING OWNER. Whether HomeSnap is bundled into a
+   * tier or sold as a separate add-on (and at what price) is a business decision
+   * that has not been made. These are left EMPTY on purpose so no fabricated
+   * Stripe URL is ever shown; the module's Buy/upgrade buttons are inert until
+   * the lead inserts the real monthly + annual payment links. It ships phase-1
+   * auth-gated (any signed-in user can use it) — no hard add-on gate yet.
+   */
+  HOMESNAP_MONTHLY: "",
+  HOMESNAP_ANNUAL: "",
 } as const;

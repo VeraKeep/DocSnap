@@ -10,7 +10,7 @@ export interface Module {
   tagline: string;
   description: string;
   /** App route the module lives at. */
-  route: "/meetingsnap" | "/garage" | "/receipts";
+  route: "/meetingsnap" | "/garage" | "/receipts" | "/homesnap";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;
@@ -59,6 +59,26 @@ export const MODULES: Module[] = [
     checkout: {
       monthly: MODULE_CHECKOUT_URLS.RECEIPTSNAP_MONTHLY,
       annual: MODULE_CHECKOUT_URLS.RECEIPTSNAP_ANNUAL,
+    },
+  },
+  {
+    name: "HomeSnap",
+    emoji: "🏡",
+    tagline: "Your home, permanently on record",
+    description:
+      "Track every system, appliance, fixture, and improvement in your home — warranties, receipts, manuals, and repair history, organized by the things in your home.",
+    route: "/homesnap",
+    // PRICING/GATING PENDING OWNER: HomeSnap's price and checkout (whether it
+    // is bundled into tiers or sold as an add-on) is a business decision not
+    // yet made. Values are placeholders — "TBD" price and empty checkout URLs,
+    // so the Buy/upgrade buttons are inert (no fabricated Stripe URL) until the
+    // owner decides. When decided, fill MODULE_CHECKOUT_URLS.HOMESNAP_* in
+    // moduleCheckout.ts and set the real price here.
+    priceMonthly: "TBD",
+    priceAnnual: "TBD",
+    checkout: {
+      monthly: MODULE_CHECKOUT_URLS.HOMESNAP_MONTHLY,
+      annual: MODULE_CHECKOUT_URLS.HOMESNAP_ANNUAL,
     },
   },
 ];
