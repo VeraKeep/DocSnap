@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSubscription } from "../hooks/useSubscription";
 import { CHECKOUT_URLS } from "../checkout";
+import { MODULES } from "../modules";
 
 type BillingCadence = "monthly" | "annual";
 
@@ -187,6 +188,63 @@ function PricingPage() {
             </ul>
           </div>
         ))}
+      </section>
+
+      {/* VeraKeep add-on modules */}
+      <section className="border-t border-gray-800/50 px-4 py-16 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">
+            VeraKeep add-on modules
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-center leading-relaxed text-gray-400">
+            Snap these modules onto DocSnap to organize the receipts, tools, and
+            meetings that go with the things you own.
+          </p>
+
+          <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {MODULES.map((m) => (
+              <div
+                key={m.name}
+                className="flex flex-col rounded-2xl border border-gray-800 bg-gray-900/60 p-6 transition hover:border-gray-700"
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-900/40 text-2xl">
+                  {m.emoji}
+                </div>
+                <h3 className="mt-4 text-lg font-bold">{m.name}</h3>
+                <p className="mt-1 text-sm font-medium text-indigo-300">{m.tagline}</p>
+
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-3xl font-bold">
+                    {billing === "monthly" ? m.priceMonthly : m.priceAnnual}
+                  </span>
+                  <span className="text-sm text-gray-400">
+                    {billing === "monthly" ? "/month" : "/year"}
+                  </span>
+                </div>
+
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-gray-300">{m.description}</p>
+
+                <div className="mt-6 flex flex-col gap-2">
+                  <a
+                    href={m.checkout[billing] || "#"}
+                    onClick={(e) => {
+                      if (!m.checkout[billing]) e.preventDefault();
+                    }}
+                    className="inline-flex justify-center rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                  >
+                    Buy
+                  </a>
+                  <Link
+                    to={m.route}
+                    className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+                  >
+                    Open {m.name}
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="border-t border-gray-800/50 px-4 py-16 sm:px-6">
