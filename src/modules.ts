@@ -126,12 +126,11 @@ export const MODULES: Module[] = [
     description:
       "Extract and remember the important terms from contracts and agreements — renewals, deadlines, and obligations.",
     route: "/contracts",
-    // PAID ADD-ON (owner decision, business-plan rev 2): $4.99/mo or $49.99/yr,
-    // gated by an addon_contractsnap flag on the user, mirroring the other
-    // add-on modules. Checkout URLs are populated in moduleCheckout.ts; until
-    // the real Stripe payment links are inserted the Buy buttons stay inert
-    // (no fabricated URL). The module ships phase-1 auth-gated (any signed-in
-    // user can use it); the hard add-on gate lands in phase 3.
+    // PAID ADD-ON (owner decision, business-plan rev 3): $4.99/mo or $49.99/yr.
+    // /contracts is HARD-GATED behind the addon_contractsnap flag (phase 3,
+    // fails closed — see features/contractsnap/server.ts requireContractSnapAddon
+    // and subscription.ts hasContractSnapAddon). A DocSnap tier does NOT unlock
+    // it. The Buy button below routes to the real ContractSnap Stripe checkout.
     priceMonthly: "$4.99",
     priceAnnual: "$49.99",
     checkout: {

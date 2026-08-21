@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
+import { MODULE_CHECKOUT_URLS } from "~/moduleCheckout";
 import {
   createContract,
   deleteContract,
@@ -49,12 +49,14 @@ function AddonLocked() {
         ContractSnap isn't included in DocSnap plans — it's a separate add-on. Purchase it to
         upload contracts and know what you agreed to.
       </p>
-      <Link
-        to="/pricing"
+      <a
+        href={MODULE_CHECKOUT_URLS.CONTRACTSNAP_MONTHLY}
+        target="_blank"
+        rel="noreferrer"
         className="mt-6 inline-flex rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
       >
-        See plans &amp; buy ContractSnap
-      </Link>
+        Buy ContractSnap — $4.99/mo
+      </a>
       <p className="mt-4 text-xs text-gray-600">Your contracts stay private to your DocSnap account.</p>
     </div>
   );
