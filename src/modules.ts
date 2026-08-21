@@ -10,7 +10,7 @@ export interface Module {
   tagline: string;
   description: string;
   /** App route the module lives at. */
-  route: "/meetingsnap" | "/garage" | "/receipts";
+  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;
@@ -59,6 +59,20 @@ export const MODULES: Module[] = [
     checkout: {
       monthly: MODULE_CHECKOUT_URLS.RECEIPTSNAP_MONTHLY,
       annual: MODULE_CHECKOUT_URLS.RECEIPTSNAP_ANNUAL,
+    },
+  },
+  {
+    name: "BillSnap",
+    emoji: "🧾",
+    tagline: "Snap the bill, know what you owe and when",
+    description:
+      "Turn bill photos and PDFs into structured records — vendor, amount due, due date, payment status, reminders, and automatic charge-change detection.",
+    route: "/bills",
+    priceMonthly: "TBD",
+    priceAnnual: "TBD",
+    checkout: {
+      monthly: MODULE_CHECKOUT_URLS.BILLSNAP_MONTHLY,
+      annual: MODULE_CHECKOUT_URLS.BILLSNAP_ANNUAL,
     },
   },
 ];
