@@ -15,6 +15,7 @@
  * change-detection smart feature is visible on the detail.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   createBill,
@@ -101,6 +102,38 @@ function readAsBase64(file: File): Promise<string> {
   });
 }
 
+/** Locked/upgrade screen — shown to a signed-in user WITHOUT the BillSnap
+ *  add-on. BillSnap is a paid add-on sold on the DocSnap side and is NOT
+ *  bundled into any tier, so even a Personal/Household/Complete subscriber sees
+ *  this until they own the add-on ($2.99/month or $29.99/year). The buy link is
+ *  /pricing, which reads the real checkout URLs from moduleCheckout.ts. */
+function AddonLocked() {
+  return (
+    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center sm:p-12">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600/20">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+        </svg>
+      </div>
+      <h2 className="mt-5 text-xl font-semibold">BillSnap is a paid add-on</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-400">
+        BillSnap isn't included in DocSnap plans — it's a separate add-on
+        ($2.99/month or $29.99/year). Purchase it to track what you owe and
+        when across all your bills.
+      </p>
+      <Link
+        to="/pricing"
+        className="mt-6 inline-flex rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+      >
+        See plans &amp; buy BillSnap
+      </Link>
+      <p className="mt-4 text-xs text-gray-600">
+        Your bills stay private to your DocSnap account.
+      </p>
+    </div>
+  );
+}
+
 /** Maps server extraction output onto the editable Confirm draft (blank = empty). */
 function draftFromExtraction(extracted: BillExtraction): BillDraft {
   return {
@@ -178,8 +211,9 @@ export function BillLibrary() {
     setStatus("loading");
     void getBillsEntitlement()
       .then((result) => {
-        setEntitled(result.configured);
-        if (result.configured) void load();
+        const has = result.configured && result.hasAddon;
+        setEntitled(has);
+        if (has) void load();
       })
       .catch(() => {
         setEntitled(false);
@@ -319,7 +353,7 @@ export function BillLibrary() {
     return <div className="mt-8 h-40 animate-pulse rounded-2xl border border-gray-800 bg-gray-900/60" aria-label="Loading bills" />;
   }
   if (!entitled) {
-    return <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center text-sm text-gray-400">BillSnap is unavailable right now.</div>;
+    return <AddonLocked />;
   }
 
   const filtered = filter === "All" ? bills : bills.filter((b) => b.status === filter);

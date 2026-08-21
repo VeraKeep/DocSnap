@@ -31,11 +31,10 @@ export const MODULE_CHECKOUT_URLS = {
   MEETINGSNAP_PRO_MONTHLY: "https://buy.stripe.com/7sYdRb7WZ6UX9jFcKi7Re05",
   /** MeetingSnap Pro — $149.99/year recurring. */
   MEETINGSNAP_PRO_ANNUAL: "https://buy.stripe.com/cNi4gBb9b935brNaCa7Re04",
-/** BillSnap — pricing TBD (per business plan, set after MVP validation).
- *  TODO(lead): insert the real monthly Stripe payment-link URL once priced. */
-BILLSNAP_MONTHLY: "",
-/** BillSnap — annual. TODO(lead): insert the real annual URL once priced. */
-BILLSNAP_ANNUAL: "",
+/** BillSnap — $2.99/month recurring add-on. */
+BILLSNAP_MONTHLY: "https://buy.stripe.com/dRm8wR9132EHeDZcKi7Re0i",
+/** BillSnap — $29.99/year recurring add-on. */
+BILLSNAP_ANNUAL: "https://buy.stripe.com/fZu7sNcdfgvxeDZbGe7Re0j",
 /** HomeSnap — PAID ADD-ON (owner decision, business-plan rev 2): $3.99/mo or
  *  $39.99/yr, gated by an addon_homesnap flag (phase 3). Real recurring
  *  Stripe payment links provided by the owner. */

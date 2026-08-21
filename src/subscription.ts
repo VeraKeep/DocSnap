@@ -204,6 +204,43 @@ export async function setHomeSnapAddon(clerkUserId: string, owned: boolean): Pro
     `;
   } catch (err) { console.error("[subscription] Failed to set HomeSnap add-on:", err); }
 }
+/**
+ * BillSnap add-on entitlement.
+ *
+ * BillSnap is a PAID ADD-ON sold on the DocSnap side (owner decision,
+ * business-plan rev 4, 2026-08-21): $2.99/month or $29.99/year recurring. It is
+ * NOT bundled into any DocSnap tier — a Personal/Household/Complete subscriber
+ * does NOT automatically get BillSnap. Access to /bills is a hard entitlement
+ * gate that unlocks ONLY when the user's record has the add-on flag
+ * (`users.addon_billsnap`) set. Fails closed: a missing users row, a NULL/false
+ * flag, or any DB error all resolve to `false` (locked).
+ */
+/** Single source of truth for whether a user owns the BillSnap add-on.
+ *  FAILS CLOSED: a missing users row, a NULL/false flag, or any DB error all
+ *  resolve to `false` (locked). Only an explicit `addon_billsnap = true`
+ *  grants access. A paid DocSnap tier does NOT unlock BillSnap. */
+export async function hasBillSnapAddon(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT addon_billsnap FROM users WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `;
+    const row = rows[0] as { addon_billsnap?: unknown } | undefined;
+    return row?.addon_billsnap === true;
+  } catch (err) {
+    console.error("[subscription] Failed to read BillSnap add-on:", err);
+    return false;
+  }
+}
+/** Grant or revoke the BillSnap add-on entitlement (webhook/admin use). */
+export async function setBillSnapAddon(clerkUserId: string, owned: boolean): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, addon_billsnap)
+      VALUES (${clerkUserId}, ${owned})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET addon_billsnap = ${owned}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set BillSnap add-on:", err); }
+}
 
 /** MeetingSnap's independent 4-tier model (mirrors features/meetingsnap). */
 export type MeetingTier = "free" | "personal" | "pro" | "team";

@@ -10,17 +10,17 @@
  * Uses DocSnap's shared Neon connection helper (`~/db`) and the host schema
  * (src/db-schema.sql).
  *
- * MVP entitlement note: BillSnap pricing is not set yet (business plan —
- * "pricing to be set once the MVP is validated"), so the module is NOT
- * hard-gated behind a paid add-on in this prototype. Any signed-in user can
- * use `/bills` so the core loop is demonstrable. When the lead locks pricing,
- * gate this module with a `billsnap` add-on flag exactly like ReceiptSnap's
- * `requireReceiptSnapAddon` (see src/features/receiptsnap/server.ts and the
- * reserved `users.addon_billsnap` column in src/db-schema.sql).
+ * Entitlement: BillSnap is a PAID ADD-ON ($2.99/month or $29.99/year recurring)
+ * sold on the DocSnap side. It is NOT bundled into any DocSnap tier. Every
+ * write path (and list/read) is HARD-gated behind the `users.addon_billsnap`
+ * flag via `requireBillSnapAddon`, exactly like ReceiptSnap's
+ * `requireReceiptSnapAddon` (see src/features/receiptsnap/server.ts). Fails
+ * closed with HTTP 403 for any signed-in user who does not own the add-on.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
+import { hasBillSnapAddon } from "~/subscription";
 import {
   type AutopayStatus,
   type Bill,
@@ -29,6 +29,29 @@ import {
 } from "./types";
 
 export const BILL_SAMPLE_DEMO_SERIES_LABEL = "Lumbee River EMC";
+
+/** Clear, honest message for users without the BillSnap add-on. */
+export const ADDON_LOCKED_MESSAGE =
+  "BillSnap is a paid add-on — purchase it to unlock.";
+/** Machine-readable code the UI can use to render the locked/upgrade screen. */
+export const ADDON_LOCKED_CODE = "billsnap_addon_required";
+
+/**
+ * HARD entitlement gate. BillSnap is a paid add-on, NOT bundled into any
+ * DocSnap tier. Fails CLOSED with HTTP 403 for any signed-in user who does not
+ * own the add-on — including every paid (Personal/Household/Complete)
+ * subscriber. Anonymous callers are already rejected with 401 by
+ * requireServerFunctionUser.
+ */
+async function requireBillSnapAddon(userId: string): Promise<void> {
+  const owned = await hasBillSnapAddon(userId);
+  if (!owned) {
+    throw new Response(
+      JSON.stringify({ error: ADDON_LOCKED_MESSAGE, code: ADDON_LOCKED_CODE }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
 
 /** The demo series used to showcase change detection (clearly demo data). */
 interface DemoBill {
@@ -224,26 +247,31 @@ export const extractBillFromImage = createServerFn({ method: "POST" })
     return { imageBase64: d.imageBase64, mimeType };
   })
   .handler(async (opts): Promise<BillExtraction> => {
-    await requireServerFunctionUser();
+    const userId = await requireServerFunctionUser();
+    // HARD add-on gate before any AI extraction so a locked upload never
+    // spends AI credits.
+    await requireBillSnapAddon(userId);
     return extractBill(opts.data.imageBase64, opts.data.mimeType);
   });
 
 /**
  * BillSnap entitlement/config for the signed-in user. This is the UI's gate
- * channel. For the MVP there is no paid add-on, so `hasAddon` is legacy-parity
- * true whenever storage is configured — the module is open to any signed-in
- * user so the prototype loop is demonstrable. Anonymous → 401 (fail closed).
+ * channel (does not throw for a locked user — it reports the state). `hasAddon`
+ * is true only when the user owns the BillSnap add-on. Anonymous → 401 (fail
+ * closed).
  */
 export const getBillsEntitlement = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ configured: boolean; hasAddon: boolean }> => {
-    await requireServerFunctionUser();
+    const userId = await requireServerFunctionUser();
     if (!process.env.DATABASE_URL) return { configured: false, hasAddon: false };
-    return { configured: true, hasAddon: true };
+    const hasAddon = await hasBillSnapAddon(userId);
+    return { configured: true, hasAddon };
   },
 );
 
 export const listBills = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireServerFunctionUser();
+  await requireBillSnapAddon(userId);
   if (!process.env.DATABASE_URL) return { configured: false, bills: [] };
   const rows = (await sql`
     SELECT id, vendor, category, account_reference, statement_date, due_date,
@@ -291,6 +319,7 @@ export const createBill = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -323,6 +352,7 @@ export const updateBill = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -363,6 +393,7 @@ export const setReminder = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -386,6 +417,7 @@ export const setStatus = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -406,6 +438,7 @@ export const seedDemoSeries = createServerFn({ method: "POST" })
   .validator(() => ({ ok: true }))
   .handler(async () => {
     const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
