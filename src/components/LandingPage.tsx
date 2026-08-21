@@ -525,24 +525,45 @@ export function LandingPage({
                 </div>
                 <h3 className="mt-4 text-lg font-bold">{m.name}</h3>
                 <p className="mt-1 text-sm font-medium text-indigo-300">{m.tagline}</p>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-3xl font-bold">{m.priceMonthly}</span>
+                  <span className="text-sm text-gray-400">/month</span>
+                </div>
                 <p className="mt-3 flex-1 text-sm leading-relaxed text-gray-300">{m.description}</p>
 
                 <div className="mt-6 flex flex-col gap-2">
-                  <a
-                    href={m.checkout.monthly || "#"}
-                    onClick={(e) => {
-                      if (!m.checkout.monthly) e.preventDefault();
-                    }}
-                    className="inline-flex justify-center rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
-                  >
-                    Buy · {m.priceMonthly}/mo
-                  </a>
-                  <Link
-                    to={m.route}
-                    className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
-                  >
-                    Open {m.name}
-                  </Link>
+                  {m.comingSoon ? (
+                    <span className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-400">
+                      Coming soon
+                    </span>
+                  ) : m.checkout.monthly ? (
+                    <>
+                      <a
+                        href={m.checkout.monthly}
+                        className="inline-flex justify-center rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                      >
+                        Buy · {m.priceMonthly}/mo
+                      </a>
+                      <Link
+                        to={m.route}
+                        className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+                      >
+                        Open {m.name}
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-400">
+                        Pricing coming soon
+                      </span>
+                      <Link
+                        to={m.route}
+                        className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+                      >
+                        Open {m.name}
+                      </Link>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

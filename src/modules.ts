@@ -3,20 +3,44 @@ import { MODULE_CHECKOUT_URLS } from "./moduleCheckout";
 /**
  * VeraKeep modules that attach to DocSnap. Shared by the landing page and
  * the pricing page so the marketing copy stays consistent in one place.
+ *
+ * Modules are a discriminated union so the card renderers can branch cleanly:
+ * - LiveModule: has an app route + a price; buyable once a Stripe URL exists.
+ *   When the checkout URL is still empty (pricing/Stripe pending) the Buy
+ *   button renders as an inert "Pricing coming soon" state while the "Open"
+ *   app link still works.
+ * - ComingSoonModule: announced ahead of launch — planned price shown, but
+ *   no app route and no Buy/Open actions yet.
  */
-export interface Module {
+interface ModuleBase {
   name: string;
   emoji: string;
   tagline: string;
   description: string;
+}
+
+/** A module with a live app route and a price; buyable once a Stripe URL exists. */
+interface LiveModule extends ModuleBase {
+  comingSoon?: false;
   /** App route the module lives at. */
-route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap";
+  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;
   /** Checkout slots (from moduleCheckout.ts) keyed by billing cadence. */
   checkout: { monthly: string; annual: string };
 }
+
+/** A module announced ahead of launch — planned price shown, no route yet. */
+interface ComingSoonModule extends ModuleBase {
+  comingSoon: true;
+  route?: never;
+  priceMonthly: string;
+  priceAnnual: string;
+  checkout?: never;
+}
+
+export type Module = LiveModule | ComingSoonModule;
 
 export const MODULES: Module[] = [
   {
@@ -94,5 +118,15 @@ export const MODULES: Module[] = [
       monthly: MODULE_CHECKOUT_URLS.HOMESNAP_MONTHLY,
       annual: MODULE_CHECKOUT_URLS.HOMESNAP_ANNUAL,
     },
+  },
+  {
+    name: "ContractSnap",
+    emoji: "✍️",
+    tagline: "Key contract terms at a glance",
+    description:
+      "Extract and remember the important terms from contracts and agreements — renewals, deadlines, and obligations.",
+    comingSoon: true,
+    priceMonthly: "$4.99",
+    priceAnnual: "$49.99",
   },
 ];
