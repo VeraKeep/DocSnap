@@ -348,6 +348,152 @@ export const createObject = createServerFn({ method: "POST" })
     return { object: toObject(rows[0]) };
   });
 
+/* ------------------------------------------------------------------ */
+/* ReceiptSnap → HomeSnap integration                                  */
+/* ------------------------------------------------------------------ */
+/**
+ * Create a HomeSnap appliance object from a ReceiptSnap receipt, and attach
+ * that receipt to it. This is the single server action behind the "Add this
+ * appliance to HomeSnap?" action in the ReceiptSnap receipt detail view.
+ *
+ * Mapping receipt → home object:
+ *   - object_type      → "appliance"
+ *   - name             → first line item's product name (fall back to the
+ *                        merchant, then a generic "purchase" label)
+ *   - manufacturer     → line-item/extra "manufacturer" or "brand"
+ *   - model            → line-item/extra "model"
+ *   - serial_number    → line-item/extra "serial" (or first serial number)
+ *   - purchase_price   → the receipt's total
+ *   - purchase_date    → the receipt's store date
+ *
+ * The receipt image is attached as a document (document_type = receipt) via
+ * the authenticated /api/receipts/:id/image endpoint, so no heavy base64 is
+ * duplicated into the object_documents row — the receipt stays the single
+ * source of truth in the receipts table.
+ *
+ * The object must live under a property. If the caller passes an owned
+ * property_id, it is used; otherwise the user's first property is reused, and
+ * if they have no property yet one ("My Home") is created automatically.
+ *
+ * Gated HARD with the same addon_homesnap entitlement as every other HomeSnap
+ * write (fails CLOSED with 403 for users who don't own the add-on).
+ */
+export const createObjectFromReceipt = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { receipt_id?: unknown; property_id?: unknown };
+    return {
+      receipt_id: positiveId(d.receipt_id, "Receipt id"),
+      property_id:
+        d.property_id == null || d.property_id === ""
+          ? null
+          : positiveId(d.property_id, "Property id"),
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    // The receipt must belong to the caller — never read others' receipts.
+    const receiptRows = (await sql`
+      SELECT * FROM receipts
+      WHERE id = ${data.receipt_id} AND clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!receiptRows[0]) {
+      throw new Response(
+        JSON.stringify({ error: "Receipt not found." }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const receipt = receiptRows[0];
+    const merchant = text(receipt.merchant);
+    let items: Record<string, unknown>[] = [];
+    try {
+      const parsed = JSON.parse(String(receipt.items ?? "[]") || "[]");
+      if (Array.isArray(parsed)) items = parsed as Record<string, unknown>[];
+    } catch {
+      items = [];
+    }
+    let extra: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(String(receipt.extra ?? "{}") || "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        extra = parsed as Record<string, unknown>;
+      }
+    } catch {
+      extra = {};
+    }
+    const first = items[0] ?? {};
+    const productName = text(first.name);
+    const name = (
+      productName ??
+      (merchant ? `${merchant} purchase` : null) ??
+      "Home purchase"
+    ).slice(0, 300);
+    const manufacturer = (
+      text(first.manufacturer) ??
+      text(extra.manufacturer) ??
+      text(extra.brand)
+    )?.slice(0, 200) ?? null;
+    const model = (text(first.model) ?? text(extra.model))?.slice(0, 200) ?? null;
+    const serial =
+      (text(first.serial) ??
+        (Array.isArray(extra.serial_numbers)
+          ? text(extra.serial_numbers[0])
+          : null))?.slice(0, 200) ?? null;
+    const purchasePrice = price(receipt.total);
+    const purchaseDate = text(receipt.store_date)?.slice(0, 40) ?? null;
+
+    // Resolve (or create) the property the object will live under.
+    let propertyId = data.property_id;
+    if (propertyId != null) {
+      await requireOwnedProperty(userId, propertyId);
+    } else {
+      const existing = (await sql`
+        SELECT id FROM properties
+        WHERE clerk_user_id = ${userId}
+        ORDER BY created_at ASC
+        LIMIT 1
+      `) as Record<string, unknown>[];
+      if (existing[0]) {
+        propertyId = Number(existing[0].id);
+      } else {
+        const created = (await sql`
+          INSERT INTO properties (clerk_user_id, nickname, property_type)
+          VALUES (${userId}, 'My Home', 'house')
+          RETURNING id
+        `) as Record<string, unknown>[];
+        propertyId = Number(created[0].id);
+      }
+    }
+
+    const objectRows = (await sql`
+      INSERT INTO property_objects (
+        property_id, object_type, name, manufacturer, model, serial_number,
+        purchase_date, purchase_price, status
+      ) VALUES (
+        ${propertyId}, 'appliance', ${name}, ${manufacturer}, ${model},
+        ${serial}, ${purchaseDate}, ${purchasePrice}, 'active'
+      )
+      RETURNING *
+    `) as Record<string, unknown>[];
+    const objectId = Number(objectRows[0].id);
+    await sql`
+      INSERT INTO object_documents (object_id, document_type, title, file_url, notes)
+      VALUES (
+        ${objectId}, 'receipt',
+        ${merchant ? `${merchant} receipt` : "Purchase receipt"},
+        ${`/api/receipts/${String(data.receipt_id)}/image`},
+        ${`Imported from ReceiptSnap receipt #${String(data.receipt_id)}.`}
+      )
+    `;
+    return {
+      configured: true,
+      object: toObject(objectRows[0]),
+      property_id: propertyId,
+    };
+  });
 export const updateObject = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = (data ?? {}) as {
