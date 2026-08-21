@@ -4,7 +4,7 @@ import {
   type DocCategory,
   getDocCategory,
   ALL_CATEGORIES,
-} from "../cloudStorage";
+} from "../cloudTypes";
 import { getCategoryKeywords } from "../documentCategorizer";
 
 // ── Types ──────────────────────────────────────────────────────────

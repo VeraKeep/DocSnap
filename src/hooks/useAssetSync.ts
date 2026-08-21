@@ -26,12 +26,15 @@ import {
   addAsset,
   updateAsset,
   deleteAsset,
+} from "../assetStorage";
+import {
   loadAssets,
   saveAssets,
   SEED_ASSETS,
   type Asset,
-} from "../assetStorage";
-import { listDocuments, type CloudDocument } from "../cloudStorage";
+} from "../assetStore";
+import { listDocuments } from "../cloudStorage";
+import type { CloudDocument } from "../cloudTypes";
 
 export function useAssetSync() {
   const { isSignedIn, isLoaded: authLoaded } = useAuth();

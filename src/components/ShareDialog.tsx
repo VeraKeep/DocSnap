@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@clerk/tanstack-start";
 import { Link } from "@tanstack/react-router";
-import type { CloudDocument } from "../cloudStorage";
+import type { CloudDocument } from "../cloudTypes";
 
 interface ShareDialogProps {
   doc: CloudDocument;
