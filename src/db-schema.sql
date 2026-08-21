@@ -232,3 +232,77 @@ CREATE TABLE IF NOT EXISTS object_events (
 );
 CREATE INDEX IF NOT EXISTS idx_object_events_object_id_created_at
   ON object_events (object_id, created_at DESC);
+
+-- ContractSnap module: structured contract records with trust-tagged AI
+-- extractions and a contract timeline.
+-- Owner-scoped: each contract belongs to one Clerk user (users.clerk_user_id),
+-- same convention as receipts/bills (clerk_user_id intentionally NULLABLE to
+-- match the receipts convention and leave room for demo rows). All access is
+-- mediated through the server-resolved owner.
+--
+-- Date fields (effective/expiration/renewal/cancellation_deadline) are free
+-- text TEXT to match the receipts store_date convention — the AI returns dates
+-- as strings and the app stores them verbatim rather than forcing a locale
+-- parse. `summary` is the AI plain-language summary + extraction, stored as
+-- JSONB (mirrors meeting_extractions). `analysis_status` is 'pending' when AI
+-- was not connected at extract time, 'complete' otherwise.
+CREATE TABLE IF NOT EXISTS contracts (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT,
+  title TEXT,
+  contract_type TEXT,
+  effective_date TEXT,
+  expiration_date TEXT,
+  renewal_date TEXT,
+  cancellation_deadline TEXT,
+  renewal_type TEXT,           -- auto/manual/none/unknown
+  auto_renewal BOOLEAN,
+  status TEXT NOT NULL DEFAULT 'analyzed',
+  original_file_ref TEXT,
+  source_text TEXT NOT NULL DEFAULT '',
+  summary JSONB NOT NULL DEFAULT '{}',
+  analysis_status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contracts_clerk_user_id_created_at
+  ON contracts (clerk_user_id, created_at DESC);
+
+-- Detected clauses for a contract, each trust-tagged (confirmed/interpreted)
+-- with a confidence score and an optional source location (section reference).
+CREATE TABLE IF NOT EXISTS contract_clauses (
+  id SERIAL PRIMARY KEY,
+  contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  text TEXT,
+  location TEXT,
+  confidence NUMERIC,
+  source_status TEXT NOT NULL DEFAULT 'interpreted', -- confirmed/interpreted
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contract_clauses_contract_id
+  ON contract_clauses (contract_id);
+
+-- Contract timeline milestones: Signed → Effective → Cancellation Deadline →
+-- Renewal → Expiration. `source` = confirmed/interpreted.
+CREATE TABLE IF NOT EXISTS contract_events (
+  id SERIAL PRIMARY KEY,
+  contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,     -- signed/effective/cancellation_deadline/renewal/expiration
+  date TEXT,
+  source TEXT NOT NULL DEFAULT 'interpreted',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contract_events_contract_id
+  ON contract_events (contract_id);
+
+-- Actionable reminders derived from a contract (renewal/cancellation/expiration).
+CREATE TABLE IF NOT EXISTS contract_reminders (
+  id SERIAL PRIMARY KEY,
+  contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,           -- renewal/cancellation/expiration
+  due_date TEXT,
+  delivered BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contract_reminders_contract_id
+  ON contract_reminders (contract_id);

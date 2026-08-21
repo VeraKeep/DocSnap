@@ -125,8 +125,18 @@ export const MODULES: Module[] = [
     tagline: "Key contract terms at a glance",
     description:
       "Extract and remember the important terms from contracts and agreements — renewals, deadlines, and obligations.",
-    comingSoon: true,
+    route: "/contracts",
+    // PAID ADD-ON (owner decision, business-plan rev 2): $4.99/mo or $49.99/yr,
+    // gated by an addon_contractsnap flag on the user, mirroring the other
+    // add-on modules. Checkout URLs are populated in moduleCheckout.ts; until
+    // the real Stripe payment links are inserted the Buy buttons stay inert
+    // (no fabricated URL). The module ships phase-1 auth-gated (any signed-in
+    // user can use it); the hard add-on gate lands in phase 3.
     priceMonthly: "$4.99",
     priceAnnual: "$49.99",
+    checkout: {
+      monthly: MODULE_CHECKOUT_URLS.CONTRACTSNAP_MONTHLY,
+      annual: MODULE_CHECKOUT_URLS.CONTRACTSNAP_ANNUAL,
+    },
   },
 ];
