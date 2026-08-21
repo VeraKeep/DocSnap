@@ -169,6 +169,42 @@ export async function setGarageSnapAddon(clerkUserId: string, owned: boolean): P
   } catch (err) { console.error("[subscription] Failed to set GarageSnap add-on:", err); }
 }
 
+/**
+ * HomeSnap add-on entitlement.
+ *
+ * HomeSnap is a PAID ADD-ON sold on the DocSnap side (owner decision,
+ * business-plan rev 2): $3.99/mo or $39.99/yr. It is NOT bundled into any
+ * DocSnap tier: a paid subscriber does NOT automatically get HomeSnap. Access
+ * to /homesnap is a hard entitlement gate that unlocks ONLY when the user's
+ * record has the add-on flag (addon_homesnap) set.
+ */
+/** Single source of truth for whether a user owns the HomeSnap add-on.
+ *  FAILS CLOSED: a missing users row, a NULL/false flag, or any DB error all
+ *  resolve to `false` (locked). Only an explicit `addon_homesnap = true`
+ *  grants access. A paid DocSnap tier does NOT unlock HomeSnap. */
+export async function hasHomeSnapAddon(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT addon_homesnap FROM users WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `;
+    const row = rows[0] as { addon_homesnap?: unknown } | undefined;
+    return row?.addon_homesnap === true;
+  } catch (err) {
+    console.error("[subscription] Failed to read HomeSnap add-on:", err);
+    return false;
+  }
+}
+/** Grant or revoke the HomeSnap add-on entitlement (webhook/admin use). */
+export async function setHomeSnapAddon(clerkUserId: string, owned: boolean): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, addon_homesnap)
+      VALUES (${clerkUserId}, ${owned})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET addon_homesnap = ${owned}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set HomeSnap add-on:", err); }
+}
+
 /** MeetingSnap's independent 4-tier model (mirrors features/meetingsnap). */
 export type MeetingTier = "free" | "personal" | "pro" | "team";
 /** Grant/revoke the MEETING_SNAP independent subscription tier (webhook use).

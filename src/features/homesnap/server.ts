@@ -14,16 +14,18 @@
  * (src/db-schema.sql), and degrades gracefully to a no-op when DATABASE_URL is
  * unset (the UI reports storage as not configured rather than crashing).
  *
- * NOTE — pricing/gating: HomeSnap is a paid add-on (business-plan rev 2):
- * $3.99/month or $39.99/year, gated by an addon_homesnap flag on the user
- * (mirroring ReceiptSnap/GarageSnap). The checkout links stay empty and the
- * hard add-on gate is NOT applied in this phase — any signed-in user can use
- * the module. Pricing display is wired in src/modules.ts; the gate and the
- * real Stripe links land in phase 3.
+ * NOTE — pricing/gating (phase 3): HomeSnap is a paid add-on (business-plan
+ * rev 2): $3.99/month or $39.99/year, gated by an addon_homesnap flag on the
+ * user (mirroring ReceiptSnap/GarageSnap). Every read/write handler fails
+ * CLOSED (HTTP 403) for a signed-in user who does not own the add-on. Pricing
+ * is wired in src/modules.ts ($3.99/$39.99); the real Stripe checkout links
+ * stay empty (src/moduleCheckout.ts) until the owner provides them — the gate
+ * and UI work for flag-holding users regardless.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
+import { hasHomeSnapAddon } from "~/subscription";
 import {
   asDocumentType,
   asEventType,
@@ -127,6 +129,45 @@ function positiveId(v: unknown, label: string): number {
 }
 
 /* ------------------------------------------------------------------ */
+/* Add-on entitlement gate (phase 3)                                    */
+/* ------------------------------------------------------------------ */
+
+/** Clear, honest message for users without the add-on. */
+export const ADDON_LOCKED_MESSAGE =
+  "HomeSnap is a paid add-on — purchase it to unlock.";
+/** Machine-readable code the UI can use to render the locked/upgrade screen. */
+export const ADDON_LOCKED_CODE = "homesnap_addon_required";
+
+/**
+ * HARD entitlement gate (business-plan rev 2). HomeSnap is a paid add-on, NOT
+ * bundled into any DocSnap tier. Fails CLOSED with HTTP 403 for any signed-in
+ * user who does not own the add-on — including every paid
+ * (Personal/Household/Complete) subscriber. Anonymous callers are already
+ * rejected with 401 by requireServerFunctionUser.
+ */
+async function requireHomeSnapAddon(userId: string): Promise<void> {
+  const owned = await hasHomeSnapAddon(userId);
+  if (!owned) {
+    throw new Response(
+      JSON.stringify({ error: ADDON_LOCKED_MESSAGE, code: ADDON_LOCKED_CODE }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
+
+/**
+ * HomeSnap entitlement for the signed-in user. This is the UI's gate channel
+ * (does not throw for a locked user — it reports the state). `hasAddon` is
+ * true only when the user owns the add-on. Anonymous → 401 (fail closed).
+ */
+export const getHomeEntitlement = createServerFn({ method: "GET" }).handler(async (): Promise<{ configured: boolean; hasAddon: boolean }> => {
+  const userId = await requireServerFunctionUser();
+  if (!process.env.DATABASE_URL) return { configured: false, hasAddon: false };
+  const hasAddon = await hasHomeSnapAddon(userId);
+  return { configured: true, hasAddon };
+});
+
+/* ------------------------------------------------------------------ */
 /* Ownership helpers                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -188,6 +229,7 @@ async function requireOwnedObject(
 
 export const listProperties = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireServerFunctionUser();
+  await requireHomeSnapAddon(userId);
   if (!process.env.DATABASE_URL) return { configured: false, properties: [] };
   const rows = (await sql`
     SELECT * FROM properties
@@ -214,6 +256,7 @@ export const createProperty = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -236,6 +279,7 @@ export const listObjects = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedProperty(userId, data.property_id);
     if (!process.env.DATABASE_URL) return { configured: false, objects: [] };
     const rows = (await sql`
@@ -282,6 +326,7 @@ export const createObject = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedProperty(userId, data.property_id);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
@@ -339,6 +384,7 @@ export const updateObject = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedObject(userId, data.id);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
@@ -371,6 +417,7 @@ export const deleteObject = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedObject(userId, data.id);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
@@ -390,6 +437,7 @@ export const listDocuments = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedObject(userId, data.object_id);
     if (!process.env.DATABASE_URL) return { configured: false, documents: [] };
     const rows = (await sql`
@@ -419,6 +467,7 @@ export const createDocument = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedObject(userId, data.object_id);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
@@ -438,6 +487,7 @@ export const deleteDocument = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     // Scope the document through its owning object (which must belong to an
     // owned property) before deleting — never delete by bare id.
     const doc = (await sql`
@@ -470,6 +520,7 @@ export const listEvents = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedObject(userId, data.object_id);
     if (!process.env.DATABASE_URL) return { configured: false, events: [] };
     const rows = (await sql`
@@ -499,6 +550,7 @@ export const createEvent = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     await requireOwnedObject(userId, data.object_id);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
@@ -518,6 +570,7 @@ export const deleteEvent = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
     // Scope the event through its owning object/property before deleting.
     const ev = (await sql`
       SELECT oe.id FROM object_events oe
