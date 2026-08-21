@@ -41,8 +41,8 @@ BILLSNAP_ANNUAL: "",
  *  Stripe payment links provided by the owner. */
 HOMESNAP_MONTHLY: "https://buy.stripe.com/cNidRb6SVenpgM7h0y7Re0k",
 HOMESNAP_ANNUAL: "https://buy.stripe.com/bJe14pb9bdjl67t39I7Re0l",
-/** ContractSnap — priced add-on ($4.99/mo or $49.99/yr). TODO(lead): insert
- *  the real monthly + annual Stripe payment-link URLs once the product ships. */
-CONTRACTSNAP_MONTHLY: "",
-CONTRACTSNAP_ANNUAL: "",
+/** ContractSnap — priced add-on ($4.99/mo or $49.99/yr). Real recurring
+ *  Stripe payment links provided by the owner. */
+CONTRACTSNAP_MONTHLY: "https://buy.stripe.com/aFa28tgtv3IL8fB6lU7Re0m",
+CONTRACTSNAP_ANNUAL: "https://buy.stripe.com/5kQfZj6SV7Z1gM79y67Re0n",
 } as const;
