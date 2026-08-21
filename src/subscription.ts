@@ -6,7 +6,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { sql } from "./db";
 import { getVerifiedUserId } from "./serverAuth";
 
-export type Tier = "free" | "personal" | "household" | "complete";
+export type Tier = "free" | "personal" | "family";
 
 export interface SubscriptionInfo {
   tier: Tier;
@@ -16,9 +16,12 @@ export interface SubscriptionInfo {
 }
 
 function normalizeTier(status: string | null | undefined): Tier {
-  // Existing Pro subscribers retain their paid access as Personal.
-  if (status === "pro") return "personal";
-  if (status === "personal" || status === "household" || status === "complete") return status;
+  // Legacy paid values from the DB map forward so no existing subscriber
+  // loses paid access:
+  //   "pro" → personal, "personal" → personal (unchanged),
+  //   "household" → family, "complete" → family (dropped tiers fold up).
+  if (status === "pro" || status === "personal") return "personal";
+  if (status === "household" || status === "complete") return "family";
   return "free";
 }
 

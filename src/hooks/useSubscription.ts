@@ -14,7 +14,7 @@ import { getPortalUrl, getSubscription, syncUser } from "../subscription";
 import type { Tier } from "../subscription";
 
 export interface SubscriptionState {
-  /** Current plan tier: free | personal | household | complete */
+  /** Current plan tier: free | personal | family */
   tier: Tier;
   /** Whether the user has an active Pro subscription */
   isPro: boolean;

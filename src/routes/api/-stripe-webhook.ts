@@ -19,6 +19,7 @@ import {
   findUserByEmail,
   findUserByStripeCustomerId,
 } from "../../subscription";
+import type { Tier } from "../../subscription";
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 
@@ -162,15 +163,26 @@ async function handleSubscriptionDeleted(
   console.log(`[stripe-webhook] Set Free for user ${clerkUserId}`);
 }
 
-const PRICE_TIERS: Record<string, "personal" | "household" | "complete"> = {
+/** The paid tiers a checkout price can grant: Personal or Family. */
+type PaidTier = Exclude<Tier, "free">;
+const PRICE_TIERS: Record<string, PaidTier> = {
   "price_1U2SjQDjQBNY25JvY49czw5w": "personal",
-  "price_1U2SjQDjQBNY25JvHW3Jgxoi": "household",
-  "price_1U2SjQDjQBNY25JvnOS572z2": "complete",
+  "price_1U2SjQDjQBNY25JvHW3Jgxoi": "family", // legacy Household → Family
+  "price_1U2SjQDjQBNY25JvnOS572z2": "family", // legacy Complete → Family
   "price_1TzAj6DjQBNY25Jv2G11crty": "personal",
   "price_1TzAj7DjQBNY25JvJ6F1YHOE": "personal",
+  // ── NEW prices (owner-owned, added AFTER this change) ──
+  // The lead will insert the new Personal/Family Stripe price IDs (monthly +
+  // annual) here once the owner creates them in Stripe. No other code change
+  // is required to wire them up.
+  // TODO(lead): add, e.g.:
+  //   "price_xxx": "personal", // Personal monthly
+  //   "price_yyy": "personal", // Personal annual
+  //   "price_zzz": "family",   // Family monthly
+  //   "price_www": "family",   // Family annual
 };
 
-function priceTier(priceId: string | undefined): "personal" | "household" | "complete" {
+function priceTier(priceId: string | undefined): PaidTier {
   return (priceId && PRICE_TIERS[priceId]) || "personal";
 }
 

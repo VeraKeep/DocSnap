@@ -414,7 +414,7 @@ function ScanLanding() {
                 q: "Is DocSnap © 2026 really free?",
                 a: (
                   <>
-                    Scanning is free — you can capture, crop, filter, OCR, and download PDFs entirely in your browser with no account and no charge. Paid plans (Personal, Household, or Complete) add cloud storage and Pro features like password-protected PDFs, AI document naming, expiration reminders, secure sharing, redaction, and duplicate detection. See{" "}
+                    Scanning is free — you can capture, crop, filter, OCR, and download PDFs entirely in your browser with no account and no charge. Paid plans (Personal, or Family) add cloud storage and Pro features like password-protected PDFs, AI document naming, expiration reminders, secure sharing, redaction, and duplicate detection. See{" "}
                     <Link to="/pricing" className="text-indigo-400 underline">our pricing page</Link>{" "}
                     for details.
                   </>
