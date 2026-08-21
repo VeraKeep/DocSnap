@@ -71,6 +71,24 @@ async function main() {
   `) as unknown as { id: number }[];
   const eventId = clamp(evRows[0].id);
 
+  // Insert a maintenance schedule and round-trip "mark done" (advances
+  // next_due by the interval — the exact logic completeSchedule uses).
+  const schRows = (await sql`
+    INSERT INTO maintenance_schedules (object_id, task_type, title, interval_value, interval_unit, last_done, next_due)
+    VALUES (${objectId}, ${"filter"}, ${"Replace air filter"}, ${3}, ${"months"}, ${"2026-06-01"}, ${"2026-09-01"})
+    RETURNING id, next_due
+  `) as unknown as { id: number; next_due: string }[];
+  const scheduleId = clamp(schRows[0].id);
+  const doneRows = (await sql`
+    UPDATE maintenance_schedules SET last_done = '2026-09-01', next_due = '2026-12-01'
+    WHERE id = ${scheduleId}
+    RETURNING next_due
+  `) as unknown as { next_due: string }[];
+  if (doneRows[0]?.next_due !== "2026-12-01") {
+    console.error("FAIL: maintenance 'mark done' did not advance next_due by the interval.");
+    process.exit(1);
+  }
+
   // Read everything back (same queries the server handlers run).
   const props = (await sql`
     SELECT * FROM properties WHERE clerk_user_id = ${TEST_USER} ORDER BY created_at DESC
@@ -84,10 +102,13 @@ async function main() {
   const evs = (await sql`
     SELECT * FROM object_events WHERE object_id = ${objectId} ORDER BY created_at ASC
   `) as unknown as Record<string, unknown>[];
+  const scheds = (await sql`
+    SELECT * FROM maintenance_schedules WHERE object_id = ${objectId} ORDER BY next_due ASC
+  `) as unknown as Record<string, unknown>[];
 
-  console.log(`Round-trip insert OK: property#${propertyId} -> object#${objectId} -> document#${docId} + event#${eventId}`);
-  console.log(`Read-back: ${props.length} propert(y/ies), ${objs.length} object(s), ${docs.length} document(s), ${evs.length} event(s) for scoped user.`);
-  if (!props.length || !objs.length || !docs.length || !evs.length) {
+  console.log(`Round-trip insert OK: property#${propertyId} -> object#${objectId} -> document#${docId} + event#${eventId} + schedule#${scheduleId}`);
+  console.log(`Read-back: ${props.length} propert(y/ies), ${objs.length} object(s), ${docs.length} document(s), ${evs.length} event(s), ${scheds.length} schedule(s) for scoped user.`);
+  if (!props.length || !objs.length || !docs.length || !evs.length || !scheds.length) {
     console.error("FAIL: read-back returned empty for owned rows.");
     process.exit(1);
   }

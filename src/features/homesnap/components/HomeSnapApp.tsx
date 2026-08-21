@@ -18,31 +18,43 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
+  completeSchedule,
   createDocument,
   createEvent,
   createObject,
   createProperty,
+  createSchedule,
   deleteDocument,
   deleteEvent,
   deleteObject,
+  deleteSchedule,
   getHomeEntitlement,
   listDocuments,
+  listDueMaintenance,
   listEvents,
   listObjects,
   listProperties,
+  listSchedules,
   updateObject,
 } from "../server";
 import {
   DOCUMENT_TYPE_LABELS,
   EVENT_TYPE_LABELS,
+  INTERVAL_UNIT_LABELS,
   OBJECT_TYPE_LABELS,
   PROPERTY_TYPE_LABELS,
+  TASK_TYPE_LABELS,
   asDocumentType,
   asEventType,
+  asIntervalUnit,
   asObjectType,
   asPropertyType,
+  asTaskType,
   type DocumentType,
   type EventType,
+  type IntervalUnit,
+  type MaintenanceDueItem,
+  type MaintenanceSchedule,
   type ObjectDocument,
   type ObjectEvent,
   type ObjectStatus,
@@ -50,10 +62,58 @@ import {
   type Property,
   type PropertyObject,
   type PropertyType,
+  type TaskType,
 } from "../types";
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
+/** "3 months" / "1 year" / "14 days" — the human interval for a schedule. */
+function intervalLabel(v: number, unit: IntervalUnit): string {
+  const unitLabel = unit === "months" ? "month" : unit === "years" ? "year" : "day";
+  return `${v} ${unitLabel}${v === 1 ? "" : "s"}`;
+}
+
+/** Today as yyyy-mm-dd (local), for bucketing due status client-side. */
+function todayLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Bucket a maintenance next-due date: "due" (at or before today), "soon"
+ * (within the next 30 days), or "later". Falls back to "later" for unparseable
+ * dates. Both buckets sort by next-due ascending.
+ */
+function dueBucket(nextDue: string): "due" | "soon" | "later" {
+  const t = Date.parse(`${nextDue}T00:00:00`);
+  if (Number.isNaN(t)) return "later";
+  const diffDays = Math.floor((t - Date.parse(`${todayLocal()}T00:00:00`)) / 86400000);
+  if (diffDays <= 0) return "due";
+  if (diffDays <= 30) return "soon";
+  return "later";
+}
+
+const TASK_BADGE: Record<TaskType, string> = {
+  filter: "bg-sky-900/40 text-sky-300",
+  flush: "bg-cyan-900/40 text-cyan-300",
+  battery: "bg-amber-900/40 text-amber-300",
+  annual: "bg-emerald-900/40 text-emerald-300",
+  inspection: "bg-indigo-900/40 text-indigo-300",
+  clean: "bg-violet-900/40 text-violet-300",
+  other: "bg-gray-800 text-gray-300",
+};
+
+function TaskBadge({ type }: { type: TaskType }) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TASK_BADGE[type]}`}>
+      {TASK_TYPE_LABELS[type]}
+    </span>
+  );
 }
 
 function money(v: number | null): string {
@@ -563,6 +623,260 @@ function DocumentForm({
   );
 }
 
+/* ---------------------------------------------------------------- */
+/* Maintenance schedule form (attach a recurring task to an object)   */
+/* ---------------------------------------------------------------- */
+function MaintenanceForm({
+  configured,
+  objectId,
+  onCreated,
+}: {
+  configured: boolean;
+  objectId: number;
+  onCreated: (s: MaintenanceSchedule) => void;
+}) {
+  const [taskType, setTaskType] = useState<TaskType>("filter");
+  const [title, setTitle] = useState("");
+  const [intervalValue, setIntervalValue] = useState("3");
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>("months");
+  const [nextDue, setNextDue] = useState("");
+  const [lastDone, setLastDone] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const { schedule } = await createSchedule({
+        data: {
+          object_id: objectId,
+          task_type: taskType,
+          title: title || null,
+          interval_value: Number(intervalValue),
+          interval_unit: intervalUnit,
+          next_due: nextDue,
+          last_done: lastDone || null,
+          notes: notes || null,
+        },
+      });
+      setTitle("");
+      setNextDue("");
+      setLastDone("");
+      setNotes("");
+      onCreated(schedule as MaintenanceSchedule);
+    } catch (err) {
+      setError(messageFromError(err, "The maintenance task could not be added."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-3 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className={labelCls} htmlFor="hs-ms-type">Task</label>
+          <select id="hs-ms-type" className={inputCls} value={taskType} onChange={(e) => setTaskType(asTaskType(e.target.value))}>
+            {selectOptions<TaskType>(TASK_TYPE_LABELS).map((t) => (
+              <option key={t} value={t}>{TASK_TYPE_LABELS[t]}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-ms-title">Title</label>
+          <input id="hs-ms-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Replace air filter" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-ms-interval-val">Every</label>
+          <input id="hs-ms-interval-val" className={inputCls} value={intervalValue} onChange={(e) => setIntervalValue(e.target.value)} inputMode="numeric" placeholder="3" required />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-ms-interval-unit">Unit</label>
+          <select id="hs-ms-interval-unit" className={inputCls} value={intervalUnit} onChange={(e) => setIntervalUnit(asIntervalUnit(e.target.value))}>
+            {selectOptions<IntervalUnit>(INTERVAL_UNIT_LABELS).map((u) => (
+              <option key={u} value={u}>{INTERVAL_UNIT_LABELS[u]}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-ms-next-due">Next due</label>
+          <input id="hs-ms-next-due" type="date" className={inputCls} value={nextDue} onChange={(e) => setNextDue(e.target.value)} required />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-ms-last-done">Last done (optional)</label>
+          <input id="hs-ms-last-done" type="date" className={inputCls} value={lastDone} onChange={(e) => setLastDone(e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} htmlFor="hs-ms-notes">Notes</label>
+          <input id="hs-ms-notes" className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. MERV-13 pleated filters" />
+        </div>
+      </div>
+      {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+      <button type="submit" disabled={busy || !configured} className={btnPrimary}>
+        {busy ? "Adding…" : "Add maintenance task"}
+      </button>
+    </form>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* Maintenance section (attached to a selected object)                */
+/* ---------------------------------------------------------------- */
+function MaintenanceSection({
+  configured,
+  objectId,
+  onChanged,
+}: {
+  configured: boolean;
+  objectId: number;
+  onChanged: () => void;
+}) {
+  const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [loadError, setLoadError] = useState("");
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const res = await listSchedules({ data: { object_id: objectId } });
+      setSchedules((res.schedules as MaintenanceSchedule[]) ?? []);
+      setStatus("ready");
+      setLoadError("");
+    } catch (err) {
+      setStatus("error");
+      setLoadError(messageFromError(err, "The maintenance schedule could not be loaded."));
+    }
+  }, [objectId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function markDone(s: MaintenanceSchedule) {
+    try {
+      await completeSchedule({ data: { id: s.id } });
+      await load();
+      onChanged();
+    } catch (err) {
+      window.alert(messageFromError(err, "The task could not be marked done."));
+    }
+  }
+
+  async function remove(s: MaintenanceSchedule) {
+    if (!window.confirm(`Remove "${s.title ?? TASK_TYPE_LABELS[s.task_type]}" from the schedule?`)) return;
+    try {
+      await deleteSchedule({ data: { id: s.id } });
+      setSchedules((prev) => prev.filter((x) => x.id !== s.id));
+      onChanged();
+    } catch (err) {
+      window.alert(messageFromError(err, "The task could not be removed."));
+    }
+  }
+
+  const sorted = useMemo(
+    () => [...schedules].sort((a, b) => a.next_due.localeCompare(b.next_due)),
+    [schedules],
+  );
+
+  return (
+    <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold">Maintenance schedule</h4>
+        <span className="text-xs text-gray-500">{sorted.length} task{sorted.length === 1 ? "" : "s"}</span>
+      </div>
+      <p className="mt-1 text-sm text-gray-500">
+        Recurring upkeep — filter changes, flushes, battery swaps, annual service. Mark a task
+        done to roll its next due date forward by the interval.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {status === "loading" ? (
+          <div className="h-14 animate-pulse rounded-xl border border-gray-800 bg-gray-800/40" aria-label="Loading maintenance" />
+        ) : status === "error" ? (
+          <ErrorCard message={loadError} onRetry={() => void load()} />
+        ) : sorted.length ? (
+          sorted.map((s) => {
+            const b = dueBucket(s.next_due);
+            return (
+              <div key={s.id} className="group flex gap-3 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+                <TaskBadge type={s.task_type} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-sm font-medium text-gray-200">
+                      {s.title ?? TASK_TYPE_LABELS[s.task_type]}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      b === "due"
+                        ? "bg-red-900/40 text-red-300"
+                        : b === "soon"
+                          ? "bg-amber-900/40 text-amber-300"
+                          : "bg-gray-800 text-gray-400"
+                    }`}>
+                      {b === "due" ? "Due" : b === "soon" ? "Coming up" : "Scheduled"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    every {intervalLabel(s.interval_value, s.interval_unit)}
+                    {s.last_done ? ` · last done ${s.last_done}` : ""}
+                  </p>
+                  {s.notes && <p className="mt-0.5 text-xs text-gray-500">{s.notes}</p>}
+                </div>
+                <div className="flex shrink-0 flex-col items-end justify-between gap-1">
+                  <span className="text-xs font-medium text-gray-300">Due {s.next_due}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void markDone(s)}
+                      className="rounded-md bg-emerald-900/40 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-800/40"
+                    >
+                      Mark done
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void remove(s)}
+                      aria-label={`Remove ${(s.title ?? "task")}`}
+                      className="rounded-md px-2 py-1 text-xs text-gray-600 transition hover:bg-red-900/30 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <EmptyState
+            icon="🔁"
+            title="No maintenance tasks yet"
+            body={
+              configured
+                ? "Add recurring upkeep so HomeSnap can remind you when it's due."
+                : "Maintenance tasks will appear here once storage is connected."
+            }
+          />
+        )}
+      </div>
+
+      <details className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+        <summary className="cursor-pointer text-sm font-medium text-indigo-300">
+          Add a maintenance task
+        </summary>
+        <MaintenanceForm
+          configured={configured}
+          objectId={objectId}
+          onCreated={(s) => {
+            setSchedules((prev) => [...prev, s]);
+            onChanged();
+          }}
+        />
+      </details>
+    </section>
+  );
+}
+
 const EVENT_BADGE: Record<EventType, string> = {
   installed: "bg-emerald-900/40 text-emerald-300",
   serviced: "bg-sky-900/40 text-sky-300",
@@ -576,9 +890,11 @@ const EVENT_BADGE: Record<EventType, string> = {
 function ObjectDetail({
   configured,
   object,
+  onMaintenanceChanged,
 }: {
   configured: boolean;
   object: PropertyObject;
+  onMaintenanceChanged?: () => void;
 }) {
   const [events, setEvents] = useState<ObjectEvent[]>([]);
   const [documents, setDocuments] = useState<ObjectDocument[]>([]);
@@ -821,6 +1137,13 @@ function ObjectDetail({
           />
         </details>
       </section>
+
+      {/* Maintenance schedule */}
+      <MaintenanceSection
+        configured={configured}
+        objectId={object.id}
+        onChanged={onMaintenanceChanged}
+      />
     </div>
   );
 }
@@ -893,6 +1216,95 @@ function ObjectCard({
 }
 
 /* ---------------------------------------------------------------- */
+/* Maintenance due / Coming up (HomeSnap home view)                   */
+/* ---------------------------------------------------------------- */
+function DueMaintenance({
+  items,
+  onSelect,
+}: {
+  items: MaintenanceDueItem[];
+  onSelect: (item: MaintenanceDueItem) => void;
+}) {
+  const due = items.filter((i) => dueBucket(i.next_due) === "due");
+  const soon = items.filter((i) => dueBucket(i.next_due) === "soon");
+  const rest = items.filter((i) => dueBucket(i.next_due) === "later");
+
+  function Row({ item, bucket }: { item: MaintenanceDueItem; bucket: "due" | "soon" | "later" }) {
+    const badgeCls =
+      bucket === "due"
+        ? "bg-red-900/40 text-red-300"
+        : bucket === "soon"
+          ? "bg-amber-900/40 text-amber-300"
+          : "bg-gray-800 text-gray-400";
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(item)}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-800 bg-gray-950/40 px-4 py-3 text-left transition hover:border-gray-700"
+      >
+        <span className="min-w-0">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeCls}`}>
+              {bucket === "due" ? "Due" : bucket === "soon" ? "Coming up" : "Scheduled"}
+            </span>
+            <span className="block truncate text-sm font-medium text-gray-100">
+              {item.title ?? TASK_TYPE_LABELS[item.task_type]}
+            </span>
+            <span className="hidden text-xs text-gray-500 sm:inline">· {item.object_name}</span>
+          </span>
+          <span className="mt-0.5 block text-xs text-gray-500">
+            {item.property_nickname}
+            {item.object_name ? ` · ${item.object_name}` : ""} · every{" "}
+            {intervalLabel(item.interval_value, item.interval_unit)}
+            {item.last_done ? ` · last done ${item.last_done}` : ""}
+          </span>
+        </span>
+        <span className="shrink-0 text-sm font-semibold text-indigo-300">{item.next_due}</span>
+      </button>
+    );
+  }
+
+  function Bucket({ label, list }: { label: string; list: MaintenanceDueItem[] }) {
+    if (!list.length) return null;
+    return (
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          {label} · {list.length}
+        </p>
+        <div className="space-y-2">
+          {list.map((item) => (
+            <Row key={item.id} item={item} bucket={dueBucket(item.next_due)} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
+      <div>
+        <h2 className="font-semibold">Maintenance</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          What's due and coming up across your homes, sorted by next due date.
+        </p>
+      </div>
+      <div className="mt-4 space-y-5">
+        <Bucket label="Due" list={due} />
+        <Bucket label="Coming up" list={soon} />
+        <Bucket label="Later" list={rest} />
+        {!items.length && (
+          <EmptyState
+            icon="📅"
+            title="No maintenance scheduled"
+            body="Open an object and add a maintenance task — HomeSnap will surface it here when it's due."
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* Main app                                                          */
 /* ---------------------------------------------------------------- */
 export function HomeSnapApp() {
@@ -913,9 +1325,21 @@ export function HomeSnapApp() {
   const [showNewProperty, setShowNewProperty] = useState(false);
   const [showNewObject, setShowNewObject] = useState(false);
   const [editingObject, setEditingObject] = useState<PropertyObject | null>(null);
+  const [dueItems, setDueItems] = useState<MaintenanceDueItem[]>([]);
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
+
+  /** Load the cross-home "Maintenance due / Coming up" list. Best-effort. */
+  const loadDue = useCallback(async () => {
+    try {
+      const res = await listDueMaintenance();
+      setDueItems(((res as { schedules?: MaintenanceDueItem[] }).schedules as MaintenanceDueItem[]) ?? []);
+      setConfigured((res as { configured?: boolean }).configured ?? true);
+    } catch {
+      // Non-fatal — the due list simply stays empty.
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -926,6 +1350,7 @@ export function HomeSnapApp() {
       setProperties(props);
       setStatus("ready");
       setLoadError("");
+      void loadDue();
       // Integration preselect: ?property=<id>&object=<id> → open that
       // property/object so a newly added receipt lands straight on the
       // created appliance. Plain /homesnap navigation (no params) keeps the
@@ -947,7 +1372,7 @@ export function HomeSnapApp() {
       setStatus("error");
       setLoadError(messageFromError(err, "Your properties could not be loaded."));
     }
-  }, [search.property, search.object]);
+  }, [search.property, search.object, loadDue]);
 
   // First resolve the add-on entitlement: a user without the HomeSnap add-on
   // sees the locked screen and never loads the library.
@@ -990,6 +1415,23 @@ export function HomeSnapApp() {
     setEditingObject(null);
     setShowNewObject(false);
     void loadObjects(propertyId, false);
+  }
+
+  /** Jump from a Maintenance due row straight to its property + object. */
+  function selectDueItem(item: MaintenanceDueItem) {
+    setSelectedPropertyId(item.property_id);
+    setEditingObject(null);
+    setShowNewObject(false);
+    setSelectedObjectId(item.object_id);
+    // Refresh the objects list for that property (then ensure the object is set).
+    void listObjects({ data: { property_id: item.property_id } }).then((res) => {
+      setConfigured(res.configured);
+      const objs = (res.objects as PropertyObject[]) ?? [];
+      setObjects(objs);
+      setSelectedObjectId(
+        objs.some((o) => o.id === item.object_id) ? item.object_id : (objs[0]?.id ?? null),
+      );
+    });
   }
 
   async function toggleObjectStatus(obj: PropertyObject) {
@@ -1048,6 +1490,11 @@ export function HomeSnapApp() {
           message="Storage isn't connected yet — home records can't be loaded or saved right now."
           onRetry={() => void load()}
         />
+      )}
+
+      {/* Maintenance due / Coming up */}
+      {status === "ready" && configured && (
+        <DueMaintenance items={dueItems} onSelect={selectDueItem} />
       )}
 
       {/* Properties */}
@@ -1214,7 +1661,13 @@ export function HomeSnapApp() {
       )}
 
       {/* Selected object: detail */}
-      {selectedObject && <ObjectDetail configured={configured} object={selectedObject} />}
+      {selectedObject && (
+        <ObjectDetail
+          configured={configured}
+          object={selectedObject}
+          onMaintenanceChanged={loadDue}
+        />
+      )}
 
       {!selectedProperty && status === "ready" && properties.length > 0 && (
         <p className="text-center text-sm text-gray-500">Select a property above to view its objects.</p>

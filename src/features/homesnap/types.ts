@@ -21,6 +21,17 @@ export type DocumentType =
   | "contract"
   | "other";
 export type EventType = "installed" | "serviced" | "repaired" | "other";
+/** Kind of recurring maintenance task (drives badge + optional suggestions). */
+export type TaskType =
+  | "filter"
+  | "flush"
+  | "battery"
+  | "annual"
+  | "inspection"
+  | "clean"
+  | "other";
+/** The unit a maintenance interval is counted in. */
+export type IntervalUnit = "days" | "months" | "years";
 
 /** A home the user owns/maintains. */
 export interface Property {
@@ -73,6 +84,36 @@ export interface ObjectEvent {
   created_at: string;
 }
 
+/**
+ * A recurring maintenance task on an object (e.g. "Main HVAC — replace filter
+ * every 3 months"). next_due is the next scheduled date; marking the task done
+ * sets last_done to "today" and advances next_due by the interval.
+ */
+export interface MaintenanceSchedule {
+  id: number;
+  object_id: number;
+  task_type: TaskType;
+  title: string | null;
+  interval_value: number;
+  interval_unit: IntervalUnit;
+  last_done: string | null;
+  next_due: string;
+  notes: string | null;
+  created_at: string;
+}
+
+/**
+ * A maintenance schedule enriched with its owning object's name/type and its
+ * property's nickname — used by the "Maintenance due / Coming up" view on the
+ * HomeSnap home so each task is recognisable and can jump to its object.
+ */
+export interface MaintenanceDueItem extends MaintenanceSchedule {
+  property_id: number;
+  object_name: string;
+  object_type: ObjectType;
+  property_nickname: string;
+}
+
 /** Human labels for the enum-ish string columns (drives selects & badges). */
 export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
   house: "House",
@@ -107,6 +148,22 @@ export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   other: "Other",
 };
 
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  filter: "Filter",
+  flush: "Flush",
+  battery: "Battery",
+  annual: "Annual service",
+  inspection: "Inspection",
+  clean: "Cleaning",
+  other: "Other",
+};
+
+export const INTERVAL_UNIT_LABELS: Record<IntervalUnit, string> = {
+  days: "Days",
+  months: "Months",
+  years: "Years",
+};
+
 /** Coerce an unknown string into a known member (falling back to "other"). */
 export function asObjectType(v: unknown): ObjectType {
   return typeof v === "string" && v in OBJECT_TYPE_LABELS
@@ -130,4 +187,17 @@ export function asEventType(v: unknown): EventType {
   return typeof v === "string" && v in EVENT_TYPE_LABELS
     ? (v as EventType)
     : "other";
+}
+
+export function asTaskType(v: unknown): TaskType {
+  return typeof v === "string" && v in TASK_TYPE_LABELS
+    ? (v as TaskType)
+    : "other";
+}
+
+export function asIntervalUnit(v: unknown): IntervalUnit {
+  return typeof v === "string" &&
+    (v === "days" || v === "months" || v === "years")
+    ? (v as IntervalUnit)
+    : "months";
 }

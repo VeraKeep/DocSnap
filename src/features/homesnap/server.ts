@@ -29,10 +29,15 @@ import { hasHomeSnapAddon } from "~/subscription";
 import {
   asDocumentType,
   asEventType,
+  asIntervalUnit,
   asObjectType,
   asPropertyType,
+  asTaskType,
   type DocumentType,
   type EventType,
+  type IntervalUnit,
+  type MaintenanceDueItem,
+  type MaintenanceSchedule,
   type ObjectDocument,
   type ObjectEvent,
   type ObjectStatus,
@@ -40,6 +45,7 @@ import {
   type Property,
   type PropertyObject,
   type PropertyType,
+  type TaskType,
 } from "./types";
 
 /* ------------------------------------------------------------------ */
@@ -101,6 +107,31 @@ function toEvent(r: Record<string, unknown>): ObjectEvent {
   };
 }
 
+function toSchedule(r: Record<string, unknown>): MaintenanceSchedule {
+  return {
+    id: Number(r.id),
+    object_id: Number(r.object_id),
+    task_type: asTaskType(r.task_type),
+    title: (r.title as string | null) ?? null,
+    interval_value: Number(r.interval_value),
+    interval_unit: asIntervalUnit(r.interval_unit),
+    last_done: (r.last_done as string | null) ?? null,
+    next_due: (r.next_due as string) ?? "",
+    notes: (r.notes as string | null) ?? null,
+    created_at: String(r.created_at),
+  };
+}
+
+function toDueItem(r: Record<string, unknown>): MaintenanceDueItem {
+  return {
+    ...toSchedule(r),
+    property_id: Number(r.property_id),
+    object_name: (r.object_name as string) ?? "",
+    object_type: asObjectType(r.object_type),
+    property_nickname: (r.property_nickname as string) ?? "",
+  };
+}
+
 /** Trim to a nullable string, collapsing empty/whitespace to null. */
 function text(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -126,6 +157,45 @@ function positiveId(v: unknown, label: string): number {
   const id = typeof v === "number" ? v : Number(v);
   if (!Number.isInteger(id) || id <= 0) throw new Error(`${label} is invalid.`);
   return id;
+}
+
+/** A positive whole number for a maintenance interval (rejects 0/negative). */
+function positiveInt(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error("Interval must be a positive whole number.");
+  }
+  return n;
+}
+
+/** Today's date as yyyy-mm-dd (UTC), matching the date-input format. */
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Advance a yyyy-mm-dd date by an interval of days/months/years, returning the
+ * result in the same format. If the input isn't a parseable date, it is
+ * returned unchanged (callers fall back to a manual edit).
+ */
+function addInterval(
+  iso: string,
+  value: number,
+  unit: IntervalUnit,
+): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  if (unit === "days") d.setUTCDate(d.getUTCDate() + value);
+  else if (unit === "years") d.setUTCFullYear(d.getUTCFullYear() + value);
+  else d.setUTCMonth(d.getUTCMonth() + value); // months
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -221,6 +291,36 @@ async function requireOwnedObject(
     );
   }
   return obj;
+}
+
+/**
+ * Returns the maintenance schedule row if it sits beneath an owned object (and
+ * thus an owned property), else null. The join chain to properties (filtered by
+ * clerk_user_id) is the scoping boundary — a caller can only ever touch
+ * schedules attached to their own objects.
+ */
+async function ownedSchedule(userId: string, scheduleId: number) {
+  const rows = (await sql`
+    SELECT ms.* FROM maintenance_schedules ms
+    JOIN property_objects po ON po.id = ms.object_id
+    JOIN properties p ON p.id = po.property_id
+    WHERE ms.id = ${scheduleId} AND p.clerk_user_id = ${userId}
+  `) as Record<string, unknown>[];
+  return rows[0] ?? null;
+}
+
+async function requireOwnedSchedule(
+  userId: string,
+  scheduleId: number,
+): Promise<Record<string, unknown>> {
+  const sch = await ownedSchedule(userId, scheduleId);
+  if (!sch) {
+    throw new Response(
+      JSON.stringify({ error: "Maintenance schedule not found." }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return sch;
 }
 
 /* ------------------------------------------------------------------ */
@@ -736,3 +836,191 @@ export const deleteEvent = createServerFn({ method: "POST" })
     await sql`DELETE FROM object_events WHERE id = ${data.id}`;
     return { deleted: true };
   });
+
+/* ------------------------------------------------------------------ */
+/* Maintenance schedules (recurring tasks on an object)                 */
+/* ------------------------------------------------------------------ */
+
+/** List the maintenance schedules for one (owned) object. */
+export const listSchedules = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { object_id?: unknown };
+    return { object_id: positiveId(d.object_id, "Object id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedObject(userId, data.object_id);
+    if (!process.env.DATABASE_URL) return { configured: false, schedules: [] };
+    const rows = (await sql`
+      SELECT * FROM maintenance_schedules
+      WHERE object_id = ${data.object_id}
+      ORDER BY next_due ASC, created_at ASC
+    `) as Record<string, unknown>[];
+    return { configured: true, schedules: rows.map(toSchedule) };
+  });
+
+/**
+ * Create a maintenance schedule (recurring task) on an object. The owner
+ * supplies the label/kind, the interval (value + unit), and when it's next due
+ * (optionally when it was last done). Marking a task done later advances
+ * next_due by the interval — see completeSchedule.
+ */
+export const createSchedule = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as {
+      object_id?: unknown;
+      task_type?: unknown;
+      title?: unknown;
+      interval_value?: unknown;
+      interval_unit?: unknown;
+      next_due?: unknown;
+      last_done?: unknown;
+      notes?: unknown;
+    };
+    return {
+      object_id: positiveId(d.object_id, "Object id"),
+      task_type: (text(d.task_type) ?? "other") as TaskType,
+      title: text(d.title)?.slice(0, 300) ?? null,
+      interval_value: positiveInt(d.interval_value),
+      interval_unit: (text(d.interval_unit) ?? "months") as IntervalUnit,
+      next_due: requiredText(d.next_due, "Next due date").slice(0, 40),
+      last_done: text(d.last_done)?.slice(0, 40) ?? null,
+      notes: text(d.notes)?.slice(0, 1000) ?? null,
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedObject(userId, data.object_id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const rows = (await sql`
+      INSERT INTO maintenance_schedules (
+        object_id, task_type, title, interval_value, interval_unit,
+        last_done, next_due, notes
+      ) VALUES (
+        ${data.object_id}, ${data.task_type}, ${data.title},
+        ${data.interval_value}, ${data.interval_unit},
+        ${data.last_done}, ${data.next_due}, ${data.notes}
+      )
+      RETURNING *
+    `) as Record<string, unknown>[];
+    return { schedule: toSchedule(rows[0]) };
+  });
+
+/** Update a schedule's fields (label/kind/interval/dates/notes). */
+export const updateSchedule = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as {
+      id?: unknown;
+      task_type?: unknown;
+      title?: unknown;
+      interval_value?: unknown;
+      interval_unit?: unknown;
+      next_due?: unknown;
+      last_done?: unknown;
+      notes?: unknown;
+    };
+    return {
+      id: positiveId(d.id, "Schedule id"),
+      task_type: (text(d.task_type) ?? "other") as TaskType,
+      title: text(d.title)?.slice(0, 300) ?? null,
+      interval_value: positiveInt(d.interval_value),
+      interval_unit: (text(d.interval_unit) ?? "months") as IntervalUnit,
+      next_due: requiredText(d.next_due, "Next due date").slice(0, 40),
+      last_done: text(d.last_done)?.slice(0, 40) ?? null,
+      notes: text(d.notes)?.slice(0, 1000) ?? null,
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedSchedule(userId, data.id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const rows = (await sql`
+      UPDATE maintenance_schedules SET
+        task_type = ${data.task_type},
+        title = ${data.title},
+        interval_value = ${data.interval_value},
+        interval_unit = ${data.interval_unit},
+        next_due = ${data.next_due},
+        last_done = ${data.last_done},
+        notes = ${data.notes}
+      WHERE id = ${data.id}
+      RETURNING *
+    `) as Record<string, unknown>[];
+    if (!rows[0]) throw new Error("Schedule not found.");
+    return { schedule: toSchedule(rows[0]) };
+  });
+
+/**
+ * Mark a maintenance task done. Sets last_done to the current date and advances
+ * next_due by the schedule's interval (e.g. a "replace filter every 3 months"
+ * task done today becomes next due three months from today).
+ */
+export const completeSchedule = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown };
+    return { id: positiveId(d.id, "Schedule id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    const sch = await requireOwnedSchedule(userId, data.id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const lastDone = todayIso();
+    const nextDue = addInterval(
+      lastDone,
+      Number(sch.interval_value),
+      asIntervalUnit(sch.interval_unit),
+    );
+    const rows = (await sql`
+      UPDATE maintenance_schedules
+      SET last_done = ${lastDone}, next_due = ${nextDue}
+      WHERE id = ${data.id}
+      RETURNING *
+    `) as Record<string, unknown>[];
+    return { schedule: toSchedule(rows[0]), last_done: lastDone, next_due: nextDue };
+  });
+
+export const deleteSchedule = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown };
+    return { id: positiveId(d.id, "Schedule id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedSchedule(userId, data.id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    await sql`DELETE FROM maintenance_schedules WHERE id = ${data.id}`;
+    return { deleted: true };
+  });
+
+/**
+ * All maintenance schedules across the user's properties, enriched with the
+ * owning object's name/type and the property nickname, ordered by next_due so
+ * the "Maintenance due / Coming up" home view can bucket and sort them.
+ */
+export const listDueMaintenance = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await requireServerFunctionUser();
+  await requireHomeSnapAddon(userId);
+  if (!process.env.DATABASE_URL) return { configured: false, schedules: [] };
+  const rows = (await sql`
+    SELECT ms.*, p.id AS property_id, po.name AS object_name, po.object_type, p.nickname AS property_nickname
+    FROM maintenance_schedules ms
+    JOIN property_objects po ON po.id = ms.object_id
+    JOIN properties p ON p.id = po.property_id
+    WHERE p.clerk_user_id = ${userId}
+    ORDER BY ms.next_due ASC, ms.created_at ASC
+  `) as Record<string, unknown>[];
+  return { configured: true, schedules: rows.map(toDueItem) };
+});
