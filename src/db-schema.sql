@@ -28,9 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- ('free' | 'personal' | 'pro' | 'team'). Fails closed: default 'free'
   -- and any missing row resolves to free.
   meeting_subscription_status TEXT DEFAULT 'free',
-  -- BillSnap add-on flag (RESERVED for future). BillSnap pricing is not set
-  -- yet (business plan: "pricing to be set once the MVP is validated"), so the
-  -- MVP is NOT gated on this flag. When the lead locks pricing, gate /bills on
+  -- BillSnap add-on flag ($2.99/mo or $29.99/yr recurring). Gates /bills on
   -- this exactly like `addon_receiptsnap` gates /receipts. Fails closed:
   -- default false and any missing row = locked.
   addon_billsnap BOOLEAN NOT NULL DEFAULT false,

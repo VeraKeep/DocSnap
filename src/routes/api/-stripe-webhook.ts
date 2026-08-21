@@ -20,6 +20,7 @@ import {
   findUserByStripeCustomerId,
   setReceiptSnapAddon,
   setGarageSnapAddon,
+  setBillSnapAddon,
   setMeetingSubscriptionTier,
   RECEIPTSNAP_ADDON_PRODUCT_ID,
 } from "../../subscription";
@@ -170,6 +171,10 @@ async function handleCheckoutCompleted(
       await setGarageSnapAddon(clerkUserId, true);
       console.log(`[stripe-webhook] Granted GarageSnap add-on for user ${clerkUserId}`);
       break;
+    case "billsnap":
+      await setBillSnapAddon(clerkUserId, true);
+      console.log(`[stripe-webhook] Granted BillSnap add-on for user ${clerkUserId}`);
+      break;
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, entitlement.meetingTier ?? "free");
       console.log(
@@ -238,7 +243,7 @@ function priceTier(priceId: string | undefined): PaidTier {
  * are intentionally OUT OF SCOPE here (no UI/entitlement semantics yet) — no
  * slots for them.
  */
-type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "meetingsnap";
+type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "meetingsnap";
 interface PriceEntitlement {
   kind: EntitlementKind;
   /** MeetingSnap tier when kind === 'meetingsnap' (else unused). */
@@ -264,6 +269,9 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   // GarageSnap add-on
   "price_1U6kjFQf4SDuORrEVVcQ82hO": { kind: "garagesnap" }, // monthly
   "price_1U6kjaQf4SDuORrEfYIEGIX1": { kind: "garagesnap" }, // annual
+  // BillSnap add-on
+  "price_1U6prlQf4SDuORrEAHPWd5hH": { kind: "billsnap" }, // monthly
+  "price_1U6ps8Qf4SDuORrEE4T4xr2d": { kind: "billsnap" }, // annual
   // MeetingSnap (independent 4-tier model)
   "price_1U6km5Qf4SDuORrEPTtvKzCe": { kind: "meetingsnap", meetingTier: "personal" }, // Personal monthly
   "price_1U6kmXQf4SDuORrE1pfncl4K": { kind: "meetingsnap", meetingTier: "personal" }, // Personal annual
@@ -311,6 +319,10 @@ async function revokeSubscriptionEntitlement(
     case "garagesnap":
       await setGarageSnapAddon(clerkUserId, false);
       console.log(`[stripe-webhook] GarageSnap subscription ended — revoked add-on for user ${clerkUserId}`);
+      break;
+    case "billsnap":
+      await setBillSnapAddon(clerkUserId, false);
+      console.log(`[stripe-webhook] BillSnap subscription ended — revoked add-on for user ${clerkUserId}`);
       break;
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, "free");
