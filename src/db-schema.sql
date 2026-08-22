@@ -205,10 +205,17 @@ CREATE TABLE IF NOT EXISTS property_objects (
   warranty_expiration TEXT,
   status TEXT NOT NULL DEFAULT 'active', -- active/retired
   notes TEXT,
+  -- Insurance category for home-inventory items (object_type 'inventory'),
+  -- e.g. tv/computer/electronics/furniture/tools/jewelry. Null for all other
+  -- object types; only read when object_type = 'inventory'.
+  inventory_category TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_property_objects_property_id_created_at
   ON property_objects (property_id, created_at DESC);
+
+-- Safe upgrade for databases created before the inventory feature existed.
+ALTER TABLE property_objects ADD COLUMN IF NOT EXISTS inventory_category TEXT;
 
 -- A receipt/invoice/warranty/manual/photo/contract attached to one object.
 CREATE TABLE IF NOT EXISTS object_documents (

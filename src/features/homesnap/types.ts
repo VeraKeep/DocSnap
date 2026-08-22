@@ -10,7 +10,13 @@
  */
 
 export type PropertyType = "house" | "condo" | "townhouse" | "apartment" | "other";
-export type ObjectType = "system" | "appliance" | "fixture" | "improvement" | "other";
+export type ObjectType =
+  | "system"
+  | "appliance"
+  | "fixture"
+  | "improvement"
+  | "inventory"
+  | "other";
 export type ObjectStatus = "active" | "retired";
 export type DocumentType =
   | "receipt"
@@ -32,6 +38,23 @@ export type TaskType =
   | "other";
 /** The unit a maintenance interval is counted in. */
 export type IntervalUnit = "days" | "months" | "years";
+
+/**
+ * High-level category for a home-inventory item (object_type "inventory") —
+ * drives the filter/grouping in the inventory view. Insurance-friendly buckets
+ * for the significant possessions a homeowner wants to record (TVs, computers,
+ * furniture, tools, electronics, jewelry…).
+ */
+export type InventoryCategory =
+  | "tv"
+  | "computer"
+  | "electronics"
+  | "furniture"
+  | "tools"
+  | "jewelry"
+  | "appliance"
+  | "camera"
+  | "other";
 
 /** A home the user owns/maintains. */
 export interface Property {
@@ -59,7 +82,20 @@ export interface PropertyObject {
   warranty_expiration: string | null;
   status: ObjectStatus;
   notes: string | null;
+  /** Only set for object_type "inventory" — the insurance category of the item. */
+  inventory_category: string | null;
   created_at: string;
+}
+
+/**
+ * A home-inventory item (object_type "inventory") enriched for the cross-home
+ * inventory list: its property's nickname (so each row is recognisable) and the
+ * URL of its most recently attached photo (used as the thumbnail; null when
+ * none is attached yet).
+ */
+export interface InventoryItem extends PropertyObject {
+  property_nickname: string;
+  photo_url: string | null;
 }
 
 /** A document (receipt/manual/photo…) attached to an object. */
@@ -128,6 +164,19 @@ export const OBJECT_TYPE_LABELS: Record<ObjectType, string> = {
   appliance: "Appliance",
   fixture: "Fixture",
   improvement: "Improvement",
+  inventory: "Inventory",
+  other: "Other",
+};
+
+export const INVENTORY_CATEGORY_LABELS: Record<InventoryCategory, string> = {
+  tv: "TV & A/V",
+  computer: "Computer",
+  electronics: "Electronics",
+  furniture: "Furniture",
+  tools: "Tools",
+  jewelry: "Jewelry",
+  appliance: "Appliance",
+  camera: "Camera",
   other: "Other",
 };
 
@@ -200,4 +249,10 @@ export function asIntervalUnit(v: unknown): IntervalUnit {
     (v === "days" || v === "months" || v === "years")
     ? (v as IntervalUnit)
     : "months";
+}
+
+export function asInventoryCategory(v: unknown): InventoryCategory {
+  return typeof v === "string" && v in INVENTORY_CATEGORY_LABELS
+    ? (v as InventoryCategory)
+    : "other";
 }
