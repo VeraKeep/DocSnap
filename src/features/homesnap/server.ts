@@ -30,12 +30,14 @@ import {
   asDocumentType,
   asEventType,
   asIntervalUnit,
+  asInventoryCategory,
   asObjectType,
   asPropertyType,
   asTaskType,
   type DocumentType,
   type EventType,
   type IntervalUnit,
+  type InventoryItem,
   type MaintenanceDueItem,
   type MaintenanceSchedule,
   type ObjectDocument,
@@ -79,7 +81,17 @@ function toObject(r: Record<string, unknown>): PropertyObject {
     warranty_expiration: (r.warranty_expiration as string | null) ?? null,
     status: r.status === "retired" ? "retired" : "active",
     notes: (r.notes as string | null) ?? null,
+    inventory_category: (r.inventory_category as string | null) ?? null,
     created_at: String(r.created_at),
+  };
+}
+
+/** Row coercion for a cross-home inventory item (adds property + photo URL). */
+function toInventoryItem(r: Record<string, unknown>): InventoryItem {
+  return {
+    ...toObject(r),
+    property_nickname: (r.property_nickname as string) ?? "",
+    photo_url: (r.photo_url as string | null) ?? null,
   };
 }
 
@@ -406,6 +418,7 @@ export const createObject = createServerFn({ method: "POST" })
       warranty_expiration?: unknown;
       status?: unknown;
       notes?: unknown;
+      inventory_category?: unknown;
     };
     const status: ObjectStatus = d.status === "retired" ? "retired" : "active";
     return {
@@ -422,6 +435,7 @@ export const createObject = createServerFn({ method: "POST" })
       warranty_expiration: text(d.warranty_expiration)?.slice(0, 40) ?? null,
       status,
       notes: text(d.notes)?.slice(0, 2000) ?? null,
+      inventory_category: text(d.inventory_category)?.slice(0, 40) ?? null,
     };
   })
   .handler(async ({ data }) => {
@@ -435,13 +449,13 @@ export const createObject = createServerFn({ method: "POST" })
       INSERT INTO property_objects (
         property_id, object_type, name, manufacturer, model, serial_number,
         room_location, purchase_date, installation_date, purchase_price,
-        warranty_expiration, status, notes
+        warranty_expiration, status, notes, inventory_category
       ) VALUES (
         ${data.property_id}, ${data.object_type}, ${data.name},
         ${data.manufacturer}, ${data.model}, ${data.serial_number},
         ${data.room_location}, ${data.purchase_date}, ${data.installation_date},
         ${data.purchase_price}, ${data.warranty_expiration}, ${data.status},
-        ${data.notes}
+        ${data.notes}, ${data.inventory_category}
       )
       RETURNING *
     `) as Record<string, unknown>[];
@@ -610,6 +624,7 @@ export const updateObject = createServerFn({ method: "POST" })
       warranty_expiration?: unknown;
       status?: unknown;
       notes?: unknown;
+      inventory_category?: unknown;
     };
     const status: ObjectStatus = d.status === "retired" ? "retired" : "active";
     return {
@@ -626,6 +641,7 @@ export const updateObject = createServerFn({ method: "POST" })
       warranty_expiration: text(d.warranty_expiration)?.slice(0, 40) ?? null,
       status,
       notes: text(d.notes)?.slice(0, 2000) ?? null,
+      inventory_category: text(d.inventory_category)?.slice(0, 40) ?? null,
     };
   })
   .handler(async ({ data }) => {
@@ -648,7 +664,8 @@ export const updateObject = createServerFn({ method: "POST" })
         purchase_price = ${data.purchase_price},
         warranty_expiration = ${data.warranty_expiration},
         status = ${data.status},
-        notes = ${data.notes}
+        notes = ${data.notes},
+        inventory_category = ${data.inventory_category}
       WHERE id = ${data.id}
       RETURNING *
     `) as Record<string, unknown>[];
@@ -671,6 +688,38 @@ export const deleteObject = createServerFn({ method: "POST" })
     await sql`DELETE FROM property_objects WHERE id = ${data.id}`;
     return { deleted: true };
   });
+
+/* ------------------------------------------------------------------ */
+/* Home inventory (object_type "inventory")                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * All home-inventory items across the user's properties. An inventory item is
+ * just a PropertyObject with object_type = "inventory" plus an
+ * inventory_category, so it reuses every existing object field (name,
+ * manufacturer/model/serial, location, purchase date/price, status) and the
+ * documents/photos/receipts attached via object_documents. This action returns
+ * each one enriched with its property's nickname and the URL of its most
+ * recently attached photo (for the list thumbnail), so the inventory view is a
+ * single call. Gated HARD with requireHomeSnapAddon (fails closed) like every
+ * other HomeSnap read.
+ */
+export const listInventory = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await requireServerFunctionUser();
+  await requireHomeSnapAddon(userId);
+  if (!process.env.DATABASE_URL) return { configured: false, items: [] };
+  const rows = (await sql`
+    SELECT po.*, p.nickname AS property_nickname,
+      (SELECT od.file_url FROM object_documents od
+        WHERE od.object_id = po.id AND od.document_type = 'photo'
+        ORDER BY od.created_at DESC LIMIT 1) AS photo_url
+    FROM property_objects po
+    JOIN properties p ON p.id = po.property_id
+    WHERE po.object_type = 'inventory' AND p.clerk_user_id = ${userId}
+    ORDER BY po.created_at DESC
+  `) as Record<string, unknown>[];
+  return { configured: true, items: rows.map(toInventoryItem) };
+});
 
 /* ------------------------------------------------------------------ */
 /* Documents                                                           */

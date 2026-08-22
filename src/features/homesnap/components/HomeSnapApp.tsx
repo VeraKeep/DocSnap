@@ -32,6 +32,7 @@ import {
   listDocuments,
   listDueMaintenance,
   listEvents,
+  listInventory,
   listObjects,
   listProperties,
   listSchedules,
@@ -40,6 +41,7 @@ import {
 import {
   DOCUMENT_TYPE_LABELS,
   EVENT_TYPE_LABELS,
+  INVENTORY_CATEGORY_LABELS,
   INTERVAL_UNIT_LABELS,
   OBJECT_TYPE_LABELS,
   PROPERTY_TYPE_LABELS,
@@ -47,12 +49,15 @@ import {
   asDocumentType,
   asEventType,
   asIntervalUnit,
+  asInventoryCategory,
   asObjectType,
   asPropertyType,
   asTaskType,
   type DocumentType,
   type EventType,
   type IntervalUnit,
+  type InventoryCategory,
+  type InventoryItem,
   type MaintenanceDueItem,
   type MaintenanceSchedule,
   type ObjectDocument,
@@ -1305,6 +1310,358 @@ function DueMaintenance({
 }
 
 /* ---------------------------------------------------------------- */
+/* Inventory (cross-home big-ticket possessions)                     */
+/* ---------------------------------------------------------------- */
+function InventoryAddForm({
+  configured,
+  properties,
+  defaultPropertyId,
+  onCreated,
+  onCancel,
+}: {
+  configured: boolean;
+  properties: Property[];
+  defaultPropertyId: number | null;
+  onCreated: (item: InventoryItem) => void;
+  onCancel?: () => void;
+}) {
+  const [propertyId, setPropertyId] = useState<number>(
+    defaultPropertyId ?? properties[0]?.id ?? 0,
+  );
+  const [category, setCategory] = useState<InventoryCategory>("electronics");
+  const [name, setName] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
+  const [model, setModel] = useState("");
+  const [serial, setSerial] = useState("");
+  const [room, setRoom] = useState("");
+  const [purchaseDate, setPurchaseDate] = useState("");
+  const [price, setPrice] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!propertyId) {
+      setError("Add a property first — inventory items live in a home.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { object } = await createObject({
+        data: {
+          property_id: propertyId,
+          object_type: "inventory",
+          name,
+          manufacturer: manufacturer || null,
+          model: model || null,
+          serial_number: serial || null,
+          room_location: room || null,
+          purchase_date: purchaseDate || null,
+          purchase_price: price || null,
+          status: "active",
+          inventory_category: category,
+        },
+      });
+      const obj = object as PropertyObject;
+      // Attach the photo and/or receipt via the existing document mechanism so
+      // they stay tied to this item (same rows the object detail shows).
+      if (photoUrl.trim()) {
+        await createDocument({
+          data: {
+            object_id: obj.id,
+            document_type: "photo",
+            title: `${obj.name} photo`,
+            file_url: photoUrl.trim(),
+          },
+        });
+      }
+      if (receiptUrl.trim()) {
+        await createDocument({
+          data: {
+            object_id: obj.id,
+            document_type: "receipt",
+            title: `${obj.name} receipt`,
+            file_url: receiptUrl.trim(),
+          },
+        });
+      }
+      const nickname = properties.find((p) => p.id === propertyId)?.nickname ?? "";
+      const item: InventoryItem = {
+        ...obj,
+        property_nickname: nickname,
+        photo_url: photoUrl.trim() || null,
+      };
+      setName("");
+      setManufacturer("");
+      setModel("");
+      setSerial("");
+      setRoom("");
+      setPurchaseDate("");
+      setPrice("");
+      setPhotoUrl("");
+      setReceiptUrl("");
+      onCreated(item);
+    } catch (err) {
+      setError(messageFromError(err, "The inventory item could not be added."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-4 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-name">Item name</label>
+          <input id="hs-inv-name" className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder='Sony 65" OLED TV' required />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-category">Category</label>
+          <select id="hs-inv-category" className={inputCls} value={category} onChange={(e) => setCategory(asInventoryCategory(e.target.value))}>
+            {selectOptions<InventoryCategory>(INVENTORY_CATEGORY_LABELS).map((c) => (
+              <option key={c} value={c}>{INVENTORY_CATEGORY_LABELS[c]}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-mfg">Manufacturer</label>
+          <input id="hs-inv-mfg" className={inputCls} value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} placeholder="Sony" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-model">Model</label>
+          <input id="hs-inv-model" className={inputCls} value={model} onChange={(e) => setModel(e.target.value)} placeholder="XR-65X90L" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-serial">Serial #</label>
+          <input id="hs-inv-serial" className={inputCls} value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Insurance-grade serial" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-room">Location</label>
+          <input id="hs-inv-room" className={inputCls} value={room} onChange={(e) => setRoom(e.target.value)} placeholder="Living room" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-date">Purchase date</label>
+          <input id="hs-inv-date" type="date" className={inputCls} value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-price">Value ($)</label>
+          <input id="hs-inv-price" className={inputCls} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="e.g. 1999" inputMode="decimal" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-inv-prop">Home</label>
+          <select id="hs-inv-prop" className={inputCls} value={propertyId} onChange={(e) => setPropertyId(Number(e.target.value))} disabled={!properties.length}>
+            {properties.length ? (
+              properties.map((p) => <option key={p.id} value={p.id}>{p.nickname}</option>)
+            ) : (
+              <option value={0}>No property yet</option>
+            )}
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} htmlFor="hs-inv-photo">Photo link (optional)</label>
+          <input id="hs-inv-photo" type="url" className={inputCls} value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://… item photo" />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} htmlFor="hs-inv-receipt">Receipt link (optional)</label>
+          <input id="hs-inv-receipt" type="url" className={inputCls} value={receiptUrl} onChange={(e) => setReceiptUrl(e.target.value)} placeholder="https://… receipt" />
+        </div>
+      </div>
+      {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={busy || !configured} className={btnPrimary}>
+          {busy ? "Saving…" : "Add inventory item"}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-sm text-gray-500 transition hover:text-gray-300">
+            Cancel
+          </button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function InventoryView({
+  configured,
+  properties,
+  defaultPropertyId,
+  onSelect,
+}: {
+  configured: boolean;
+  properties: Property[];
+  defaultPropertyId: number | null;
+  onSelect: (item: InventoryItem) => void;
+}) {
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [loadError, setLoadError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<InventoryCategory | "all">("all");
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const res = await listInventory();
+      setItems((res.items as InventoryItem[]) ?? []);
+      setStatus("ready");
+      setLoadError("");
+    } catch (err) {
+      setStatus("error");
+      setLoadError(messageFromError(err, "Your inventory could not be loaded."));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((i) => {
+      if (categoryFilter !== "all" && i.inventory_category !== categoryFilter) return false;
+      if (!q) return true;
+      return (
+        i.name.toLowerCase().includes(q) ||
+        (i.manufacturer ?? "").toLowerCase().includes(q) ||
+        (i.serial_number ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [items, query, categoryFilter]);
+
+  const totalValue = useMemo(
+    () => items.reduce((sum, i) => sum + (i.purchase_price ?? 0), 0),
+    [items],
+  );
+
+  return (
+    <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Home inventory</h2>
+          <p className="mt-1 max-w-xl text-sm text-gray-500">
+            The significant possessions in your home — TVs, computers, furniture,
+            tools, electronics, jewelry — with photos, serial numbers, and
+            receipts for insurance and sale records.
+          </p>
+        </div>
+        {!showForm && (
+          <button type="button" onClick={() => setShowForm(true)} className={btnGhost}>
+            + Add inventory item
+          </button>
+        )}
+      </div>
+
+      {status === "error" && <div className="mt-4"><ErrorCard message={loadError} onRetry={() => void load()} /></div>}
+
+      {showForm && (
+        <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-200">New inventory item</h3>
+            <button type="button" onClick={() => setShowForm(false)} className="text-xs text-gray-500 transition hover:text-gray-300">
+              Close
+            </button>
+          </div>
+          <InventoryAddForm
+            configured={configured}
+            properties={properties}
+            defaultPropertyId={defaultPropertyId}
+            onCancel={() => setShowForm(false)}
+            onCreated={(item) => {
+              setItems((prev) => [item, ...prev]);
+              setShowForm(false);
+            }}
+          />
+        </div>
+      )}
+
+      {status === "ready" && (items.length > 0 || query || categoryFilter !== "all") && (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input
+            className={inputCls}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, manufacturer, or serial…"
+          />
+          <select
+            className={`${inputCls} sm:w-48`}
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value === "all" ? "all" : asInventoryCategory(e.target.value))}
+          >
+            <option value="all">All categories</option>
+            {selectOptions<InventoryCategory>(INVENTORY_CATEGORY_LABELS).map((c) => (
+              <option key={c} value={c}>{INVENTORY_CATEGORY_LABELS[c]}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {status === "loading" ? (
+        <div className="mt-4 h-24 animate-pulse rounded-xl border border-gray-800 bg-gray-800/40" aria-label="Loading inventory" />
+      ) : status === "ready" && filtered.length ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelect(item)}
+              className="flex overflow-hidden rounded-xl border border-gray-800 bg-gray-950/40 text-left transition hover:border-gray-700"
+            >
+              {item.photo_url ? (
+                <img src={item.photo_url} alt={item.name} className="h-24 w-24 shrink-0 object-cover" />
+              ) : (
+                <div className="grid h-24 w-24 shrink-0 place-items-center bg-gray-800/60 text-2xl">📷</div>
+              )}
+              <div className="min-w-0 flex-1 p-3">
+                <span className="block truncate text-sm font-medium text-gray-100">{item.name}</span>
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+                  <span className="rounded-full bg-indigo-900/40 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+                    {item.inventory_category
+                      ? INVENTORY_CATEGORY_LABELS[asInventoryCategory(item.inventory_category)]
+                      : "Inventory"}
+                  </span>
+                  {item.property_nickname && <span>{item.property_nickname}</span>}
+                </span>
+                {item.serial_number && (
+                  <span className="mt-1 block truncate text-xs text-gray-500">S/N {item.serial_number}</span>
+                )}
+                <span className="mt-1 block text-sm font-semibold text-emerald-300">
+                  {money(item.purchase_price)}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : status === "ready" ? (
+        <div className="mt-4">
+          <EmptyState
+            icon="📦"
+            title={items.length ? "Nothing matches your search" : "No inventory items yet"}
+            body={
+              items.length
+                ? "Try a different category or search term."
+                : configured
+                  ? "Add the big-ticket things in your home — each with its photo, serial, value, and receipt."
+                  : "Inventory items will appear here once storage is connected."
+            }
+          />
+        </div>
+      ) : null}
+
+      {status === "ready" && items.length > 0 && (
+        <p className="mt-4 text-xs text-gray-500">
+          {items.length} {items.length === 1 ? "item" : "items"} · total recorded value{" "}
+          <span className="font-semibold text-gray-300">{money(totalValue)}</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* Main app                                                          */
 /* ---------------------------------------------------------------- */
 export function HomeSnapApp() {
@@ -1326,6 +1683,9 @@ export function HomeSnapApp() {
   const [showNewObject, setShowNewObject] = useState(false);
   const [editingObject, setEditingObject] = useState<PropertyObject | null>(null);
   const [dueItems, setDueItems] = useState<MaintenanceDueItem[]>([]);
+  // Top-level view: "home" (the property-centric record + maintenance) or
+  // "inventory" (the cross-home big-ticket possessions list).
+  const [view, setView] = useState<"home" | "inventory">("home");
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
@@ -1417,6 +1777,23 @@ export function HomeSnapApp() {
     void loadObjects(propertyId, false);
   }
 
+  /** Jump from an inventory row to its object detail (property + object). */
+  function selectInventoryItem(item: InventoryItem) {
+    setView("home");
+    setSelectedPropertyId(item.property_id);
+    setEditingObject(null);
+    setShowNewObject(false);
+    setSelectedObjectId(item.id);
+    void listObjects({ data: { property_id: item.property_id } }).then((res) => {
+      setConfigured(res.configured);
+      const objs = (res.objects as PropertyObject[]) ?? [];
+      setObjects(objs);
+      setSelectedObjectId(
+        objs.some((o) => o.id === item.id) ? item.id : (objs[0]?.id ?? null),
+      );
+    });
+  }
+
   /** Jump from a Maintenance due row straight to its property + object. */
   function selectDueItem(item: MaintenanceDueItem) {
     setSelectedPropertyId(item.property_id);
@@ -1484,18 +1861,49 @@ export function HomeSnapApp() {
 
   return (
     <div className="mt-8 space-y-8">
-      {status === "error" && <ErrorCard message={loadError} onRetry={() => void load()} />}
-      {status === "ready" && !configured && (
-        <ErrorCard
-          message="Storage isn't connected yet — home records can't be loaded or saved right now."
-          onRetry={() => void load()}
-        />
-      )}
+      {/* View toggle: the permanent home record vs the big-ticket inventory */}
+      <div className="flex items-center gap-1 rounded-full border border-gray-800 bg-gray-900/60 p-1">
+        <button
+          type="button"
+          onClick={() => setView("home")}
+          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            view === "home" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          🏡 Home
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("inventory")}
+          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            view === "inventory" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          📦 Inventory
+        </button>
+      </div>
 
-      {/* Maintenance due / Coming up */}
-      {status === "ready" && configured && (
-        <DueMaintenance items={dueItems} onSelect={selectDueItem} />
-      )}
+      {view === "inventory" ? (
+        <InventoryView
+          configured={configured}
+          properties={properties}
+          defaultPropertyId={selectedPropertyId}
+          onSelect={selectInventoryItem}
+        />
+      ) : (
+        <>
+          {status === "error" && <ErrorCard message={loadError} onRetry={() => void load()} />}
+          {status === "ready" && !configured && (
+            <ErrorCard
+              message="Storage isn't connected yet — home records can't be loaded or saved right now."
+              onRetry={() => void load()}
+            />
+          )}
+
+          {/* Maintenance due / Coming up */}
+          {status === "ready" && configured && (
+            <DueMaintenance items={dueItems} onSelect={selectDueItem} />
+          )}
 
       {/* Properties */}
       <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
@@ -1673,10 +2081,12 @@ export function HomeSnapApp() {
         <p className="text-center text-sm text-gray-500">Select a property above to view its objects.</p>
       )}
 
-      <p className="pt-4 text-center text-xs text-gray-600">
-        HomeSnap keeps a permanent record of your home — warranties, receipts,
-        repairs, and manuals, organized around the things in your home.
-      </p>
+          <p className="pt-4 text-center text-xs text-gray-600">
+            HomeSnap keeps a permanent record of your home — warranties, receipts,
+            repairs, and manuals, organized around the things in your home.
+          </p>
+        </>
+      )}
     </div>
   );
 }

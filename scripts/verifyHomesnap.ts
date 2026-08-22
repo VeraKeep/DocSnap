@@ -89,6 +89,39 @@ async function main() {
     process.exit(1);
   }
 
+  // Home-inventory item (object_type "inventory") with a category + photo, and
+  // the cross-home inventory query the listInventory handler runs.
+  const invRows = (await sql`
+    INSERT INTO property_objects (property_id, object_type, name, manufacturer, model, serial_number, purchase_price, status, inventory_category)
+    VALUES (${propertyId}, ${"inventory"}, ${"Forge TV"}, ${"Sony"}, ${"XR-65X90L"}, ${"SN-INV-001"}, ${1999.5}, ${"active"}, ${"tv"})
+    RETURNING id, inventory_category
+  `) as unknown as { id: number; inventory_category: string }[];
+  const invId = clamp(invRows[0].id);
+  if (invRows[0]?.inventory_category !== "tv") {
+    console.error("FAIL: inventory_category did not round-trip.");
+    process.exit(1);
+  }
+  await sql`
+    INSERT INTO object_documents (object_id, document_type, title, file_url)
+    VALUES (${invId}, ${"photo"}, ${"Forge TV photo"}, ${"https://example.com/tv.jpg"})
+  `;
+  const invListing = (await sql`
+    SELECT po.*, p.nickname AS property_nickname,
+      (SELECT od.file_url FROM object_documents od
+        WHERE od.object_id = po.id AND od.document_type = 'photo'
+        ORDER BY od.created_at DESC LIMIT 1) AS photo_url
+    FROM property_objects po
+    JOIN properties p ON p.id = po.property_id
+    WHERE po.object_type = 'inventory' AND p.clerk_user_id = ${TEST_USER}
+    ORDER BY po.created_at DESC
+  `) as unknown as Record<string, unknown>[];
+  const inv = invListing[0];
+  if (!inv || inv.photo_url !== "https://example.com/tv.jpg") {
+    console.error("FAIL: inventory listing did not return the item with its photo_url.");
+    process.exit(1);
+  }
+  console.log(`Inventory OK: item#${invId} (${inv.object_type}, category ${inv.inventory_category}) listed with photo_url = ${inv.photo_url}.`);
+
   // Read everything back (same queries the server handlers run).
   const props = (await sql`
     SELECT * FROM properties WHERE clerk_user_id = ${TEST_USER} ORDER BY created_at DESC
@@ -106,7 +139,7 @@ async function main() {
     SELECT * FROM maintenance_schedules WHERE object_id = ${objectId} ORDER BY next_due ASC
   `) as unknown as Record<string, unknown>[];
 
-  console.log(`Round-trip insert OK: property#${propertyId} -> object#${objectId} -> document#${docId} + event#${eventId} + schedule#${scheduleId}`);
+  console.log(`Round-trip insert OK: property#${propertyId} -> object#${objectId} -> document#${docId} + event#${eventId} + schedule#${scheduleId} + inventory#${invId}`);
   console.log(`Read-back: ${props.length} propert(y/ies), ${objs.length} object(s), ${docs.length} document(s), ${evs.length} event(s), ${scheds.length} schedule(s) for scoped user.`);
   if (!props.length || !objs.length || !docs.length || !evs.length || !scheds.length) {
     console.error("FAIL: read-back returned empty for owned rows.");
