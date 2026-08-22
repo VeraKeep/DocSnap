@@ -10,11 +10,30 @@
  * The ORIGINAL transcript is the immutable source of truth; the extraction is
  * versioned derived data (stored as JSONB, re-processable as models improve).
  */
+/**
+ * One timestamped slice of the transcribed recording. Deepgram diarization will
+ * fill `speaker` ("Speaker 0", "Speaker 1", ...) later; today (timestamp-only
+ * stepping stone) `speaker` is always null and `speakers` on the extraction is
+ * empty. `start_sec`/`end_sec` are absolute seconds within the recording.
+ */
+export interface MeetingSegment {
+  speaker: string | null; // "Speaker 1" now always null; filled by Deepgram later
+  start_sec: number;
+  end_sec: number;
+  text: string;
+}
+
 export interface MeetingDecision {
   decision: string;
   reason: string | null;
   participants: string[];
   confidence: number;
+  /** "Speaker 1" label whose words support this item — null in the stepping stone. */
+  speaker: string | null;
+  /** 0..1 — how attributable this item is to the labelled speaker. 0 in the stepping stone. */
+  speaker_confidence: number;
+  /** True when the speaker attribution is missing or uncertain (needs review). */
+  speakerUnverified: boolean;
 }
 
 export interface MeetingActionItem {
@@ -25,6 +44,12 @@ export interface MeetingActionItem {
   due_date: string | null;
   dependencies: string[];
   confidence: number;
+  /** "Speaker 1" label whose words support this item — null in the stepping stone. */
+  speaker: string | null;
+  /** 0..1 — how attributable this item is to the labelled speaker. 0 in the stepping stone. */
+  speaker_confidence: number;
+  /** True when the speaker attribution is missing or uncertain (needs review). */
+  speakerUnverified: boolean;
 }
 
 export interface MeetingQuestion {
@@ -40,11 +65,20 @@ export interface MeetingRisk {
   mitigation: string | null;
   owner: string | null;
   confidence: number;
+  /** "Speaker 1" label whose words support this item — null in the stepping stone. */
+  speaker: string | null;
+  /** 0..1 — how attributable this item is to the labelled speaker. 0 in the stepping stone. */
+  speaker_confidence: number;
+  /** True when the speaker attribution is missing or uncertain (needs review). */
+  speakerUnverified: boolean;
 }
 
 /**
  * The full AI-extracted structure for one meeting. This shape is what the
  * model is asked to return (strict JSON) and what is stored as derived JSONB.
+ * `segments`/`speakers` are the transcription-side metadata (timestamps, and
+ * later speaker labels) — they ride along as versioned derived data, exactly
+ * like the rest of the extraction.
  */
 export interface MeetingExtraction {
   executive_summary: string;
@@ -52,6 +86,10 @@ export interface MeetingExtraction {
   action_items: MeetingActionItem[];
   questions: MeetingQuestion[];
   risks: MeetingRisk[];
+  /** Timestamped slices of the recording. Empty for text/pasted transcripts. */
+  segments: MeetingSegment[];
+  /** Ordered distinct speaker labels (e.g. ["Speaker 0","Speaker 1"]). Empty now. */
+  speakers: string[];
 }
 
 /** Any extracted item whose confidence falls below this needs human review. */
@@ -60,6 +98,24 @@ export const LOW_CONFIDENCE_THRESHOLD = 0.6;
 /** True when an extracted item should be flagged "Review — low confidence." */
 export function isLowConfidence(confidence: number): boolean {
   return confidence < LOW_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Speaker attribution threshold, mirroring LOW_CONFIDENCE_THRESHOLD. A speaker
+ * is considered "verified" only when a label is present AND its confidence is
+ * high enough (>0.6). Null speaker (timestamp-only / pasted transcripts) or a
+ * low-confidence attribution is treated as unverified.
+ */
+export const SPEAKER_CONFIDENCE_THRESHOLD = 0.6;
+
+/** True when a speaker attribution is missing or uncertain (needs review). */
+export function isSpeakerUnverified(
+  speaker: string | null | undefined,
+  speakerConfidence: number,
+): boolean {
+  return (
+    speaker == null || speaker.trim() === "" || speakerConfidence < SPEAKER_CONFIDENCE_THRESHOLD
+  );
 }
 
 /** A persisted meeting row (immutable source transcript). */

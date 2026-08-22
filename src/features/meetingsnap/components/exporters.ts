@@ -5,11 +5,49 @@
  * (dynamically imported only when a download is requested, mirroring
  * src/searchablePdf.ts). No heavy new packages.
  */
-import type { MeetingDetail } from "../types";
+import type { MeetingDetail, MeetingSegment } from "../types";
 
 function confidenceNote(confidence: number): string {
   if (confidence < 0.6) return " — ⚠ low confidence, review";
   return "";
+}
+
+/** Format seconds as a compact human-readable timestamp: "12s", "1m 05s". */
+export function formatTimestamp(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return m > 0 ? `${m}m ${String(rem).padStart(2, "0")}s` : `${s}s`;
+}
+
+/** Format a segment as a labelled transcript line, e.g. `[12s–21s] text`. */
+export function segmentLabel(seg: MeetingSegment): string {
+  return `[${formatTimestamp(seg.start_sec)}–${formatTimestamp(seg.end_sec)}]`;
+}
+
+function segmentToLine(seg: MeetingSegment): string {
+  const speaker = seg.speaker ? `${seg.speaker}: ` : "";
+  return `- ${segmentLabel(seg)} ${speaker}${seg.text.trim()}`;
+}
+
+/** Speaker/attribution suffix for extracted items, when present. */
+function speakerNote(speaker: string | null, unverified: boolean): string | null {
+  if (!speaker) return null;
+  return unverified ? ` (speaker ${speaker} — unverified)` : ` (${speaker})`;
+}
+
+/** Render the meeting's transcript (segments when present, else raw source). */
+function transcriptLines(m: MeetingDetail): string[] {
+  const segments = m.extraction?.segments ?? [];
+  if (!segments.length) {
+    return m.sourceText ? [`\`\`\`\n${m.sourceText}\n\`\`\``] : ["_No transcript._"];
+  }
+  const lines: string[] = [
+    "> Transcript segments (timestamps; speaker labels become available in a future update):",
+    "",
+    ...segments.map(segmentToLine),
+  ];
+  return lines;
 }
 
 /** Render a meeting's full minutes as Markdown (preserving structured metadata). */
@@ -27,11 +65,17 @@ export function meetingToMarkdown(m: MeetingDetail): string {
   lines.push(ex.executive_summary || "No summary was extracted.");
   lines.push("");
 
+  lines.push("## Transcript");
+  lines.push("");
+  lines.push(...transcriptLines(m));
+  lines.push("");
+
   lines.push("## Decisions");
   lines.push("");
   if (ex.decisions.length) {
     for (const d of ex.decisions) {
-      lines.push(`- **${d.decision}**${confidenceNote(d.confidence)}`);
+      const sp = speakerNote(d.speaker, d.speakerUnverified);
+      lines.push(`- **${d.decision}**${confidenceNote(d.confidence)}${sp ?? ""}`);
       if (d.reason) lines.push(`  - Reason: ${d.reason}`);
       if (d.participants.length) lines.push(`  - Participants: ${d.participants.join(", ")}`);
     }
@@ -49,6 +93,7 @@ export function meetingToMarkdown(m: MeetingDetail): string {
         a.priority ? `Priority: ${a.priority}` : null,
         a.status ? `Status: ${a.status}` : null,
         a.due_date ? `Due: ${a.due_date}` : null,
+        speakerNote(a.speaker, a.speakerUnverified),
       ]
         .filter(Boolean)
         .join(" · ");
@@ -97,6 +142,7 @@ export function meetingToMarkdown(m: MeetingDetail): string {
         r.likelihood ? `likelihood ${r.likelihood}` : null,
         r.impact ? `impact ${r.impact}` : null,
         r.owner ? `owner ${r.owner}` : null,
+        speakerNote(r.speaker, r.speakerUnverified),
       ]
         .filter(Boolean)
         .join(" · ");
@@ -202,10 +248,26 @@ export async function meetingToPdf(m: MeetingDetail): Promise<Blob> {
   heading("Executive Summary");
   body(ex.executive_summary || "No summary was extracted.");
 
+  heading("Transcript");
+  const segments = ex.segments ?? [];
+  if (segments.length) {
+    for (const seg of segments) {
+      const speaker = seg.speaker ? `${seg.speaker}: ` : "";
+      body(`${segmentLabel(seg)} ${speaker}${seg.text.trim()}`, 6, 9, [90, 90, 90]);
+      y += 2;
+    }
+    body("Speaker labels aren't available yet — they arrive in a future update.", 6, 8, [160, 160, 160]);
+  } else if (m.sourceText) {
+    body(m.sourceText, 6, 9, [90, 90, 90]);
+  } else {
+    body("No transcript.", 6, 9, [90, 90, 90]);
+  }
+
   heading("Decisions");
   if (ex.decisions.length) {
     for (const d of ex.decisions) {
-      body(`• ${d.decision}`, 6, 10, [40, 40, 40]);
+      const sp = d.speaker ? (d.speakerUnverified ? ` — ${d.speaker} (unverified)` : ` — ${d.speaker}`) : "";
+      body(`• ${d.decision}${sp}`, 6, 10, [40, 40, 40]);
       if (d.reason) body(`  Reason: ${d.reason}`, 12, 9, [90, 90, 90]);
       if (d.participants.length) body(`  Participants: ${d.participants.join(", ")}`, 12, 9, [90, 90, 90]);
       y += 4;
@@ -217,7 +279,8 @@ export async function meetingToPdf(m: MeetingDetail): Promise<Blob> {
   heading("Action items");
   if (ex.action_items.length) {
     for (const a of ex.action_items) {
-      body(`• ${a.task}`, 6, 10, [40, 40, 40]);
+      const sp = a.speaker ? (a.speakerUnverified ? ` — ${a.speaker} (unverified)` : ` — ${a.speaker}`) : "";
+      body(`• ${a.task}${sp}`, 6, 10, [40, 40, 40]);
       const meta = [
         a.owner ? `Owner: ${a.owner}` : null,
         a.priority ? `Priority: ${a.priority}` : null,
@@ -245,7 +308,8 @@ export async function meetingToPdf(m: MeetingDetail): Promise<Blob> {
   heading("Risks");
   if (ex.risks.length) {
     for (const r of ex.risks) {
-      body(`• ${r.description}`, 6, 10, [40, 40, 40]);
+      const sp = r.speaker ? (r.speakerUnverified ? ` — ${r.speaker} (unverified)` : ` — ${r.speaker}`) : "";
+      body(`• ${r.description}${sp}`, 6, 10, [40, 40, 40]);
       if (r.mitigation) body(`  Mitigation: ${r.mitigation}`, 12, 9, [90, 90, 90]);
       y += 4;
     }

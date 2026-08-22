@@ -26,6 +26,8 @@ import {
   type MeetingDecision,
   type MeetingQuestion,
   type MeetingRisk,
+  type MeetingSegment,
+  isSpeakerUnverified,
 } from "./types";
 
 import {
@@ -131,15 +133,22 @@ export function clampConfidence(v: unknown): number {
 /* ------------------------------------------------------------------ */
 
 function normDecision(raw: Record<string, unknown>): MeetingDecision {
+  const speaker = asString(raw.speaker);
+  const speaker_confidence = clampConfidence(raw.speaker_confidence);
   return {
     decision: asString(raw.decision) ?? "Untitled decision",
     reason: asString(raw.reason),
     participants: asStringList(raw.participants),
     confidence: clampConfidence(raw.confidence),
+    speaker,
+    speaker_confidence,
+    speakerUnverified: isSpeakerUnverified(speaker, speaker_confidence),
   };
 }
 
 function normActionItem(raw: Record<string, unknown>): MeetingActionItem {
+  const speaker = asString(raw.speaker);
+  const speaker_confidence = clampConfidence(raw.speaker_confidence);
   return {
     task: asString(raw.task) ?? "Untitled action item",
     owner: asString(raw.owner),
@@ -148,6 +157,9 @@ function normActionItem(raw: Record<string, unknown>): MeetingActionItem {
     due_date: asString(raw.due_date),
     dependencies: asStringList(raw.dependencies),
     confidence: clampConfidence(raw.confidence),
+    speaker,
+    speaker_confidence,
+    speakerUnverified: isSpeakerUnverified(speaker, speaker_confidence),
   };
 }
 
@@ -160,6 +172,8 @@ function normQuestion(raw: Record<string, unknown>): MeetingQuestion {
 }
 
 function normRisk(raw: Record<string, unknown>): MeetingRisk {
+  const speaker = asString(raw.speaker);
+  const speaker_confidence = clampConfidence(raw.speaker_confidence);
   return {
     description: asString(raw.description) ?? "Untitled risk",
     likelihood: asPriority(raw.likelihood),
@@ -167,7 +181,40 @@ function normRisk(raw: Record<string, unknown>): MeetingRisk {
     mitigation: asString(raw.mitigation),
     owner: asString(raw.owner),
     confidence: clampConfidence(raw.confidence),
+    speaker,
+    speaker_confidence,
+    speakerUnverified: isSpeakerUnverified(speaker, speaker_confidence),
   };
+}
+
+/**
+ * Normalize a Whisper/Deepgram-derived segment into a strict MeetingSegment.
+ * Malformed entries (missing/invalid times or text) are skipped by the caller.
+ * `speaker` is null today; Deepgram will fill it in later.
+ */
+function normSegment(raw: unknown): MeetingSegment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const start = typeof r.start_sec === "number" ? r.start_sec : Number(r.start_sec);
+  const end = typeof r.end_sec === "number" ? r.end_sec : Number(r.end_sec);
+  const text = asString(r.text);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || !text) return null;
+  return {
+    speaker: asString(r.speaker),
+    start_sec: Math.max(0, start),
+    end_sec: Math.max(0, end),
+    text,
+  };
+}
+
+/** Normalize an arbitrary list of segments (skips malformed entries). */
+function normSegments(v: unknown): MeetingSegment[] {
+  if (!Array.isArray(v)) return [];
+  return v.map(normSegment).filter((s): s is MeetingSegment => s !== null).slice(0, MAX_LISTS);
+}
+
+function normSpeakers(v: unknown): string[] {
+  return asStringList(v);
 }
 
 /** Normalize arbitrary model output into the strict MeetingExtraction shape. */
@@ -199,7 +246,24 @@ export function normalizeExtraction(raw: unknown): MeetingExtraction {
           .map((x) => normRisk(x))
           .slice(0, MAX_LISTS)
       : [],
+    segments: normSegments(r.segments),
+    speakers: normSpeakers(r.speakers),
   };
+}
+
+/**
+ * Parse a stored `meeting_extractions.extraction` JSONB row value, which the
+ * @neondatabase/serverless driver returns as a parsed JS object (and sometimes
+ * as a JSON string). Handles both; malformed data normalizes to an empty
+ * extraction.
+ */
+export function parseExtractionRow(value: unknown): MeetingExtraction {
+  try {
+    const raw = typeof value === "string" ? JSON.parse(value) : value;
+    return normalizeExtraction(raw);
+  } catch {
+    return normalizeExtraction({});
+  }
 }
 
 /**
@@ -213,11 +277,16 @@ const SYSTEM_PROMPT = `You extract structured organizational knowledge from meet
 Return STRICT JSON only, with exactly these fields:
 {
   "executive_summary": string,
-  "decisions": [{ "decision": string, "reason": string|null, "participants": string[], "confidence": number }],
-  "action_items": [{ "task": string, "owner": string|null, "priority": "high"|"medium"|"low"|null, "status": string|null, "due_date": string|null, "dependencies": string[], "confidence": number }],
+  "decisions": [{ "decision": string, "reason": string|null, "participants": string[], "confidence": number, "speaker": string|null, "speaker_confidence": number }],
+  "action_items": [{ "task": string, "owner": string|null, "priority": "high"|"medium"|"low"|null, "status": string|null, "due_date": string|null, "dependencies": string[], "confidence": number, "speaker": string|null, "speaker_confidence": number }],
   "questions": [{ "question": string, "answered": boolean, "confidence": number }],
-  "risks": [{ "description": string, "likelihood": "high"|"medium"|"low"|null, "impact": "high"|"medium"|"low"|null, "mitigation": string|null, "owner": string|null, "confidence": number }]
+  "risks": [{ "description": string, "likelihood": "high"|"medium"|"low"|null, "impact": "high"|"medium"|"low"|null, "mitigation": string|null, "owner": string|null, "confidence": number, "speaker": string|null, "speaker_confidence": number }]
 }
+
+SPEAKER RULES:
+- "speaker" is the "Speaker N" label (e.g. "Speaker 1") whose words support the item, or null if the transcript is not speaker-labelled.
+- When the transcript has NO speaker labels (plain pasted text or timestamp-only transcription), return speaker: null and speaker_confidence: 0 for every item. Never invent a speaker label.
+- When speaker labels ARE present, set speaker_confidence (0..1) to how certain you are that the item's content came from that label; leave it low (< 0.6) when attribution is uncertain.
 
 CONFIDENCE RULES:
 - Assign HIGH confidence (>= 0.85) only for statements stated plainly and directly in the transcript.
@@ -303,6 +372,10 @@ async function analyzeAndPersist(input: {
   userId: string;
   title: string;
   sourceText: string;
+  /** Timestamped segments from the audio path (empty for the transcript path). */
+  segments?: MeetingSegment[];
+  /** Ordered distinct speaker labels (empty in the stepping stone). */
+  speakers?: string[];
 }): Promise<AnalyzeResult> {
   const meetingTier = await getUserMeetingTier(input.userId);
   const tierConfig = MEETING_TIERS[meetingTier];
@@ -321,7 +394,16 @@ async function analyzeAndPersist(input: {
     );
   }
 
-  const extracted = await extractWithAI(input.sourceText, input.title);
+  const baseExtraction = await extractWithAI(input.sourceText, input.title);
+  // Augment the model-derived extraction with the transcription-side metadata
+  // (timestamped segments + speaker labels) as versioned derived data, exactly
+  // like the rest of the extraction JSONB. Defaults to empty on the transcript
+  // path, which has no audio/timestamps.
+  const extracted: MeetingExtraction = {
+    ...baseExtraction,
+    segments: input.segments ?? [],
+    speakers: input.speakers ?? [],
+  };
   // Demo path: no DATABASE_URL → sql() no-ops; return a session-only meeting.
   if (!process.env.DATABASE_URL) {
     return {
@@ -367,20 +449,38 @@ async function analyzeAndPersist(input: {
 /* Speech-to-text (Whisper)                                             */
 /* ------------------------------------------------------------------ */
 
+/** Structured transcription result: flattened text + timestamped segments. */
+export interface TranscriptionResult {
+  /** The flattened transcript (concatenated segment text). */
+  transcript: string;
+  /** Timestamped slices of the recording, in order. */
+  segments: MeetingSegment[];
+  /**
+   * Ordered distinct speaker labels. Empty in this stepping stone — Whisper
+   * does not diarize. Deepgram will populate both this and each segment's
+   * `speaker` later without reshaping the pipeline.
+   */
+  speakers: string[];
+}
+
 /**
  * Transcribe an uploaded meeting recording via OpenAI's Whisper API
- * (`https://api.openai.com/v1/audio/transcriptions`, model `whisper-1`).
+ * (`https://api.openai.com/v1/audio/transcriptions`, model `whisper-1`) and
+ * return a STRUCTURED result: timestamped `segments[]` (each with `start_sec`,
+ * `end_sec`, `text`) plus the flattened `transcript` (segments' text joined)
+ * and an empty `speakers` list (Whisper has no speaker labels).
  *
  * The recording was uploaded to UploadThing and is referenced by `fileUrl`
  * (e.g. `https://utfs.io/f/<key>`). This fetches the bytes back and re-posts
- * them as multipart form data to Whisper. Reuses `process.env.OPENAI_API_KEY`
+ * them as multipart form data to Whisper with `response_format: "verbose_json"`
+ * so the API returns per-segment timing. Reuses `process.env.OPENAI_API_KEY`
  * exactly like the other AI helpers; if it is unset we throw the same honest
- * "not enabled yet" message. Returns the raw transcript text.
+ * "not enabled yet" message.
  */
 export async function transcribeAudio(input: {
   fileUrl: string;
   fileName: string;
-}): Promise<string> {
+}): Promise<TranscriptionResult> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Audio transcription isn't enabled yet — OPENAI_API_KEY is not connected.");
   }
@@ -401,6 +501,7 @@ export async function transcribeAudio(input: {
     new File([bytes], input.fileName || "recording.mp3", { type: audioRes.headers.get("content-type") ?? "application/octet-stream" }),
   );
   form.append("model", "whisper-1");
+  form.append("response_format", "verbose_json");
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -421,14 +522,38 @@ export async function transcribeAudio(input: {
     );
   }
 
-  const body = (await res.json()) as { text?: unknown };
-  const text = typeof body.text === "string" ? body.text.trim() : "";
-  if (text.length < 20) {
+  const body = (await res.json()) as { text?: unknown; segments?: unknown };
+  // Map Whisper's verbose_json segments [] ({ start, end, text }) into our
+  // structured MeetingSegment[]. Whitespace within each segment is collapsed.
+  const segments: MeetingSegment[] = normSegments(
+    (Array.isArray(body.segments) ? body.segments : []).map((s) => {
+      const r = (s ?? {}) as Record<string, unknown>;
+      return {
+        start_sec: r.start ?? r.start_sec,
+        end_sec: r.end ?? r.end_sec,
+        text: r.text,
+        speaker: null,
+      };
+    }),
+  );
+  // Flattened transcript = concatenated segment text (normalized). This is the
+  // backward-compatible value persisted to meetings.source_text.
+  const transcript =
+    segments
+      .map((s) => s.text.trim())
+      .filter(Boolean)
+      .join(" ")
+      .trim() || (typeof body.text === "string" ? body.text.trim() : "");
+  if (transcript.length < 20) {
     throw new Error(
       "No usable speech was detected in that recording. Try a clearer file, or upload a transcript instead.",
     );
   }
-  return text;
+  return {
+    transcript,
+    segments,
+    speakers: [], // stepping stone: no speaker labels yet (Deepgram fills later)
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -482,12 +607,10 @@ export const getMeeting = createServerFn({ method: "POST" })
     `) as Record<string, unknown>[];
     const r = rows[0];
     if (!r) return { configured: true, meeting: null };
-    let extraction: MeetingExtraction;
-    try {
-      extraction = normalizeExtraction(JSON.parse(String(r.extraction ?? "{}")));
-    } catch {
-      extraction = normalizeExtraction({});
-    }
+    // Robust to the @neondatabase/serverless driver returning the jsonb either
+    // as a parsed object or a string; also returns segments + speakers to the
+    // client alongside the rest of the extraction.
+    const extraction = parseExtractionRow(r.extraction);
     return {
       configured: true,
       meeting: {
@@ -552,16 +675,22 @@ export const analyzeAudio = createServerFn({ method: "POST" })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
     // 1) Speech-to-text. Throws a friendly message if the key is unset, the
-    //    file is unreachable, or Whisper returns no usable text.
-    const transcript = await transcribeAudio({
+    //    file is unreachable, or Whisper returns no usable text. Returns the
+    //    flattened transcript PLUS timestamped segments (empty speakers in the
+    //    stepping stone).
+    const transcription = await transcribeAudio({
       fileUrl: opts.data.fileUrl,
       fileName: opts.data.fileName || "recording.mp3",
     });
-    // 2) Same extract → AI-extract → persist path as transcript analysis.
+    // 2) Same extract → AI-extract → persist path as transcript analysis,
+    //    now carrying the timestamped segments + speaker labels into the
+    //    versioned extraction JSONB.
     return analyzeAndPersist({
       userId,
       title: opts.data.title,
-      sourceText: transcript,
+      sourceText: transcription.transcript,
+      segments: transcription.segments,
+      speakers: transcription.speakers,
     });
   });
 

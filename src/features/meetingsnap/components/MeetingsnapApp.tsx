@@ -13,6 +13,7 @@ import { uploadAudioRecording } from "../../../cloudSync";
 import {
   actionListToMarkdown,
   downloadText,
+  formatTimestamp,
   meetingToMarkdown,
   meetingToPdf,
 } from "./exporters";
@@ -27,6 +28,7 @@ import {
   type MeetingQuestion,
   type MeetingRisk,
   type MeetingSearchResult,
+  type MeetingSegment,
   type MeetingSummary,
 } from "../types";
 import { extractFileText } from "../textExtract";
@@ -95,13 +97,114 @@ function EmptyNote({ text }: { text: string }) {
   );
 }
 
-function ActionItemCard({ item }: { item: MeetingActionItem }) {
+/**
+ * Best-effort match between an extracted item's text and a timestamped
+ * transcript segment. Items are AI paraphrases, not verbatim quotes, so this
+ * uses keyword overlap (meaningful, non-stopword tokens). Returns the segment
+ * with the most shared tokens, or null when there's no real overlap. Any
+ * segment that shares at least one meaningful word is considered a match.
+ */
+const STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "but", "if", "then", "else", "when", "while",
+  "with", "without", "for", "to", "from", "of", "in", "on", "at", "by", "we",
+  "you", "i", "me", "my", "our", "us", "they", "them", "he", "she", "it",
+  "this", "that", "these", "those", "will", "would", "should", "could", "can",
+  "want", "need", "get", "got", "make", "like", "really", "just", "about",
+  "into", "over", "all", "do", "does", "did", "is", "are", "was", "were", "be",
+]);
+function meaningfulTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const raw of text.toLowerCase().split(/[^a-z0-9']+/)) {
+    const t = raw.replace(/^'+|'+$/g, "");
+    if (t.length >= 4 && !STOPWORDS.has(t)) out.add(t);
+  }
+  return out;
+}
+function matchingSegment(
+  segments: MeetingSegment[],
+  text: string,
+): MeetingSegment | null {
+  if (!segments.length) return null;
+  const itemTokens = meaningfulTokens(text);
+  if (!itemTokens.size) return null;
+  let best: MeetingSegment | null = null;
+  let bestOverlap = 0;
+  for (const seg of segments) {
+    const segTokens = meaningfulTokens(seg.text);
+    let overlap = 0;
+    segTokens.forEach((t) => {
+      if (itemTokens.has(t)) overlap += 1;
+    });
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = seg;
+    }
+  }
+  return bestOverlap > 0 ? best : null;
+}
+
+/** Small speaker-attribution badge on extracted items (empty in stepping stone). */
+function SpeakerBadge({
+  speaker,
+  unverified,
+}: {
+  speaker: string | null;
+  unverified: boolean;
+}) {
+  if (!speaker) return null;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        unverified ? "bg-amber-500/20 text-amber-300" : "bg-sky-500/15 text-sky-300"
+      }`}
+      title={unverified ? "Speaker attribution is uncertain — review" : `Attributed to ${speaker}`}
+    >
+      {speaker}
+      {unverified ? " · Review" : ""}
+    </span>
+  );
+}
+
+/** Jump-to-timestamp button shown on items that map to a transcript segment. */
+function SegmentJumpButton({
+  segment,
+  onJump,
+}: {
+  segment: MeetingSegment | null;
+  onJump?: (segment: MeetingSegment) => void;
+}) {
+  if (!segment || !onJump) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onJump(segment)}
+      title={`Jump to ${formatTimestamp(segment.start_sec)} in the transcript`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-semibold text-indigo-300 transition hover:bg-indigo-500/30"
+    >
+      ⏱ {formatTimestamp(segment.start_sec)}
+    </button>
+  );
+}
+
+function ActionItemCard({
+  item,
+  segment,
+  onJump,
+}: {
+  item: MeetingActionItem;
+  segment?: MeetingSegment | null;
+  onJump?: (segment: MeetingSegment) => void;
+}) {
   const low = isLowConfidence(item.confidence);
   return (
     <li className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <span className="font-medium text-gray-100">{item.task}</span>
-        {low ? <ReviewBadge /> : <ConfidenceTag confidence={item.confidence} />}
+        <div className="flex items-center gap-2">
+          <SpeakerBadge speaker={item.speaker} unverified={item.speakerUnverified} />
+          {low ? <ReviewBadge /> : <ConfidenceTag confidence={item.confidence} />}
+          <SegmentJumpButton segment={segment ?? null} onJump={onJump} />
+        </div>
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
         <div>
@@ -128,13 +231,25 @@ function ActionItemCard({ item }: { item: MeetingActionItem }) {
   );
 }
 
-function DecisionCard({ d }: { d: MeetingDecision }) {
+function DecisionCard({
+  d,
+  segment,
+  onJump,
+}: {
+  d: MeetingDecision;
+  segment?: MeetingSegment | null;
+  onJump?: (segment: MeetingSegment) => void;
+}) {
   const low = isLowConfidence(d.confidence);
   return (
     <li className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <span className="font-medium text-gray-100">{d.decision}</span>
-        {low ? <ReviewBadge /> : <ConfidenceTag confidence={d.confidence} />}
+        <div className="flex items-center gap-2">
+          <SpeakerBadge speaker={d.speaker} unverified={d.speakerUnverified} />
+          {low ? <ReviewBadge /> : <ConfidenceTag confidence={d.confidence} />}
+          <SegmentJumpButton segment={segment ?? null} onJump={onJump} />
+        </div>
       </div>
       {d.reason ? <p className="mt-2 text-sm text-gray-400">{d.reason}</p> : null}
       {d.participants.length > 0 ? (
@@ -165,13 +280,25 @@ function QuestionCard({ q }: { q: MeetingQuestion }) {
   );
 }
 
-function RiskCard({ r }: { r: MeetingRisk }) {
+function RiskCard({
+  r,
+  segment,
+  onJump,
+}: {
+  r: MeetingRisk;
+  segment?: MeetingSegment | null;
+  onJump?: (segment: MeetingSegment) => void;
+}) {
   const low = isLowConfidence(r.confidence);
   return (
     <li className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <span className="font-medium text-gray-100">{r.description}</span>
-        {low ? <ReviewBadge /> : <ConfidenceTag confidence={r.confidence} />}
+        <div className="flex items-center gap-2">
+          <SpeakerBadge speaker={r.speaker} unverified={r.speakerUnverified} />
+          {low ? <ReviewBadge /> : <ConfidenceTag confidence={r.confidence} />}
+          <SegmentJumpButton segment={segment ?? null} onJump={onJump} />
+        </div>
       </div>
       <p className="mt-2 text-xs text-gray-500">
         Likelihood: <span className="capitalize text-gray-300">{r.likelihood ?? "—"}</span> · Impact:{" "}
@@ -341,9 +468,94 @@ function ExportToolbar({ meeting }: { meeting: MeetingDetail }) {
 
 function ResultsView({ meeting }: { meeting: MeetingDetail }) {
   const ex: MeetingExtraction = meeting.extraction;
+  const segments = ex.segments ?? [];
+  const [transcriptView, setTranscriptView] = useState<"raw" | "segments">(
+    segments.length ? "segments" : "raw",
+  );
+  const [highlightStart, setHighlightStart] = useState<number | null>(null);
+  const segRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Jump from an item card to the timestamped segment that voiced it: switch to
+  // the timestamp view (if needed), then scroll to + highlight that segment.
+  const jumpTo = useCallback((seg: MeetingSegment) => {
+    setTranscriptView("segments");
+    setHighlightStart(seg.start_sec);
+    window.setTimeout(() => {
+      segRefs.current.get(seg.start_sec)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
+    // Clear the highlight after a few seconds.
+    window.setTimeout(() => setHighlightStart(null), 4000);
+  }, []);
+
+  const viewBtn = (v: "raw" | "segments", label: string) => (
+    <button
+      type="button"
+      onClick={() => setTranscriptView(v)}
+      className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
+        transcriptView === v
+          ? "bg-indigo-600 text-white"
+          : "text-gray-300 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="mt-8 space-y-8">
       <ExportToolbar meeting={meeting} />
+
+      {/* Transcript with raw/timestamp view toggle + jump-to-timestamp */}
+      <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-semibold text-gray-200">Transcript</h3>
+          {segments.length > 0 && (
+            <div className="flex rounded-lg border border-gray-700 bg-gray-950/60 p-0.5">
+              {viewBtn("raw", "Raw transcript")}
+              {viewBtn("segments", "Timestamp view")}
+            </div>
+          )}
+        </div>
+        {segments.length > 0 && (
+          <p className="mt-2 text-xs text-gray-500">
+            Speaker labels aren&apos;t available yet — timestamps show where each point was said
+            (speaker attribution arrives in a future update).
+          </p>
+        )}
+        <div className="mt-3 max-h-[360px] overflow-auto rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+          {transcriptView === "segments" && segments.length ? (
+            segments.map((seg) => (
+              <div
+                key={seg.start_sec}
+                ref={(el) => {
+                  if (el) segRefs.current.set(seg.start_sec, el);
+                  else segRefs.current.delete(seg.start_sec);
+                }}
+                className={`mb-2 rounded-lg px-2 py-1 text-sm leading-relaxed transition ${
+                  highlightStart === seg.start_sec
+                    ? "bg-indigo-500/20 ring-1 ring-indigo-500/50"
+                    : "text-gray-300"
+                }`}
+              >
+                <span className="mr-2 inline-block rounded bg-gray-800 px-1.5 py-0.5 font-mono text-[10px] text-indigo-300">
+                  {formatTimestamp(seg.start_sec)}–{formatTimestamp(seg.end_sec)}
+                </span>
+                {seg.speaker ? (
+                  <span className="mr-2 inline-block rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+                    {seg.speaker}
+                  </span>
+                ) : null}
+                {seg.text}
+              </div>
+            ))
+          ) : (
+            <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-400">
+              {meeting.sourceText}
+            </pre>
+          )}
+        </div>
+      </section>
+
       <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
         <h3 className="font-semibold text-indigo-300">Executive summary</h3>
         <p className="mt-2 leading-relaxed text-gray-300">
@@ -356,7 +568,12 @@ function ResultsView({ meeting }: { meeting: MeetingDetail }) {
         {ex.decisions.length ? (
           <ul className="mt-3 space-y-2">
             {ex.decisions.map((d, i) => (
-              <DecisionCard key={`${d.decision}-${i}`} d={d} />
+              <DecisionCard
+                key={`${d.decision}-${i}`}
+                d={d}
+                segment={matchingSegment(segments, d.decision)}
+                onJump={jumpTo}
+              />
             ))}
           </ul>
         ) : (
@@ -369,7 +586,12 @@ function ResultsView({ meeting }: { meeting: MeetingDetail }) {
         {ex.action_items.length ? (
           <ul className="mt-3 space-y-2">
             {ex.action_items.map((a, i) => (
-              <ActionItemCard key={`${a.task}-${i}`} item={a} />
+              <ActionItemCard
+                key={`${a.task}-${i}`}
+                item={a}
+                segment={matchingSegment(segments, a.task)}
+                onJump={jumpTo}
+              />
             ))}
           </ul>
         ) : (
@@ -395,7 +617,12 @@ function ResultsView({ meeting }: { meeting: MeetingDetail }) {
         {ex.risks.length ? (
           <ul className="mt-3 space-y-2">
             {ex.risks.map((r, i) => (
-              <RiskCard key={`${r.description}-${i}`} r={r} />
+              <RiskCard
+                key={`${r.description}-${i}`}
+                r={r}
+                segment={matchingSegment(segments, r.description)}
+                onJump={jumpTo}
+              />
             ))}
           </ul>
         ) : (
