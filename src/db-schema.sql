@@ -231,6 +231,9 @@ CREATE INDEX IF NOT EXISTS idx_object_documents_object_id_created_at
   ON object_documents (object_id, created_at DESC);
 
 -- A timeline entry for an object: installed → serviced → repaired, etc.
+-- `cost` is the optional dollar cost of the work (repair/service/install),
+-- recorded by the owner for spend analytics and the home-sale/insurance
+-- report. Null when the owner didn't enter a cost for this entry.
 CREATE TABLE IF NOT EXISTS object_events (
   id SERIAL PRIMARY KEY,
   object_id INTEGER NOT NULL REFERENCES property_objects(id) ON DELETE CASCADE,
@@ -238,10 +241,15 @@ CREATE TABLE IF NOT EXISTS object_events (
   occurred_on TEXT,
   title TEXT,
   notes TEXT,
+  cost NUMERIC,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_object_events_object_id_created_at
   ON object_events (object_id, created_at DESC);
+
+-- Safe upgrade for databases created before the analytics feature existed:
+-- adds the cost column to existing object_events tables.
+ALTER TABLE object_events ADD COLUMN IF NOT EXISTS cost NUMERIC;
 
 -- A recurring maintenance task on an object (e.g. "Main HVAC — replace filter
 -- every 3 months", "Water heater — flush annually", "Smoke detectors — replace

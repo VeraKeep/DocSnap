@@ -39,6 +39,7 @@ import {
   listSchedules,
   updateObject,
 } from "../server";
+import { HomeSnapAnalytics } from "./HomeSnapAnalytics";
 import {
   DOCUMENT_TYPE_LABELS,
   EVENT_TYPE_LABELS,
@@ -496,6 +497,7 @@ function EventForm({
   const [occurredOn, setOccurredOn] = useState("");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
+  const [cost, setCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -511,11 +513,13 @@ function EventForm({
           occurred_on: occurredOn || null,
           title: title || null,
           notes: notes || null,
+          cost: cost === "" ? null : Number(cost),
         },
       });
       setTitle("");
       setNotes("");
       setOccurredOn("");
+      setCost("");
       onCreated(event as ObjectEvent);
     } catch (err) {
       setError(messageFromError(err, "The event could not be added."));
@@ -526,7 +530,7 @@ function EventForm({
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <label className={labelCls} htmlFor="hs-ev-type">Type</label>
           <select id="hs-ev-type" className={inputCls} value={eventType} onChange={(e) => setEventType(asEventType(e.target.value))}>
@@ -543,11 +547,18 @@ function EventForm({
           <label className={labelCls} htmlFor="hs-ev-title">Title</label>
           <input id="hs-ev-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Annual service" />
         </div>
+        <div>
+          <label className={labelCls} htmlFor="hs-ev-cost">Cost ($)</label>
+          <input id="hs-ev-cost" type="number" min="0" step="0.01" className={inputCls} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 250" />
+        </div>
       </div>
       <div>
         <label className={labelCls} htmlFor="hs-ev-notes">Notes</label>
         <input id="hs-ev-notes" className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Replaced air filter, cleaned coils" />
       </div>
+      <p className="text-xs text-gray-500">
+        Tip: enter a cost for repair/service work so it's counted in your spend analytics.
+      </p>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
       <button type="submit" disabled={busy || !configured} className={btnPrimary}>
         {busy ? "Adding…" : "Add to timeline"}
@@ -1117,6 +1128,11 @@ function ObjectDetail({
                           <span className="text-sm font-medium text-gray-200">
                             {ev.title ?? "Untitled event"}
                           </span>
+                          {ev.cost != null && ev.cost > 0 && (
+                            <span className="rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                              {money(ev.cost)}
+                            </span>
+                          )}
                         </div>
                         {ev.notes && <p className="mt-1 text-sm text-gray-400">{ev.notes}</p>}
                       </div>
@@ -1760,9 +1776,10 @@ export function HomeSnapApp() {
   const [showNewObject, setShowNewObject] = useState(false);
   const [editingObject, setEditingObject] = useState<PropertyObject | null>(null);
   const [dueItems, setDueItems] = useState<MaintenanceDueItem[]>([]);
-  // Top-level view: "home" (the property-centric record + maintenance) or
-  // "inventory" (the cross-home big-ticket possessions list).
-  const [view, setView] = useState<"home" | "inventory">("home");
+  // Top-level view: "home" (the property-centric record + maintenance),
+  // "inventory" (the cross-home big-ticket possessions list), or "analytics"
+  // (the spend-over-time dashboard + printable home-sale/insurance report).
+  const [view, setView] = useState<"home" | "inventory" | "analytics">("home");
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
@@ -1958,6 +1975,15 @@ export function HomeSnapApp() {
         >
           📦 Inventory
         </button>
+        <button
+          type="button"
+          onClick={() => setView("analytics")}
+          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            view === "analytics" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          📊 Spend
+        </button>
       </div>
 
       {view === "inventory" ? (
@@ -1967,6 +1993,8 @@ export function HomeSnapApp() {
           defaultPropertyId={selectedPropertyId}
           onSelect={selectInventoryItem}
         />
+      ) : view === "analytics" ? (
+        <HomeSnapAnalytics />
       ) : (
         <>
           {status === "error" && <ErrorCard message={loadError} onRetry={() => void load()} />}

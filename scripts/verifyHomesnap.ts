@@ -65,11 +65,25 @@ async function main() {
   const docId = clamp(docRows[0].id);
 
   const evRows = (await sql`
-    INSERT INTO object_events (object_id, event_type, occurred_on, title)
-    VALUES (${objectId}, ${"installed"}, ${"2026-02-01"}, ${"Installed"})
+    INSERT INTO object_events (object_id, event_type, occurred_on, title, cost)
+    VALUES (${objectId}, ${"installed"}, ${"2026-02-01"}, ${"Installed"}, ${0})
     RETURNING id
   `) as unknown as { id: number }[];
   const eventId = clamp(evRows[0].id);
+
+  // Analytic cost-bearing event (repair/service with a dollar cost) — the
+  // driver returns NUMERIC as a string, so coerce with Number() before the
+  // comparison below (persisted value is the source of truth).
+  const costedEvRows = (await sql`
+    INSERT INTO object_events (object_id, event_type, occurred_on, title, cost)
+    VALUES (${objectId}, ${"repaired"}, ${"2026-07-15"}, ${"Compressor repair"}, ${850.5})
+    RETURNING id, cost
+  `) as unknown as { id: number; cost: string }[];
+  const costedEventId = clamp(costedEvRows[0].id);
+  if (Number(costedEvRows[0].cost) !== 850.5) {
+    console.error("FAIL: object_events.cost did not round-trip.");
+    process.exit(1);
+  }
 
   // Insert a maintenance schedule and round-trip "mark done" (advances
   // next_due by the interval — the exact logic completeSchedule uses).
@@ -156,6 +170,25 @@ async function main() {
     process.exit(1);
   }
   console.log("OK: owner scoping — another user cannot read these rows.");
+
+  // 3.5) Analytics: the cost-bearing event and object purchase prices drive the
+  // spend aggregation (the exact query getHomeAnalytics runs). The costed
+  // "Compressor repair" (850.5) must appear in the event spend total.
+  const analytics = (await sql`
+    SELECT
+      COALESCE((SELECT SUM(po.purchase_price) FROM property_objects po
+        JOIN properties p ON p.id = po.property_id WHERE p.clerk_user_id = ${TEST_USER}), 0) AS object_spend,
+      COALESCE((SELECT SUM(oe.cost) FROM object_events oe
+        JOIN property_objects po ON po.id = oe.object_id
+        JOIN properties p ON p.id = po.property_id
+        WHERE p.clerk_user_id = ${TEST_USER} AND oe.cost IS NOT NULL), 0) AS event_spend
+  `) as unknown as { object_spend: string; event_spend: string }[];
+  const a = analytics[0];
+  if (Number(a.event_spend) !== 850.5) {
+    console.error("FAIL: analytics event spend did not include the costed event (850.5).");
+    process.exit(1);
+  }
+  console.log(`Analytics OK: object_spend=${a.object_spend} event_spend=${a.event_spend} (costed event #${costedEventId} summed).`);
 
   // 4) Granting the add-on unlocks (mirrors setHomeSnapAddon).
   await sql`

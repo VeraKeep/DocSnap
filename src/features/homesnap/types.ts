@@ -117,7 +117,105 @@ export interface ObjectEvent {
   occurred_on: string | null;
   title: string | null;
   notes: string | null;
+  /**
+   * Optional cost of the event (repair/service/install work), in dollars. Used
+   * by the spend-analytics view and the home-sale/insurance report. Null when
+   * the owner didn't record a cost for this entry. Not every event has a cost —
+   * only the ones the owner entered one for.
+   */
+  cost: number | null;
   created_at: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Spend analytics & home-sale/insurance report (improvement-log       */
+/* analytics). Computed server-side from the object fields and         */
+/* timeline events that already exist; nothing here is user-entered.   */
+/* ------------------------------------------------------------------ */
+
+/** One year bucket of spend: object purchases vs repair/service costs. */
+export interface SpendYearBucket {
+  year: number;
+  objectSpend: number;
+  eventSpend: number;
+  total: number;
+}
+
+/** Spend (from object purchase prices) grouped by object type. */
+export interface SpendByType {
+  object_type: ObjectType;
+  objectSpend: number;
+  count: number;
+}
+
+/**
+ * The cross-home spend dashboard: "everything I've spent on the house over
+ * time". `totalSpend` = objectSpend (sum of property_objects.purchase_price)
+ * + eventSpend (sum of cost-bearing object_events). `byYear` buckets both by
+ * calendar year; `byType` breaks the object purchase spend down by object
+ * type (improvements vs appliances vs systems …). `eventCount` is how many
+ * timeline entries carry a recorded cost (i.e. how many repairs/services are
+ * in the spend picture).
+ */
+export interface AnalyticsData {
+  configured: boolean;
+  totalSpend: number;
+  objectSpend: number;
+  eventSpend: number;
+  eventCount: number;
+  byYear: SpendYearBucket[];
+  byType: SpendByType[];
+}
+
+/** One row of the printable home-sale/insurance report — a home object. */
+export interface ReportObjectItem {
+  id: number;
+  property_id: number;
+  property_nickname: string;
+  object_type: ObjectType;
+  name: string;
+  room_location: string | null;
+  purchase_date: string | null;
+  installation_date: string | null;
+  purchase_price: number | null;
+  warranty_expiration: string | null;
+  status: ObjectStatus;
+  /** Sum of this object's cost-bearing events (repair/service spend). */
+  event_spend: number;
+}
+
+/** One row of the report — a cost-bearing timeline entry (repair/service). */
+export interface ReportEventItem {
+  id: number;
+  object_id: number;
+  object_name: string;
+  event_type: EventType;
+  occurred_on: string | null;
+  title: string | null;
+  cost: number | null;
+}
+
+/**
+ * A clean, printable home-sale / insurance report: every recorded property,
+ * object, and cost-bearing event, plus the running totals. Built only from
+ * what's already recorded in HomeSnap — nothing is fabricated.
+ */
+export interface HomeReportData {
+  configured: boolean;
+  /** ISO timestamp of when the report was generated (for the printed copy). */
+  generated_at: string;
+  totalSpend: number;
+  objectSpend: number;
+  eventSpend: number;
+  properties: {
+    id: number;
+    nickname: string;
+    property_type: PropertyType;
+    purchase_date: string | null;
+    purchase_price: number | null;
+  }[];
+  objects: ReportObjectItem[];
+  events: ReportEventItem[];
 }
 
 /**
