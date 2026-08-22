@@ -37,6 +37,9 @@ import {
   listObjects,
   listProperties,
   listSchedules,
+  listShares,
+  revokeShare,
+  shareProperty,
   updateObject,
 } from "../server";
 import { HomeSnapAnalytics } from "./HomeSnapAnalytics";
@@ -46,7 +49,9 @@ import {
   INVENTORY_CATEGORY_LABELS,
   INTERVAL_UNIT_LABELS,
   OBJECT_TYPE_LABELS,
+  PROPERTY_ACCESS_LABELS,
   PROPERTY_TYPE_LABELS,
+  SHARE_ROLE_LABELS,
   TASK_TYPE_LABELS,
   asDocumentType,
   asEventType,
@@ -54,6 +59,7 @@ import {
   asInventoryCategory,
   asObjectType,
   asPropertyType,
+  asShareRole,
   asTaskType,
   type DocumentType,
   type EventType,
@@ -68,7 +74,9 @@ import {
   type ObjectType,
   type Property,
   type PropertyObject,
+  type PropertyShare,
   type PropertyType,
+  type ShareRole,
   type TaskType,
 } from "../types";
 
@@ -1256,6 +1264,7 @@ function ObjectCard({
   onEdit,
   onToggleStatus,
   onDelete,
+  canEdit = true,
 }: {
   object: PropertyObject;
   selected: boolean;
@@ -1263,6 +1272,8 @@ function ObjectCard({
   onEdit: () => void;
   onToggleStatus: () => void;
   onDelete: () => void;
+  /** false for read-only ('view') grantee — hides edit/retire/delete. */
+  canEdit?: boolean;
 }) {
   return (
     <div
@@ -1286,29 +1297,31 @@ function ObjectCard({
           {object.room_location ? ` · ${object.room_location}` : ""}
         </span>
       </button>
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-200 transition hover:bg-gray-700"
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onToggleStatus}
-          className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-200 transition hover:bg-gray-700"
-        >
-          {object.status === "retired" ? "Activate" : "Retire"}
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition hover:bg-red-900/30 hover:text-red-300"
-        >
-          Delete
-        </button>
-      </div>
+      {canEdit && (
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-200 transition hover:bg-gray-700"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onToggleStatus}
+            className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-200 transition hover:bg-gray-700"
+          >
+            {object.status === "retired" ? "Activate" : "Retire"}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition hover:bg-red-900/30 hover:text-red-300"
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1755,6 +1768,153 @@ function InventoryView({
 }
 
 /* ---------------------------------------------------------------- */
+/* Sharing / household access                                        */
+/* ---------------------------------------------------------------- */
+/**
+ * Owner-only panel to manage who can view/edit a property. Lists current
+ * grants (email + role), adds a new grant by email, and revokes any grant.
+ * Read-only grantees never see this panel — it is rendered only when the
+ * selected property's access_role is 'owner' (HomeSnapApp).
+ */
+function SharingPanel({ propertyId }: { propertyId: number }) {
+  const [shares, setShares] = useState<PropertyShare[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [loadError, setLoadError] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<ShareRole>("view");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadShares = useCallback(async () => {
+    if (!propertyId) return;
+    setStatus("loading");
+    try {
+      const res = await listShares({ data: { property_id: propertyId } });
+      setShares(((res as { shares?: PropertyShare[] }).shares as PropertyShare[]) ?? []);
+      setStatus("ready");
+      setLoadError("");
+    } catch (err) {
+      setStatus("error");
+      setLoadError(messageFromError(err, "The people shared with this property couldn't be loaded."));
+    }
+  }, [propertyId]);
+
+  useEffect(() => {
+    void loadShares();
+  }, [loadShares]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await shareProperty({ data: { property_id: propertyId, grantee_email: email, role } });
+      setEmail("");
+      await loadShares();
+    } catch (err) {
+      setError(messageFromError(err, "That person couldn't be added. Please try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(s: PropertyShare) {
+    if (!window.confirm(`Stop sharing this property with ${s.grantee_email ?? "this person"}?`)) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await revokeShare({
+        data: { property_id: propertyId, grantee_user_id: s.grantee_user_id },
+      });
+      await loadShares();
+    } catch (err) {
+      setError(messageFromError(err, "That person couldn't be removed. Please try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-4">
+      <h3 className="text-sm font-semibold text-gray-200">Share with household &amp; helpers</h3>
+      <p className="mt-1 text-xs text-gray-500">
+        Anyone you add can see this home's records. “Can view” is read-only; “Can edit” lets them
+        add and update objects, documents, and maintenance.
+      </p>
+
+      {status === "error" && <ErrorCard message={loadError} onRetry={() => void loadShares()} />}
+
+      <form onSubmit={submit} className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="min-w-52 flex-1">
+          <span className="block text-xs font-medium text-gray-400">Their DocSnap email</span>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="partner@example.com"
+            className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-indigo-500"
+          />
+        </label>
+        <label>
+          <span className="block text-xs font-medium text-gray-400">Access</span>
+          <select
+            value={role}
+            onChange={(e) => setRole(asShareRole(e.target.value))}
+            className="mt-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-100 outline-none focus:border-indigo-500"
+          >
+            {(Object.keys(SHARE_ROLE_LABELS) as ShareRole[]).map((r) => (
+              <option key={r} value={r}>
+                {SHARE_ROLE_LABELS[r]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {busy ? "Adding…" : "Share"}
+        </button>
+        {error && <p className="w-full text-xs text-red-400">{error}</p>}
+      </form>
+
+      {status === "loading" ? (
+        <div className="mt-4 h-8 animate-pulse rounded-lg bg-gray-800/40" />
+      ) : shares.length ? (
+        <ul className="mt-4 space-y-2">
+          {shares.map((s) => (
+            <li
+              key={s.grantee_user_id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2"
+            >
+              <div>
+                <span className="block text-sm text-gray-100">{s.grantee_email ?? "Shared user"}</span>
+                <span className="block text-xs text-gray-500">{SHARE_ROLE_LABELS[s.role]}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void revoke(s)}
+                className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition hover:bg-red-900/30 hover:text-red-300"
+              >
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-xs text-gray-500">
+          Not shared with anyone yet — enter an email above to grant access.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* Main app                                                          */
 /* ---------------------------------------------------------------- */
 export function HomeSnapApp() {
@@ -1783,6 +1943,9 @@ export function HomeSnapApp() {
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
+  // A 'view' grantee can read but not write; the owner and 'edit' grantees can.
+  const canEdit = selectedProperty ? selectedProperty.access_role !== "view" : true;
+  const isOwner = selectedProperty ? selectedProperty.access_role === "owner" : false;
 
   /** Load the cross-home "Maintenance due / Coming up" list. Best-effort. */
   const loadDue = useCallback(async () => {
@@ -2061,7 +2224,20 @@ export function HomeSnapApp() {
                 }`}
               >
                 <span>
-                  <span className="block text-sm font-medium text-gray-100">{p.nickname}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="block text-sm font-medium text-gray-100">{p.nickname}</span>
+                    {p.access_role !== "owner" && (
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          p.access_role === "edit"
+                            ? "bg-amber-900/40 text-amber-300"
+                            : "bg-gray-800 text-gray-400"
+                        }`}
+                      >
+                        {PROPERTY_ACCESS_LABELS[p.access_role]}
+                      </span>
+                    )}
+                  </span>
                   <span className="block text-xs text-gray-500">
                     {PROPERTY_TYPE_LABELS[p.property_type]}
                     {p.purchase_date ? ` · purchased ${p.purchase_date}` : ""}
@@ -2095,12 +2271,16 @@ export function HomeSnapApp() {
                 documents and history.
               </p>
             </div>
-            {!showNewObject && !editingObject && (
+            {!showNewObject && !editingObject && canEdit && (
               <button type="button" onClick={() => setShowNewObject(true)} className={btnGhost}>
                 + Add object
               </button>
             )}
           </div>
+
+          {isOwner && (
+            <SharingPanel key={selectedProperty.id} propertyId={selectedProperty.id} />
+          )}
 
           {(showNewObject || editingObject) && (
             <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/40 p-4">
@@ -2147,6 +2327,7 @@ export function HomeSnapApp() {
                   key={o.id}
                   object={o}
                   selected={o.id === selectedObjectId}
+                  canEdit={canEdit}
                   onSelect={() => setSelectedObjectId(o.id)}
                   onEdit={() => {
                     setShowNewObject(false);

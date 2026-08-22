@@ -214,6 +214,28 @@ CREATE TABLE IF NOT EXISTS property_objects (
 CREATE INDEX IF NOT EXISTS idx_property_objects_property_id_created_at
   ON property_objects (property_id, created_at DESC);
 
+-- Household sharing: a property owner can share a property with other DocSnap
+-- users so multiple household members can view/maintain the same records.
+-- grantee_user_id is the resolved DocSnap user (users.clerk_user_id) being
+-- granted access; grantee_email is a snapshot of the email the owner entered
+-- (kept for display even if the user later changes it). role controls write
+-- access: 'view' = read-only, 'edit' = read + write. The owner always retains
+-- full access; this table only ever ADDS access for named grantees, never
+-- removes it. Every consumer MUST resolve a property through its owner
+-- (properties.clerk_user_id) OR an active share row here — never by bare id —
+-- so a non-shared user can never reach another owner's records.
+CREATE TABLE IF NOT EXISTS property_shares (
+  id SERIAL PRIMARY KEY,
+  property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  grantee_user_id TEXT NOT NULL,       -- users.clerk_user_id being granted access
+  grantee_email TEXT,                  -- snapshot of the email shown to the owner
+  role TEXT NOT NULL DEFAULT 'view',   -- view/edit
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (property_id, grantee_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_property_shares_grantee_user_id
+  ON property_shares (grantee_user_id);
+
 -- Safe upgrade for databases created before the inventory feature existed.
 ALTER TABLE property_objects ADD COLUMN IF NOT EXISTS inventory_category TEXT;
 

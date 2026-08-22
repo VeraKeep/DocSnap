@@ -18,6 +18,16 @@ export type ObjectType =
   | "inventory"
   | "other";
 export type ObjectStatus = "active" | "retired";
+
+/**
+ * Access role a caller holds for a property. 'owner' = the property's creator
+ * (full access, including sharing). 'edit' = a shared member who can read AND
+ * write the property's records. 'view' = a shared member who can only read.
+ */
+export type PropertyAccessRole = "owner" | "edit" | "view";
+
+/** A role that can be granted via a property share ('owner' is implicit). */
+export type ShareRole = "view" | "edit";
 export type DocumentType =
   | "receipt"
   | "invoice"
@@ -63,6 +73,27 @@ export interface Property {
   property_type: PropertyType;
   purchase_date: string | null;
   purchase_price: number | null;
+  created_at: string;
+  /**
+   * The caller's access to this property. listProperties returns the caller's
+   * OWN properties (access_role 'owner') PLUS properties others have shared
+   * with them (access_role 'view' or 'edit'). Drives whether the UI offers
+   * write actions and the sharing panel.
+   */
+  access_role: PropertyAccessRole;
+}
+
+/**
+ * One person a property owner has shared a property with. grantee_user_id is
+ * the DocSnap user (users.clerk_user_id) who was granted access; grantee_email
+ * is a display snapshot of the email the owner entered when they granted it.
+ */
+export interface PropertyShare {
+  id: number;
+  property_id: number;
+  grantee_user_id: string;
+  grantee_email: string | null;
+  role: ShareRole;
   created_at: string;
 }
 
@@ -257,6 +288,17 @@ export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
   other: "Other",
 };
 
+export const SHARE_ROLE_LABELS: Record<ShareRole, string> = {
+  view: "Can view",
+  edit: "Can edit",
+};
+
+export const PROPERTY_ACCESS_LABELS: Record<PropertyAccessRole, string> = {
+  owner: "Owner",
+  edit: "Can edit",
+  view: "Can view",
+};
+
 export const OBJECT_TYPE_LABELS: Record<ObjectType, string> = {
   system: "System",
   appliance: "Appliance",
@@ -322,6 +364,10 @@ export function asPropertyType(v: unknown): PropertyType {
   return typeof v === "string" && v in PROPERTY_TYPE_LABELS
     ? (v as PropertyType)
     : "other";
+}
+
+export function asShareRole(v: unknown): ShareRole {
+  return v === "edit" ? "edit" : "view";
 }
 
 export function asDocumentType(v: unknown): DocumentType {
