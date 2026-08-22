@@ -37,6 +37,8 @@ import {
   type DocumentType,
   type EventType,
   type IntervalUnit,
+  type AnalyticsData,
+  type HomeReportData,
   type InventoryItem,
   type MaintenanceDueItem,
   type MaintenanceSchedule,
@@ -47,6 +49,10 @@ import {
   type Property,
   type PropertyObject,
   type PropertyType,
+  type ReportEventItem,
+  type ReportObjectItem,
+  type SpendByType,
+  type SpendYearBucket,
   type TaskType,
 } from "./types";
 
@@ -115,6 +121,7 @@ function toEvent(r: Record<string, unknown>): ObjectEvent {
     occurred_on: (r.occurred_on as string | null) ?? null,
     title: (r.title as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
+    cost: r.cost == null ? null : Number(r.cost),
     created_at: String(r.created_at),
   };
 }
@@ -834,6 +841,7 @@ export const createEvent = createServerFn({ method: "POST" })
       occurred_on?: unknown;
       title?: unknown;
       notes?: unknown;
+      cost?: unknown;
     };
     return {
       object_id: positiveId(d.object_id, "Object id"),
@@ -841,6 +849,7 @@ export const createEvent = createServerFn({ method: "POST" })
       occurred_on: text(d.occurred_on)?.slice(0, 40) ?? null,
       title: text(d.title)?.slice(0, 300) ?? null,
       notes: text(d.notes)?.slice(0, 2000) ?? null,
+      cost: price(d.cost),
     };
   })
   .handler(async ({ data }) => {
@@ -851,8 +860,8 @@ export const createEvent = createServerFn({ method: "POST" })
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
     const rows = (await sql`
-      INSERT INTO object_events (object_id, event_type, occurred_on, title, notes)
-      VALUES (${data.object_id}, ${data.event_type}, ${data.occurred_on}, ${data.title}, ${data.notes})
+      INSERT INTO object_events (object_id, event_type, occurred_on, title, notes, cost)
+      VALUES (${data.object_id}, ${data.event_type}, ${data.occurred_on}, ${data.title}, ${data.notes}, ${data.cost})
       RETURNING *
     `) as Record<string, unknown>[];
     return { event: toEvent(rows[0]) };
@@ -1112,3 +1121,224 @@ export const getHomeObjectGarageLink = createServerFn({ method: "POST" })
       },
     };
   });
+
+/* ------------------------------------------------------------------ */
+/* Improvement-log analytics & home-sale/insurance report               */
+/* ------------------------------------------------------------------ */
+
+/** Extract the first 4-digit year from a free-text date, else from fallback. */
+function yearOf(dateText: string | null, fallbackIso: string): number {
+  const m = /(?:19|20)\d{2}/.exec(dateText ?? "");
+  if (m) return Number(m[0]);
+  const fm = /(?:19|20)\d{2}/.exec(fallbackIso ?? "");
+  return fm ? Number(fm[0]) : new Date().getFullYear();
+}
+
+/** Round a money sum to cents (floats from NUMERIC string coercion). */
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Cross-home spend analytics: "everything I've spent on the house over time".
+ * Aggregates only what the owner already recorded:
+ *   - object spend — sum of property_objects.purchase_price, bucketed by
+ *     calendar year and grouped by object type (improvements vs appliances vs
+ *     systems …). The object's purchase date drives the year, falling back to
+ *     installation date, then created_at.
+ *   - event spend — sum of cost-bearing object_events (repair/service costs),
+ *     bucketed by occurred_on (falling back to created_at).
+ * Owner-scoped via the clerk_user_id join and gated HARD with
+ * requireHomeSnapAddon (fails closed), like every HomeSnap read.
+ */
+export const getHomeAnalytics = createServerFn({ method: "GET" }).handler(async (): Promise<AnalyticsData> => {
+  const userId = await requireServerFunctionUser();
+  await requireHomeSnapAddon(userId);
+  if (!process.env.DATABASE_URL) {
+    return {
+      configured: false,
+      totalSpend: 0,
+      objectSpend: 0,
+      eventSpend: 0,
+      eventCount: 0,
+      byYear: [],
+      byType: [],
+    };
+  }
+  const objRows = (await sql`
+    SELECT po.object_type, po.purchase_price, po.purchase_date,
+           po.installation_date, po.created_at
+    FROM property_objects po
+    JOIN properties p ON p.id = po.property_id
+    WHERE p.clerk_user_id = ${userId}
+  `) as Record<string, unknown>[];
+  const evRows = (await sql`
+    SELECT oe.event_type, oe.cost, oe.occurred_on, oe.created_at
+    FROM object_events oe
+    JOIN property_objects po ON po.id = oe.object_id
+    JOIN properties p ON p.id = po.property_id
+    WHERE p.clerk_user_id = ${userId} AND oe.cost IS NOT NULL
+  `) as Record<string, unknown>[];
+
+  const yearMap = new Map<number, SpendYearBucket>();
+  const typeMap = new Map<string, { objectSpend: number; count: number }>();
+  const ensureYear = (y: number): SpendYearBucket => {
+    let b = yearMap.get(y);
+    if (!b) {
+      b = { year: y, objectSpend: 0, eventSpend: 0, total: 0 };
+      yearMap.set(y, b);
+    }
+    return b;
+  };
+  let objectSpend = 0;
+  let eventSpend = 0;
+  let eventCount = 0;
+
+  for (const r of objRows) {
+    const price = r.purchase_price == null ? 0 : Number(r.purchase_price);
+    if (!(price > 0)) continue;
+    objectSpend += price;
+    const year = yearOf((r.purchase_date as string | null) ?? null, String(r.created_at));
+    const b = ensureYear(year);
+    b.objectSpend += price;
+    b.total += price;
+    const type = asObjectType(r.object_type);
+    const t = typeMap.get(type) ?? { objectSpend: 0, count: 0 };
+    t.objectSpend += price;
+    t.count += 1;
+    typeMap.set(type, t);
+  }
+
+  for (const r of evRows) {
+    const cost = r.cost == null ? 0 : Number(r.cost);
+    if (!(cost > 0)) continue;
+    eventSpend += cost;
+    eventCount += 1;
+    const year = yearOf((r.occurred_on as string | null) ?? null, String(r.created_at));
+    const b = ensureYear(year);
+    b.eventSpend += cost;
+    b.total += cost;
+  }
+
+  const byYear = Array.from(yearMap.values())
+    .sort((a, b) => a.year - b.year)
+    .map((b) => ({
+      year: b.year,
+      objectSpend: roundMoney(b.objectSpend),
+      eventSpend: roundMoney(b.eventSpend),
+      total: roundMoney(b.total),
+    }));
+  const byType: SpendByType[] = Array.from(typeMap.entries())
+    .map(([t, v]) => ({
+      object_type: asObjectType(t),
+      objectSpend: roundMoney(v.objectSpend),
+      count: v.count,
+    }))
+    .sort((a, b) => b.objectSpend - a.objectSpend);
+
+  return {
+    configured: true,
+    totalSpend: roundMoney(objectSpend + eventSpend),
+    objectSpend: roundMoney(objectSpend),
+    eventSpend: roundMoney(eventSpend),
+    eventCount,
+    byYear,
+    byType,
+  };
+});
+
+/**
+ * Printable home-sale / insurance report. Returns everything needed to render
+ * a clean summary of the home's recorded improvements/repairs and their costs
+ * — properties, objects (type/date/cost/warranty/status), cost-bearing events,
+ * and running totals — built only from what's already recorded (nothing
+ * fabricated). Owner-scoped via the clerk_user_id join and gated HARD with
+ * requireHomeSnapAddon (fails closed).
+ */
+export const getHomeReport = createServerFn({ method: "GET" }).handler(async (): Promise<HomeReportData> => {
+  const userId = await requireServerFunctionUser();
+  await requireHomeSnapAddon(userId);
+  if (!process.env.DATABASE_URL) {
+    return {
+      configured: false,
+      generated_at: new Date().toISOString(),
+      totalSpend: 0,
+      objectSpend: 0,
+      eventSpend: 0,
+      properties: [],
+      objects: [],
+      events: [],
+    };
+  }
+  const propRows = (await sql`
+    SELECT id, nickname, property_type, purchase_date, purchase_price
+    FROM properties
+    WHERE clerk_user_id = ${userId}
+    ORDER BY created_at ASC
+  `) as Record<string, unknown>[];
+  const objRows = (await sql`
+    SELECT po.id, po.property_id, p.nickname AS property_nickname, po.object_type,
+           po.name, po.room_location, po.purchase_date, po.installation_date,
+           po.purchase_price, po.warranty_expiration, po.status,
+           COALESCE((SELECT SUM(oe.cost) FROM object_events oe WHERE oe.object_id = po.id), 0) AS event_spend
+    FROM property_objects po
+    JOIN properties p ON p.id = po.property_id
+    WHERE p.clerk_user_id = ${userId}
+    ORDER BY p.created_at ASC, po.created_at ASC
+  `) as Record<string, unknown>[];
+  const evRows = (await sql`
+    SELECT oe.id, oe.object_id, po.name AS object_name, oe.event_type,
+           oe.occurred_on, oe.title, oe.cost
+    FROM object_events oe
+    JOIN property_objects po ON po.id = oe.object_id
+    JOIN properties p ON p.id = po.property_id
+    WHERE p.clerk_user_id = ${userId} AND oe.cost IS NOT NULL
+    ORDER BY oe.occurred_on ASC, oe.created_at ASC
+  `) as Record<string, unknown>[];
+
+  const objects: ReportObjectItem[] = objRows.map((r) => ({
+    id: Number(r.id),
+    property_id: Number(r.property_id),
+    property_nickname: (r.property_nickname as string) ?? "",
+    object_type: asObjectType(r.object_type),
+    name: (r.name as string) ?? "",
+    room_location: (r.room_location as string | null) ?? null,
+    purchase_date: (r.purchase_date as string | null) ?? null,
+    installation_date: (r.installation_date as string | null) ?? null,
+    purchase_price: r.purchase_price == null ? null : Number(r.purchase_price),
+    warranty_expiration: (r.warranty_expiration as string | null) ?? null,
+    status: r.status === "retired" ? "retired" : "active",
+    event_spend: roundMoney(Number(r.event_spend ?? 0)),
+  }));
+  const events: ReportEventItem[] = evRows.map((r) => ({
+    id: Number(r.id),
+    object_id: Number(r.object_id),
+    object_name: (r.object_name as string) ?? "",
+    event_type: asEventType(r.event_type),
+    occurred_on: (r.occurred_on as string | null) ?? null,
+    title: (r.title as string | null) ?? null,
+    cost: r.cost == null ? null : Number(r.cost),
+  }));
+
+  const objectSpend = roundMoney(
+    objects.reduce((s, o) => s + (o.purchase_price ?? 0), 0),
+  );
+  const eventSpend = roundMoney(events.reduce((s, e) => s + (e.cost ?? 0), 0));
+
+  return {
+    configured: true,
+    generated_at: new Date().toISOString(),
+    totalSpend: roundMoney(objectSpend + eventSpend),
+    objectSpend,
+    eventSpend,
+    properties: propRows.map((r) => ({
+      id: Number(r.id),
+      nickname: (r.nickname as string) ?? "",
+      property_type: asPropertyType(r.property_type),
+      purchase_date: (r.purchase_date as string | null) ?? null,
+      purchase_price: r.purchase_price == null ? null : Number(r.purchase_price),
+    })),
+    objects,
+    events,
+  };
+});
