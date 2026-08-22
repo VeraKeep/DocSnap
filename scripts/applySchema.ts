@@ -61,7 +61,7 @@ async function main() {
   const verifySrc = `
     const { neon } = await import(${JSON.stringify("@neondatabase/serverless")});
     const sql = neon(process.env.DATABASE_URL, { fetchOptions: { cache: "no-store" } });
-    const want = ["users","webhook_events","share_links","receipts","meetings","meeting_extractions","bills","waitlist","properties","property_objects","object_documents","object_events","maintenance_schedules","contracts","contract_clauses","contract_events","contract_reminders"];
+    const want = ["users","webhook_events","share_links","receipts","meetings","meeting_extractions","bills","waitlist","properties","property_objects","object_documents","object_events","maintenance_schedules","contracts","contract_clauses","contract_events","contract_reminders","garage_items"];
     for (let i = 0; i < 12; i++) {
       const rows = await sql.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'");
       const have = new Set(rows.map(r => r.table_name));
@@ -76,7 +76,11 @@ async function main() {
     if (cols.length !== 1) { console.log("VERIFY_FAIL no_addon_homesnap"); process.exit(2); }
     const csCols = await sql.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='addon_contractsnap'");
     if (csCols.length !== 1) { console.log("VERIFY_FAIL no_addon_contractsnap"); process.exit(2); }
-    console.log("VERIFY_OK tables=" + rows.length + " addon_homesnap=present addon_contractsnap=present");
+    const gsCols = await sql.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='addon_garagesnap'");
+    if (gsCols.length !== 1) { console.log("VERIFY_FAIL no_addon_garagesnap"); process.exit(2); }
+    const giCols = await sql.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='garage_items' AND column_name='home_object_id'");
+    if (giCols.length !== 1) { console.log("VERIFY_FAIL no_garage_items_home_object_id"); process.exit(2); }
+    console.log("VERIFY_OK tables=" + rows.length + " addon_homesnap=present addon_contractsnap=present addon_garagesnap=present garage_items.home_object_id=present");
     console.log("PUBLIC_TABLES=" + rows.map(r => r.table_name).join(","));
   `;
   try {
