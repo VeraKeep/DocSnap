@@ -44,12 +44,27 @@ export interface GarageItem {
   purchase_price: number | null;
   warranty_expiration: string | null;
   storage_location: string | null;
-  /** Reserved — HomeSnap PropertyObject id this item mirrors (sharing). Null now. */
+  /** HomeSnap PropertyObject id this item mirrors (GarageSnap ↔ HomeSnap sharing). */
   home_object_id: number | null;
   created_at: string;
 }
 
-/** Human labels for the enum-ish string columns (drives selects & badges). */
+/**
+ * The HomeSnap side of the GarageSnap ↔ HomeSnap link, resolved for a garage
+ * item: the home object it mirrors, plus its property nickname and room so
+ * GarageSnap can show where the same physical item lives in HomeSnap. Exposed
+ * by getGarageItemHomeLink / createLinkedHomeObjectFromGarage.
+ */
+export interface GarageLinkedHomeObject {
+  object_id: number;
+  object_name: string;
+  object_type: string | null;
+  room_location: string | null;
+  property_id: number;
+  property_nickname: string;
+}
+
+/* Human labels for the enum-ish string columns (drives selects & badges). */
 export const GARAGE_CATEGORY_LABELS: Record<GarageCategory, string> = {
   power_tool: "Power tool",
   hand_tool: "Hand tool",

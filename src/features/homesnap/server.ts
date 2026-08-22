@@ -1073,3 +1073,42 @@ export const listDueMaintenance = createServerFn({ method: "POST" }).handler(asy
   `) as Record<string, unknown>[];
   return { configured: true, schedules: rows.map(toDueItem) };
 });
+
+/* ------------------------------------------------------------------ */
+/* GarageSnap ↔ HomeSnap object sharing (HomeSnap read side)           */
+/* ------------------------------------------------------------------ */
+/**
+ * Fetch the GarageSnap item linked to a home object (if any), with its storage
+ * location, so HomeSnap can surface that the same physical item is also tracked
+ * in GarageSnap. Read-only/navigation — the reverse direction (GarageSnap
+ * linking to a home object) lives in the GarageSnap module. Owner-safe: the
+ * home object must belong to the caller, and the joined garage row is scope-
+ * guarded by the same clerk_user_id. Gated HARD with requireHomeSnapAddon
+ * (fails closed) like every HomeSnap read.
+ */
+export const getHomeObjectGarageLink = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { object_id?: unknown };
+    return { object_id: positiveId(d.object_id, "Object id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedObject(userId, data.object_id);
+    if (!process.env.DATABASE_URL) return { linked: false, link: null };
+    const rows = (await sql`
+      SELECT gi.id AS item_id, gi.name AS item_name, gi.storage_location
+      FROM garage_items gi
+      WHERE gi.home_object_id = ${data.object_id} AND gi.clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!rows[0]) return { linked: false, link: null };
+    const r = rows[0];
+    return {
+      linked: true,
+      link: {
+        item_id: Number(r.item_id),
+        item_name: (r.item_name as string) ?? "",
+        storage_location: (r.storage_location as string | null) ?? null,
+      },
+    };
+  });
