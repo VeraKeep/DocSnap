@@ -25,7 +25,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
-import { hasHomeSnapAddon } from "~/subscription";
+import { hasHomeSnapAddon, findUserByEmail } from "~/subscription";
 import {
   asDocumentType,
   asEventType,
@@ -33,6 +33,7 @@ import {
   asInventoryCategory,
   asObjectType,
   asPropertyType,
+  asShareRole,
   asTaskType,
   type DocumentType,
   type EventType,
@@ -47,10 +48,13 @@ import {
   type ObjectStatus,
   type ObjectType,
   type Property,
+  type PropertyAccessRole,
   type PropertyObject,
+  type PropertyShare,
   type PropertyType,
   type ReportEventItem,
   type ReportObjectItem,
+  type ShareRole,
   type SpendByType,
   type SpendYearBucket,
   type TaskType,
@@ -68,6 +72,9 @@ function toProperty(r: Record<string, unknown>): Property {
     purchase_date: (r.purchase_date as string | null) ?? null,
     purchase_price: r.purchase_price == null ? null : Number(r.purchase_price),
     created_at: String(r.created_at),
+    // Default to 'owner' for rows created via createProperty; listProperties
+    // sets the true role from the share-aware query.
+    access_role: (r.access_role as PropertyAccessRole) ?? "owner",
   };
 }
 
@@ -148,6 +155,17 @@ function toDueItem(r: Record<string, unknown>): MaintenanceDueItem {
     object_name: (r.object_name as string) ?? "",
     object_type: asObjectType(r.object_type),
     property_nickname: (r.property_nickname as string) ?? "",
+  };
+}
+
+function toShare(r: Record<string, unknown>): PropertyShare {
+  return {
+    id: Number(r.id),
+    property_id: Number(r.property_id),
+    grantee_user_id: (r.grantee_user_id as string) ?? "",
+    grantee_email: (r.grantee_email as string | null) ?? null,
+    role: asShareRole(r.role),
+    created_at: String(r.created_at),
   };
 }
 
@@ -257,10 +275,67 @@ export const getHomeEntitlement = createServerFn({ method: "GET" }).handler(asyn
 });
 
 /* ------------------------------------------------------------------ */
-/* Ownership helpers                                                   */
+/* Access-control helpers (owner OR active share)                       */
 /* ------------------------------------------------------------------ */
 
-/** Returns the property row if it belongs to the caller, else null. */
+/**
+ * The caller's access level to a property, or null when they have none.
+ * 'owner' = the property's creator (full access). 'edit'/'view' come from an
+ * active property_shares row granting the caller that role. This is the single
+ * choke point every HomeSnap read AND write funnels through, so a non-shared
+ * user can never reach another owner's records.
+ */
+async function propertyAccessLevel(
+  userId: string,
+  propertyId: number,
+): Promise<PropertyAccessRole | null> {
+  const rows = (await sql`
+    SELECT clerk_user_id FROM properties WHERE id = ${propertyId}
+  `) as Record<string, unknown>[];
+  const owner = rows[0]?.clerk_user_id as string | undefined;
+  if (!owner) return null;
+  if (owner === userId) return "owner";
+  const shareRows = (await sql`
+    SELECT role FROM property_shares
+    WHERE property_id = ${propertyId} AND grantee_user_id = ${userId}
+    LIMIT 1
+  `) as Record<string, unknown>[];
+  const role = shareRows[0]?.role;
+  if (role === "edit") return "edit";
+  if (role === "view") return "view";
+  return null;
+}
+
+/**
+ * Resolve the property a child row (object/document/event/schedule) hangs off
+ * of, then check the caller's access to it. Returns the backing property id (so
+ * callers can reuse it) or null if the row doesn't exist or the caller has no
+ * access. Never resolves by bare child id across owners — always through the
+ * property access boundary.
+ */
+async function childRowPropertyId(
+  userId: string,
+  table: string,
+  fkColumn: string,
+  rowId: number,
+): Promise<number | null> {
+  // table is a compile-time constant from the call sites below (never user
+  // input), and fkColumn is likewise fixed per call — both are safe to splice
+  // into the query string.
+  const rows = (await sql`
+    SELECT po.property_id
+    FROM ${table} AS child
+    JOIN property_objects po ON po.id = child.${fkColumn}
+    WHERE child.id = ${rowId}
+  `) as Record<string, unknown>[];
+  if (!rows[0]) return null;
+  const propertyId = Number(rows[0].property_id);
+  const level = await propertyAccessLevel(userId, propertyId);
+  if (!level) return null;
+  return propertyId;
+}
+
+/** Returns the property row if the caller owns it, else null. */
 async function ownedProperty(userId: string, propertyId: number) {
   const rows = (await sql`
     SELECT * FROM properties
@@ -269,7 +344,7 @@ async function ownedProperty(userId: string, propertyId: number) {
   return rows[0] ?? null;
 }
 
-/** Throws 401 if the property isn't the caller's. */
+/** Throws 401 if the property isn't the caller's (owner-only gate). */
 async function requireOwnedProperty(
   userId: string,
   propertyId: number,
@@ -285,61 +360,73 @@ async function requireOwnedProperty(
 }
 
 /**
- * Returns the object row if it belongs to an owned property, else null. The
- * join to properties (filtered by clerk_user_id) is the scoping boundary — a
- * caller can only ever touch objects beneath their own properties.
+ * Throw if the caller cannot access the property (owner OR active share). When
+ * `write` is true, a read-only ('view') member is rejected with 403 — only the
+ * owner and 'edit' members may write. Returns the caller's level.
  */
-async function ownedObject(userId: string, objectId: number) {
-  const rows = (await sql`
-    SELECT po.* FROM property_objects po
-    JOIN properties p ON p.id = po.property_id
-    WHERE po.id = ${objectId} AND p.clerk_user_id = ${userId}
-  `) as Record<string, unknown>[];
-  return rows[0] ?? null;
-}
-
-async function requireOwnedObject(
+async function requirePropertyAccess(
   userId: string,
-  objectId: number,
-): Promise<Record<string, unknown>> {
-  const obj = await ownedObject(userId, objectId);
-  if (!obj) {
+  propertyId: number,
+  write: boolean,
+): Promise<PropertyAccessRole> {
+  const level = await propertyAccessLevel(userId, propertyId);
+  if (!level) {
     throw new Response(
-      JSON.stringify({ error: "Object not found." }),
+      JSON.stringify({ error: "Property not found." }),
       { status: 404, headers: { "Content-Type": "application/json" } },
     );
   }
-  return obj;
-}
-
-/**
- * Returns the maintenance schedule row if it sits beneath an owned object (and
- * thus an owned property), else null. The join chain to properties (filtered by
- * clerk_user_id) is the scoping boundary — a caller can only ever touch
- * schedules attached to their own objects.
- */
-async function ownedSchedule(userId: string, scheduleId: number) {
-  const rows = (await sql`
-    SELECT ms.* FROM maintenance_schedules ms
-    JOIN property_objects po ON po.id = ms.object_id
-    JOIN properties p ON p.id = po.property_id
-    WHERE ms.id = ${scheduleId} AND p.clerk_user_id = ${userId}
-  `) as Record<string, unknown>[];
-  return rows[0] ?? null;
-}
-
-async function requireOwnedSchedule(
-  userId: string,
-  scheduleId: number,
-): Promise<Record<string, unknown>> {
-  const sch = await ownedSchedule(userId, scheduleId);
-  if (!sch) {
+  if (write && level === "view") {
     throw new Response(
-      JSON.stringify({ error: "Maintenance schedule not found." }),
+      JSON.stringify({
+        error: "You have view-only access to this property — changes aren't allowed.",
+      }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return level;
+}
+
+/** Throw unless the caller can access (or write to) an object's property. */
+async function requireChildAccess(
+  userId: string,
+  kind: "object" | "document" | "event" | "schedule",
+  rowId: number,
+  write: boolean,
+): Promise<number> {
+  const fkByKind: Record<string, string> = {
+    object: "property_id", // not used; object resolves directly below
+    document: "object_id",
+    event: "object_id",
+    schedule: "object_id",
+  };
+  let propertyId: number | null;
+  if (kind === "object") {
+    const rows = (await sql`
+      SELECT property_id FROM property_objects WHERE id = ${rowId}
+    `) as Record<string, unknown>[];
+    propertyId = rows[0] ? Number(rows[0].property_id) : null;
+  } else {
+    const childTable: Record<string, string> = {
+      document: "object_documents",
+      event: "object_events",
+      schedule: "maintenance_schedules",
+    };
+    propertyId = await childRowPropertyId(
+      userId,
+      childTable[kind],
+      fkByKind[kind],
+      rowId,
+    );
+  }
+  if (propertyId == null) {
+    throw new Response(
+      JSON.stringify({ error: "Not found." }),
       { status: 404, headers: { "Content-Type": "application/json" } },
     );
   }
-  return sch;
+  await requirePropertyAccess(userId, propertyId, write);
+  return propertyId;
 }
 
 /* ------------------------------------------------------------------ */
@@ -350,10 +437,18 @@ export const listProperties = createServerFn({ method: "GET" }).handler(async ()
   const userId = await requireServerFunctionUser();
   await requireHomeSnapAddon(userId);
   if (!process.env.DATABASE_URL) return { configured: false, properties: [] };
+  // The caller's OWN properties plus properties others have shared with them.
+  // access_role is 'owner' for owned rows and the share role ('view'/'edit')
+  // for shared rows — the UI uses it to decide whether to offer write actions
+  // and the sharing panel.
   const rows = (await sql`
-    SELECT * FROM properties
-    WHERE clerk_user_id = ${userId}
-    ORDER BY created_at DESC
+    SELECT p.*,
+      CASE WHEN p.clerk_user_id = ${userId} THEN 'owner' ELSE ps.role END AS access_role
+    FROM properties p
+    LEFT JOIN property_shares ps
+      ON ps.property_id = p.id AND ps.grantee_user_id = ${userId}
+    WHERE p.clerk_user_id = ${userId} OR ps.id IS NOT NULL
+    ORDER BY (p.clerk_user_id = ${userId}) DESC, p.created_at DESC, p.id DESC
   `) as Record<string, unknown>[];
   return { configured: true, properties: rows.map(toProperty) };
 });
@@ -388,6 +483,110 @@ export const createProperty = createServerFn({ method: "POST" })
   });
 
 /* ------------------------------------------------------------------ */
+/* Sharing / household access                                          */
+/* ------------------------------------------------------------------ */
+/**
+ * Share a property with another DocSnap user (by their email). Only the
+ * property OWNER may share — a grantee who can edit a property must not be
+ * able to extend access to other people. The email is resolved to the target
+ * user's clerk_user_id (users.clerk_user_id); if the email doesn't match a
+ * known DocSnap user, the share is rejected with a clear error. The grantee's
+ * stored email is kept as a display snapshot. Re-sharing an already-shared
+ * user updates their role. Gated HARD with requireHomeSnapAddon (fails closed).
+ */
+export const shareProperty = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { property_id?: unknown; grantee_email?: unknown; role?: unknown };
+    return {
+      property_id: positiveId(d.property_id, "Property id"),
+      grantee_email: requiredText(d.grantee_email, "Email").slice(0, 300),
+      role: asShareRole(d.role),
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedProperty(userId, data.property_id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const email = data.grantee_email.toLowerCase().trim();
+    // Resolve the target user. They must exist as a DocSnap user before we can
+    // grant them access.
+    const granteeUserId = await findUserByEmail(email);
+    if (!granteeUserId) {
+      throw new Response(
+        JSON.stringify({
+          error: "We couldn't find a DocSnap account for that email.",
+        }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (granteeUserId === userId) {
+      throw new Response(
+        JSON.stringify({ error: "You can't share a property with yourself." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const rows = (await sql`
+      INSERT INTO property_shares (property_id, grantee_user_id, grantee_email, role)
+      VALUES (${data.property_id}, ${granteeUserId}, ${email}, ${data.role})
+      ON CONFLICT (property_id, grantee_user_id)
+      DO UPDATE SET role = ${data.role}, grantee_email = ${email}, created_at = NOW()
+      RETURNING *
+    `) as Record<string, unknown>[];
+    return { share: toShare(rows[0]) };
+  });
+
+/**
+ * Stop sharing a property with a user. Owner-only. Returns the id of the removed
+ * share row (or null if there was nothing to remove).
+ */
+export const revokeShare = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { property_id?: unknown; grantee_user_id?: unknown };
+    return {
+      property_id: positiveId(d.property_id, "Property id"),
+      grantee_user_id: requiredText(d.grantee_user_id, "Grantee"),
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedProperty(userId, data.property_id);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const rows = (await sql`
+      DELETE FROM property_shares
+      WHERE property_id = ${data.property_id} AND grantee_user_id = ${data.grantee_user_id}
+      RETURNING id
+    `) as Record<string, unknown>[];
+    return { revoked: rows[0] ? Number(rows[0].id) : null };
+  });
+
+/**
+ * List the people a property is shared with (grantee email + role). Owner-only.
+ */
+export const listShares = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { property_id?: unknown };
+    return { property_id: positiveId(d.property_id, "Property id") };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requireOwnedProperty(userId, data.property_id);
+    if (!process.env.DATABASE_URL) return { configured: false, shares: [] };
+    const rows = (await sql`
+      SELECT * FROM property_shares
+      WHERE property_id = ${data.property_id}
+      ORDER BY created_at ASC
+    `) as Record<string, unknown>[];
+    return { configured: true, shares: rows.map(toShare) };
+  });
+
+/* ------------------------------------------------------------------ */
 /* Objects                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -399,7 +598,7 @@ export const listObjects = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedProperty(userId, data.property_id);
+    await requirePropertyAccess(userId, data.property_id, false);
     if (!process.env.DATABASE_URL) return { configured: false, objects: [] };
     const rows = (await sql`
       SELECT * FROM property_objects
@@ -448,7 +647,7 @@ export const createObject = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedProperty(userId, data.property_id);
+    await requirePropertyAccess(userId, data.property_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -569,7 +768,7 @@ export const createObjectFromReceipt = createServerFn({ method: "POST" })
     // Resolve (or create) the property the object will live under.
     let propertyId = data.property_id;
     if (propertyId != null) {
-      await requireOwnedProperty(userId, propertyId);
+      await requirePropertyAccess(userId, propertyId, true);
     } else {
       const existing = (await sql`
         SELECT id FROM properties
@@ -654,7 +853,7 @@ export const updateObject = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.id);
+    await requireChildAccess(userId, "object", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -688,7 +887,7 @@ export const deleteObject = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.id);
+    await requireChildAccess(userId, "object", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -722,7 +921,9 @@ export const listInventory = createServerFn({ method: "POST" }).handler(async ()
         ORDER BY od.created_at DESC LIMIT 1) AS photo_url
     FROM property_objects po
     JOIN properties p ON p.id = po.property_id
-    WHERE po.object_type = 'inventory' AND p.clerk_user_id = ${userId}
+    WHERE po.object_type = 'inventory'
+      AND (p.clerk_user_id = ${userId}
+           OR p.id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId}))
     ORDER BY po.created_at DESC
   `) as Record<string, unknown>[];
   return { configured: true, items: rows.map(toInventoryItem) };
@@ -740,7 +941,7 @@ export const listDocuments = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, false);
     if (!process.env.DATABASE_URL) return { configured: false, documents: [] };
     const rows = (await sql`
       SELECT * FROM object_documents
@@ -770,7 +971,7 @@ export const createDocument = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -790,20 +991,9 @@ export const deleteDocument = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    // Scope the document through its owning object (which must belong to an
-    // owned property) before deleting — never delete by bare id.
-    const doc = (await sql`
-      SELECT od.id FROM object_documents od
-      JOIN property_objects po ON po.id = od.object_id
-      JOIN properties p ON p.id = po.property_id
-      WHERE od.id = ${data.id} AND p.clerk_user_id = ${userId}
-    `) as Record<string, unknown>[];
-    if (!doc[0]) {
-      throw new Response(
-        JSON.stringify({ error: "Document not found." }),
-        { status: 404, headers: { "Content-Type": "application/json" } },
-      );
-    }
+    // Scope the document through its owning object/property before deleting —
+    // the owner or an 'edit'-role grantee may remove it, never a bare id.
+    await requireChildAccess(userId, "document", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -823,7 +1013,7 @@ export const listEvents = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, false);
     if (!process.env.DATABASE_URL) return { configured: false, events: [] };
     const rows = (await sql`
       SELECT * FROM object_events
@@ -855,7 +1045,7 @@ export const createEvent = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -875,19 +1065,9 @@ export const deleteEvent = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    // Scope the event through its owning object/property before deleting.
-    const ev = (await sql`
-      SELECT oe.id FROM object_events oe
-      JOIN property_objects po ON po.id = oe.object_id
-      JOIN properties p ON p.id = po.property_id
-      WHERE oe.id = ${data.id} AND p.clerk_user_id = ${userId}
-    `) as Record<string, unknown>[];
-    if (!ev[0]) {
-      throw new Response(
-        JSON.stringify({ error: "Event not found." }),
-        { status: 404, headers: { "Content-Type": "application/json" } },
-      );
-    }
+    // Scope the event through its owning object/property before deleting — the
+    // owner or an 'edit'-role grantee may remove it, never a bare id.
+    await requireChildAccess(userId, "event", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -908,7 +1088,7 @@ export const listSchedules = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, false);
     if (!process.env.DATABASE_URL) return { configured: false, schedules: [] };
     const rows = (await sql`
       SELECT * FROM maintenance_schedules
@@ -950,7 +1130,7 @@ export const createSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -995,7 +1175,7 @@ export const updateSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedSchedule(userId, data.id);
+    await requireChildAccess(userId, "schedule", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -1028,10 +1208,15 @@ export const completeSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    const sch = await requireOwnedSchedule(userId, data.id);
+    await requireChildAccess(userId, "schedule", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
+    const schRows = (await sql`
+      SELECT interval_value, interval_unit FROM maintenance_schedules
+      WHERE id = ${data.id}
+    `) as Record<string, unknown>[];
+    const sch = schRows[0];
     const lastDone = todayIso();
     const nextDue = addInterval(
       lastDone,
@@ -1055,7 +1240,7 @@ export const deleteSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedSchedule(userId, data.id);
+    await requireChildAccess(userId, "schedule", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -1077,7 +1262,8 @@ export const listDueMaintenance = createServerFn({ method: "POST" }).handler(asy
     FROM maintenance_schedules ms
     JOIN property_objects po ON po.id = ms.object_id
     JOIN properties p ON p.id = po.property_id
-    WHERE p.clerk_user_id = ${userId}
+    WHERE (p.clerk_user_id = ${userId}
+           OR p.id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId}))
     ORDER BY ms.next_due ASC, ms.created_at ASC
   `) as Record<string, unknown>[];
   return { configured: true, schedules: rows.map(toDueItem) };
@@ -1103,7 +1289,7 @@ export const getHomeObjectGarageLink = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireOwnedObject(userId, data.object_id);
+    await requireChildAccess(userId, "object", data.object_id, false);
     if (!process.env.DATABASE_URL) return { linked: false, link: null };
     const rows = (await sql`
       SELECT gi.id AS item_id, gi.name AS item_name, gi.storage_location
@@ -1170,14 +1356,17 @@ export const getHomeAnalytics = createServerFn({ method: "GET" }).handler(async 
            po.installation_date, po.created_at
     FROM property_objects po
     JOIN properties p ON p.id = po.property_id
-    WHERE p.clerk_user_id = ${userId}
+    WHERE (p.clerk_user_id = ${userId}
+           OR p.id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId}))
   `) as Record<string, unknown>[];
   const evRows = (await sql`
     SELECT oe.event_type, oe.cost, oe.occurred_on, oe.created_at
     FROM object_events oe
     JOIN property_objects po ON po.id = oe.object_id
     JOIN properties p ON p.id = po.property_id
-    WHERE p.clerk_user_id = ${userId} AND oe.cost IS NOT NULL
+    WHERE (p.clerk_user_id = ${userId}
+           OR p.id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId}))
+      AND oe.cost IS NOT NULL
   `) as Record<string, unknown>[];
 
   const yearMap = new Map<number, SpendYearBucket>();
@@ -1274,6 +1463,7 @@ export const getHomeReport = createServerFn({ method: "GET" }).handler(async ():
     SELECT id, nickname, property_type, purchase_date, purchase_price
     FROM properties
     WHERE clerk_user_id = ${userId}
+      OR id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId})
     ORDER BY created_at ASC
   `) as Record<string, unknown>[];
   const objRows = (await sql`
@@ -1283,7 +1473,8 @@ export const getHomeReport = createServerFn({ method: "GET" }).handler(async ():
            COALESCE((SELECT SUM(oe.cost) FROM object_events oe WHERE oe.object_id = po.id), 0) AS event_spend
     FROM property_objects po
     JOIN properties p ON p.id = po.property_id
-    WHERE p.clerk_user_id = ${userId}
+    WHERE (p.clerk_user_id = ${userId}
+           OR p.id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId}))
     ORDER BY p.created_at ASC, po.created_at ASC
   `) as Record<string, unknown>[];
   const evRows = (await sql`
@@ -1292,7 +1483,9 @@ export const getHomeReport = createServerFn({ method: "GET" }).handler(async ():
     FROM object_events oe
     JOIN property_objects po ON po.id = oe.object_id
     JOIN properties p ON p.id = po.property_id
-    WHERE p.clerk_user_id = ${userId} AND oe.cost IS NOT NULL
+    WHERE (p.clerk_user_id = ${userId}
+           OR p.id IN (SELECT property_id FROM property_shares WHERE grantee_user_id = ${userId}))
+      AND oe.cost IS NOT NULL
     ORDER BY oe.occurred_on ASC, oe.created_at ASC
   `) as Record<string, unknown>[];
 

@@ -190,6 +190,102 @@ async function main() {
   }
   console.log(`Analytics OK: object_spend=${a.object_spend} event_spend=${a.event_spend} (costed event #${costedEventId} summed).`);
 
+  // 3.75) Sharing / household access round-trip. The owner shares the property
+  // with a second user (role 'edit'), who must then see it in their property
+  // list; a non-shared user must remain blocked; revoking removes access.
+  const SHARED = "test-homesnap-shared-user";
+  const NOSHARE = "test-homesnap-noshare-user";
+  await sql`
+    INSERT INTO users (clerk_user_id, email, addon_homesnap)
+    VALUES (${SHARED}, ${"shared@example.com"}, ${true})
+    ON CONFLICT (clerk_user_id) DO UPDATE SET email = ${"shared@example.com"}, addon_homesnap = ${true}
+  `;
+  await sql`
+    INSERT INTO users (clerk_user_id, email, addon_homesnap)
+    VALUES (${NOSHARE}, ${"noshare@example.com"}, ${true})
+    ON CONFLICT (clerk_user_id) DO NOTHING
+  `;
+  // Owner shares with SHARED at role 'edit'.
+  await sql`
+    INSERT INTO property_shares (property_id, grantee_user_id, grantee_email, role)
+    VALUES (${propertyId}, ${SHARED}, ${"shared@example.com"}, ${"edit"})
+  `;
+
+  // The exact listProperties query run as the GRANTEE (SHARED).
+  const sharedList = (await sql`
+    SELECT p.*,
+      CASE WHEN p.clerk_user_id = ${SHARED} THEN 'owner' ELSE ps.role END AS access_role
+    FROM properties p
+    LEFT JOIN property_shares ps
+      ON ps.property_id = p.id AND ps.grantee_user_id = ${SHARED}
+    WHERE p.clerk_user_id = ${SHARED} OR ps.id IS NOT NULL
+    ORDER BY (p.clerk_user_id = ${SHARED}) DESC, p.created_at DESC, p.id DESC
+  `) as unknown as Record<string, unknown>[];
+  const sharedProp = sharedList.find((r) => Number(r.id) === propertyId);
+  if (!sharedProp || sharedProp.access_role !== "edit") {
+    console.error("FAIL: shared 'edit' grantee could not see the property with access_role=edit.");
+    process.exit(1);
+  }
+  console.log("OK: shared 'edit' grantee sees the property with access_role=edit.");
+
+  // The same query run as a NON-SHARED user (NOSHARE) must NOT return it.
+  const noShareList = (await sql`
+    SELECT p.*,
+      CASE WHEN p.clerk_user_id = ${NOSHARE} THEN 'owner' ELSE ps.role END AS access_role
+    FROM properties p
+    LEFT JOIN property_shares ps
+      ON ps.property_id = p.id AND ps.grantee_user_id = ${NOSHARE}
+    WHERE p.clerk_user_id = ${NOSHARE} OR ps.id IS NOT NULL
+    ORDER BY (p.clerk_user_id = ${NOSHARE}) DESC, p.created_at DESC, p.id DESC
+  `) as unknown as Record<string, unknown>[];
+  if (noShareList.some((r) => Number(r.id) === propertyId)) {
+    console.error("FAIL: a non-shared user could see another owner's property (blocked access broken).");
+    process.exit(1);
+  }
+  console.log("OK: a non-shared user is BLOCKED from another owner's property.");
+
+  // A 'view' grantee reads the property with access_role=view (read-only).
+  await sql`
+    INSERT INTO property_shares (property_id, grantee_user_id, grantee_email, role)
+    VALUES (${propertyId}, ${NOSHARE}, ${"noshare@example.com"}, ${"view"})
+  `;
+  const viewList = (await sql`
+    SELECT p.*,
+      CASE WHEN p.clerk_user_id = ${NOSHARE} THEN 'owner' ELSE ps.role END AS access_role
+    FROM properties p
+    LEFT JOIN property_shares ps
+      ON ps.property_id = p.id AND ps.grantee_user_id = ${NOSHARE}
+    WHERE p.clerk_user_id = ${NOSHARE} OR ps.id IS NOT NULL
+  `) as unknown as Record<string, unknown>[];
+  if (!viewList.some((r) => Number(r.id) === propertyId && r.access_role === "view")) {
+    console.error("FAIL: 'view' grantee did not see the property with access_role=view.");
+    process.exit(1);
+  }
+  console.log("OK: 'view' grantee sees the property with access_role=view (read-only).");
+
+  // Revoke the 'edit' share; SHARED must then lose access entirely.
+  const revokedRows = (await sql`
+    DELETE FROM property_shares
+    WHERE property_id = ${propertyId} AND grantee_user_id = ${SHARED}
+    RETURNING id
+  `) as unknown as { id: number }[];
+  if (!revokedRows[0]) {
+    console.error("FAIL: revoke share did not delete a row.");
+    process.exit(1);
+  }
+  const afterRevoke = (await sql`
+    SELECT p.*, ps.role AS access_role
+    FROM properties p
+    LEFT JOIN property_shares ps
+      ON ps.property_id = p.id AND ps.grantee_user_id = ${SHARED}
+    WHERE p.clerk_user_id = ${SHARED} OR ps.id IS NOT NULL
+  `) as unknown as Record<string, unknown>[];
+  if (afterRevoke.some((r) => Number(r.id) === propertyId)) {
+    console.error("FAIL: revoked grantee still sees the property.");
+    process.exit(1);
+  }
+  console.log("OK: revoking the share removes the grantee's access.");
+
   // 4) Granting the add-on unlocks (mirrors setHomeSnapAddon).
   await sql`
     INSERT INTO users (clerk_user_id, addon_homesnap)
@@ -208,7 +304,7 @@ async function main() {
   // 5) Cleanup (cascade removes objects/documents/events beneath the property).
   if (CLEANUP) {
     await sql`DELETE FROM properties WHERE clerk_user_id = ${TEST_USER}`;
-    await sql`DELETE FROM users WHERE clerk_user_id IN (${TEST_USER}, ${OTHER})`;
+    await sql`DELETE FROM users WHERE clerk_user_id IN (${TEST_USER}, ${OTHER}, ${SHARED}, ${NOSHARE})`;
     console.log("OK: test rows cleaned up (set KEEP_TEST_ROWS=1 to retain them).");
   } else {
     console.log("KEEP_TEST_ROWS=1 — test rows left in DB for inspection.");
