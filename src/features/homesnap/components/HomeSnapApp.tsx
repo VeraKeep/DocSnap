@@ -29,6 +29,7 @@ import {
   deleteObject,
   deleteSchedule,
   getHomeEntitlement,
+  getHomeObjectGarageLink,
   listDocuments,
   listDueMaintenance,
   listEvents,
@@ -890,6 +891,79 @@ const EVENT_BADGE: Record<EventType, string> = {
 };
 
 /* ---------------------------------------------------------------- */
+/* GarageSnap ↔ HomeSnap sharing (HomeSnap read side)                */
+/* ---------------------------------------------------------------- */
+/**
+ * Read-only, navigational card shown on a home object when it's linked to a
+ * GarageSnap item: surfaces that the same physical item is also tracked in
+ * GarageSnap and where it's stored. The reverse (linking) is done from the
+ * GarageSnap side; here we only read and display, so no write actions exist.
+ */
+function GarageObjectLinkCard({ object }: { object: PropertyObject }) {
+  const [link, setLink] = useState<{
+    item_id: number;
+    item_name: string;
+    storage_location: string | null;
+  } | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setChecked(false);
+    setLink(null);
+    setError("");
+    getHomeObjectGarageLink({ data: { object_id: object.id } })
+      .then((res) => {
+        if (cancelled) return;
+        setLink(
+          res.linked
+            ? ((res.link as unknown) as {
+                item_id: number;
+                item_name: string;
+                storage_location: string | null;
+              })
+            : null,
+        );
+        setChecked(true);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setChecked(true);
+        setError(messageFromError(err, "The GarageSnap link couldn't be loaded."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [object.id]);
+
+  if (error) return null; // non-fatal — never block the object view on this
+  return (
+    <section className="rounded-2xl border border-indigo-900/40 bg-indigo-950/20 p-5">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold">GarageSnap</h4>
+        {checked && link && <span className="text-xs text-gray-400">shared object</span>}
+      </div>
+      {!checked ? (
+        <div className="mt-3 h-4 animate-pulse rounded bg-gray-800" aria-label="Loading GarageSnap link" />
+      ) : link ? (
+        <div className="mt-3">
+          <p className="text-sm font-medium text-indigo-200">🔧 Also tracked in GarageSnap</p>
+          <p className="mt-1 text-sm text-gray-300">{link.item_name}</p>
+          <p className="mt-0.5 text-xs text-gray-500">
+            {link.storage_location
+              ? `Stored at ${link.storage_location}`
+              : "Storage location not recorded"}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-gray-500">Not linked to a GarageSnap item.</p>
+      )}
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* Object detail: timeline + documents                               */
 /* ---------------------------------------------------------------- */
 function ObjectDetail({
@@ -1011,6 +1085,9 @@ function ObjectDetail({
         )}
         {object.notes && <p className="mt-2 text-sm text-gray-300">{object.notes}</p>}
       </div>
+
+      {/* GarageSnap ↔ HomeSnap shared-context (read-only) */}
+      <GarageObjectLinkCard object={object} />
 
       {status === "error" && <ErrorCard message={loadError} onRetry={() => void load(object)} />}
 

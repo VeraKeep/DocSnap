@@ -14,9 +14,13 @@ import { Link } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   createGarageItem,
+  createLinkedHomeObjectFromGarage,
   deleteGarageItem,
+  getGarageItemHomeLink,
   getGarageSnapEntitlement,
+  linkGarageItemToHomeObject,
   listGarageItems,
+  unlinkGarageItemFromHomeObject,
   updateGarageItem,
 } from "../server";
 import {
@@ -25,7 +29,13 @@ import {
   warrantyStatus,
   type GarageCategory,
   type GarageItem,
+  type GarageLinkedHomeObject,
 } from "../types";
+import {
+  listObjects,
+  listProperties,
+} from "../../homesnap/server";
+import type { Property, PropertyObject } from "../../homesnap/types";
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
@@ -325,6 +335,11 @@ function ItemCard({
             <span className="truncate text-[11px] text-gray-400">⌖ {item.storage_location}</span>
           )}
           <WarrantyBadge status={warranty} />
+          {item.home_object_id != null && (
+            <span className="rounded-full bg-indigo-900/40 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+              🏠 Linked to HomeSnap
+            </span>
+          )}
         </div>
         {item.serial_number && (
           <p className="mt-1 truncate text-[11px] text-gray-600">S/N {item.serial_number}</p>
@@ -337,6 +352,263 @@ function ItemCard({
         </div>
       </div>
     </button>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* GarageSnap ↔ HomeSnap sharing                                     */
+/* ---------------------------------------------------------------- */
+/**
+ * The shared-context card shown in a garage item's detail drawer. Reads the
+ * item's link to a HomeSnap object (getGarageItemHomeLink) and surfaces where
+ * the same physical item lives in HomeSnap. When unlinked, offers to link to an
+ * existing home object or create one from the item. All writes go through the
+ * owner-safe, add-on-gated server actions.
+ */
+function HomeLinkCard({
+  item,
+  onChanged,
+}: {
+  item: GarageItem;
+  onChanged: (item: GarageItem) => void;
+}) {
+  const [link, setLink] = useState<GarageLinkedHomeObject | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
+  const [homeUnlocked, setHomeUnlocked] = useState(true);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [objects, setObjects] = useState<PropertyObject[]>([]);
+  const [propId, setPropId] = useState("");
+  const [objId, setObjId] = useState("");
+  const [createPropId, setCreatePropId] = useState("");
+
+  const refresh = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await getGarageItemHomeLink({ data: { item_id: item.id } });
+      setLink(res.linked ? (res.link as GarageLinkedHomeObject) : null);
+      setChecked(true);
+    } catch (err) {
+      setChecked(true);
+      setError(messageFromError(err, "The HomeSnap link couldn't be loaded."));
+    } finally {
+      setBusy(false);
+    }
+  }, [item.id]);
+
+  useEffect(() => {
+    setLink(null);
+    setChecked(false);
+    setShowPicker(false);
+    setError("");
+    setHomeUnlocked(true);
+    void refresh();
+  }, [item.id, refresh]);
+
+  async function openPicker() {
+    setShowPicker(true);
+    setError("");
+    try {
+      const res = await listProperties();
+      setProperties((res.properties as Property[]) ?? []);
+      setHomeUnlocked(true);
+    } catch {
+      setHomeUnlocked(false);
+    }
+  }
+
+  async function loadObjects(propertyId: string) {
+    setObjId("");
+    if (!propertyId) {
+      setObjects([]);
+      return;
+    }
+    try {
+      const res = await listObjects({ data: { property_id: Number(propertyId) } });
+      setObjects((res.objects as PropertyObject[]) ?? []);
+    } catch (err) {
+      setObjects([]);
+      setError(messageFromError(err, "The home objects couldn't be loaded."));
+    }
+  }
+
+  async function doLink() {
+    if (!objId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { item: updated } = await linkGarageItemToHomeObject({
+        data: { item_id: item.id, object_id: Number(objId) },
+      });
+      onChanged(updated as GarageItem);
+      setShowPicker(false);
+      await refresh();
+    } catch (err) {
+      setError(messageFromError(err, "The item couldn't be linked."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doCreate() {
+    setBusy(true);
+    setError("");
+    try {
+      const { item: updated } = await createLinkedHomeObjectFromGarage({
+        data: { item_id: item.id, property_id: createPropId || null },
+      });
+      onChanged(updated as GarageItem);
+      setShowPicker(false);
+      await refresh();
+    } catch (err) {
+      setError(messageFromError(err, "The HomeSnap object couldn't be created."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doUnlink() {
+    if (
+      !window.confirm(
+        "Unlink this item from HomeSnap? The HomeSnap object stays — only the link is removed.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const { item: updated } = await unlinkGarageItemFromHomeObject({ data: { item_id: item.id } });
+      onChanged(updated as GarageItem);
+      await refresh();
+    } catch (err) {
+      setError(messageFromError(err, "The item couldn't be unlinked."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold text-gray-300">HomeSnap</h4>
+        <span className="text-[10px] text-gray-500">shared object</span>
+      </div>
+
+      {error && <p role="alert" className="mt-2 text-sm text-amber-300">{error}</p>}
+
+      {!error && checked && link && (
+        <div className="mt-2">
+          <div className="rounded-lg border border-indigo-900/50 bg-indigo-950/30 p-3">
+            <p className="text-sm font-medium text-indigo-200">🏠 Also tracked in HomeSnap</p>
+            <p className="mt-1 text-sm text-gray-300">{link.object_name}</p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {[link.property_nickname, link.room_location].filter(Boolean).join(" · ") || "Home object"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void doUnlink()}
+            disabled={busy}
+            className="mt-3 rounded-full border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition hover:border-red-700/60 hover:text-red-300 disabled:opacity-45"
+          >
+            {busy ? "Working…" : "Unlink from HomeSnap"}
+          </button>
+        </div>
+      )}
+
+      {!error && checked && !link && (
+        <div className="mt-2">
+          <p className="text-sm text-gray-400">
+            Not linked to HomeSnap yet. Link this item to a home object (or create one) so its
+            room, receipts, and warranty live in one shared record.
+          </p>
+          {!showPicker ? (
+            <button
+              type="button"
+              onClick={() => void openPicker()}
+              className="mt-3 inline-flex gap-2 rounded-full border border-indigo-700 px-4 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-950/40"
+            >
+              ➕ Link to HomeSnap
+            </button>
+          ) : !homeUnlocked ? (
+            <p className="mt-2 text-xs text-amber-300">
+              HomeSnap isn't unlocked for your account — purchase the HomeSnap add-on to link this
+              item.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs font-semibold text-gray-400">Link to an existing home object</p>
+              <select
+                className={inputCls}
+                value={propId}
+                onChange={(e) => {
+                  setPropId(e.target.value);
+                  void loadObjects(e.target.value);
+                }}
+              >
+                <option value="">Choose a property…</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nickname}</option>
+                ))}
+              </select>
+              <select
+                className={inputCls}
+                value={objId}
+                onChange={(e) => setObjId(e.target.value)}
+              >
+                <option value="">
+                  {objects.length ? "Choose an object…" : "No objects here yet — pick a property"}
+                </option>
+                {objects.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void doLink()}
+                disabled={busy || !objId}
+                className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-45"
+              >
+                {busy ? "Linking…" : "Link this item"}
+              </button>
+
+              <div className="border-t border-gray-800 pt-3">
+                <p className="text-xs font-semibold text-gray-400">or create a home object from this item</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {properties.length
+                    ? "Pick a property, or leave as-is to use your first / a new “My Home” property."
+                    : "We’ll create a “My Home” property for it."}
+                </p>
+                <div className="mt-2 flex flex-wrap items-end gap-2">
+                  <select
+                    className={inputCls}
+                    value={createPropId}
+                    onChange={(e) => setCreatePropId(e.target.value)}
+                  >
+                    <option value="">Auto (first / new property)</option>
+                    {properties.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nickname}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void doCreate()}
+                    disabled={busy}
+                    className="rounded-full border border-indigo-700 px-4 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-950/40 disabled:opacity-45"
+                  >
+                    {busy ? "Creating…" : "Create & link"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -418,6 +690,12 @@ export function GarageSnapApp() {
     } catch (err) {
       window.alert(messageFromError(err, "The item could not be deleted."));
     }
+  }
+
+  /** Apply a changed item (e.g. after linking/unlinking to HomeSnap) to state. */
+  function applyItem(item: GarageItem) {
+    setItems((prev) => prev.map((x) => (x.id === item.id ? item : x)));
+    setSelected(item);
   }
 
   if (!isLoaded) {
@@ -608,6 +886,9 @@ export function GarageSnapApp() {
                   : "Not recorded"}
               </p>
             </div>
+
+            {/* GarageSnap ↔ HomeSnap shared-context link */}
+            <HomeLinkCard item={selected} onChanged={applyItem} />
 
             <div className="mt-6 flex flex-col gap-2.5">
               <button

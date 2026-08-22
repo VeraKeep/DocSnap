@@ -128,6 +128,98 @@ async function main() {
   }
   console.log("OK: setting addon_garagesnap = true unlocks the module for the user.");
 
+  // 6b) GarageSnap ↔ HomeSnap sharing: link the item to a HomeSnap object and
+  //     read it back both ways (mirrors linkGarageItemToHomeObject +
+  //     getGarageItemHomeLink + getHomeObjectGarageLink). Owner-safety: a
+  //     different user's home object must NOT be linkable.
+  const homeProp = (await sql`
+    INSERT INTO properties (clerk_user_id, nickname, property_type)
+    VALUES (${TEST_USER}, ${"Verify Garage Home"}, ${"house"})
+    RETURNING id
+  `) as unknown as { id: number }[];
+  const propId = clamp(homeProp[0].id);
+  const homeObj = (await sql`
+    INSERT INTO property_objects (property_id, object_type, name, room_location, status)
+    VALUES (${propId}, ${"appliance"}, ${"DeWalt Shop Vacuum"}, ${"Bonus Room"}, ${"active"})
+    RETURNING id
+  `) as unknown as { id: number }[];
+  const objectId = clamp(homeObj[0].id);
+
+  await sql`
+    UPDATE garage_items SET home_object_id = ${objectId}
+    WHERE id = ${itemId} AND clerk_user_id = ${TEST_USER}
+  `;
+  const linkRead = (await sql`
+    SELECT po.id AS object_id, po.name AS object_name, po.room_location,
+           p.nickname AS property_nickname
+    FROM garage_items gi
+    JOIN property_objects po ON po.id = gi.home_object_id
+    JOIN properties p ON p.id = po.property_id
+    WHERE gi.id = ${itemId} AND gi.clerk_user_id = ${TEST_USER}
+  `) as unknown as { object_id: number; object_name: string; room_location: string; property_nickname: string }[];
+  if (
+    !linkRead[0] ||
+    clamp(linkRead[0].object_id) !== objectId ||
+    linkRead[0].room_location !== "Bonus Room" ||
+    linkRead[0].property_nickname !== "Verify Garage Home"
+  ) {
+    console.error("FAIL: garage→home link did not round-trip.");
+    process.exit(1);
+  }
+  console.log(`Link OK: item#${itemId} ↔ home object#${objectId} at "${linkRead[0].property_nickname} · ${linkRead[0].room_location}".`);
+
+  // Home→garage read side (mirrors getHomeObjectGarageLink) — returns storage.
+  const homeRead = (await sql`
+    SELECT gi.id AS item_id, gi.name AS item_name, gi.storage_location
+    FROM garage_items gi
+    WHERE gi.home_object_id = ${objectId} AND gi.clerk_user_id = ${TEST_USER}
+  `) as unknown as { item_id: number; item_name: string; storage_location: string }[];
+  if (!homeRead[0] || homeRead[0].storage_location !== "Wall 01 · Bay A") {
+    console.error("FAIL: home→garage read side did not round-trip.");
+    process.exit(1);
+  }
+  console.log(`Link OK (home side): object#${objectId} ↔ "${homeRead[0].item_name}" stored at "${homeRead[0].storage_location}".`);
+
+  // Owner-safety: linking to another user's home object must find nothing.
+  await sql`
+    INSERT INTO properties (clerk_user_id, nickname, property_type)
+    VALUES (${OTHER}, ${"Other User Home"}, ${"house"})
+  `;
+  const otherObj = (await sql`
+    INSERT INTO property_objects (property_id, object_type, name, status)
+    SELECT id, ${"appliance"}, ${"Not Yours"}, ${"active"} FROM properties
+    WHERE clerk_user_id = ${OTHER} LIMIT 1
+    RETURNING id
+  `) as unknown as { id: number }[];
+  const otherObjectId = otherObj[0] ? clamp(otherObj[0].id) : null;
+  const crossLink = otherObjectId != null
+    ? await sql`
+        SELECT po.id FROM property_objects po
+        JOIN properties p ON p.id = po.property_id
+        WHERE po.id = ${otherObjectId} AND p.clerk_user_id = ${TEST_USER}
+      `
+    : [];
+  if (otherObjectId == null || (crossLink as unknown as Record<string, unknown>[]).length !== 0) {
+    console.error("FAIL: cross-user home object was linkable.");
+    process.exit(1);
+  }
+  console.log("OK: owner scoping — another user's home object cannot be linked.");
+
+  // Unlink (mirrors unlinkGarageItemFromHomeObject).
+  await sql`
+    UPDATE garage_items SET home_object_id = NULL
+    WHERE id = ${itemId} AND clerk_user_id = ${TEST_USER}
+  `;
+  const unlinked = (await sql`
+    SELECT gi.home_object_id FROM garage_items gi
+    WHERE gi.id = ${itemId} AND gi.clerk_user_id = ${TEST_USER}
+  `) as unknown as { home_object_id: number | null }[];
+  if (unlinked[0]?.home_object_id != null) {
+    console.error("FAIL: unlink did not clear home_object_id.");
+    process.exit(1);
+  }
+  console.log("Unlink OK: home_object_id cleared.");
+
   // 7) Delete (mirrors deleteGarageItem — owner-scoped).
   const del = (await sql`
     DELETE FROM garage_items WHERE id = ${itemId} AND clerk_user_id = ${TEST_USER}
@@ -141,6 +233,15 @@ async function main() {
 
   // 8) Cleanup.
   if (CLEANUP) {
+    await sql`DELETE FROM object_documents WHERE object_id IN (
+      SELECT id FROM property_objects WHERE property_id IN (
+        SELECT id FROM properties WHERE clerk_user_id IN (${TEST_USER}, ${OTHER})
+      )
+    )`;
+    await sql`DELETE FROM property_objects WHERE property_id IN (
+      SELECT id FROM properties WHERE clerk_user_id IN (${TEST_USER}, ${OTHER})
+    )`;
+    await sql`DELETE FROM properties WHERE clerk_user_id IN (${TEST_USER}, ${OTHER})`;
     await sql`DELETE FROM garage_items WHERE clerk_user_id IN (${TEST_USER}, ${OTHER})`;
     await sql`DELETE FROM users WHERE clerk_user_id IN (${TEST_USER}, ${OTHER})`;
     console.log("OK: test rows cleaned up (set KEEP_TEST_ROWS=1 to retain them).");
