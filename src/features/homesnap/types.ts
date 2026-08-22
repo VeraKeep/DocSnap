@@ -28,6 +28,52 @@ export type PropertyAccessRole = "owner" | "edit" | "view";
 
 /** A role that can be granted via a property share ('owner' is implicit). */
 export type ShareRole = "view" | "edit";
+
+/**
+ * The kind of change recorded in a property's activity log. Written server-side
+ * on every HomeSnap write action. `shared`/`revoked` are the household-sharing
+ * actions; `completed` is a maintenance task marked done; the rest are the
+ * lifecycle create/update/delete of objects, documents, events, schedules, and
+ * properties.
+ */
+export type ActivityAction =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "completed"
+  | "shared"
+  | "revoked";
+
+/** What kind of HomeSnap record an activity entry refers to. */
+export type ActivityEntityType =
+  | "property"
+  | "object"
+  | "document"
+  | "event"
+  | "schedule"
+  | "share";
+
+/**
+ * One row of a property's household activity log — a single change and who
+ * made it. `actor_user_id` is the DocSnap user (users.clerk_user_id) who did
+ * it (the owner or a shared household member); `actor_email` is the resolved
+ * display email (joined from users at read time, null if unknown). `message`
+ * is a human-readable description. Append-only history surfaced to the owner
+ * and any shared member (view or edit), which is exactly the natural
+ * completion of household sharing.
+ */
+export interface PropertyActivity {
+  id: number;
+  property_id: number;
+  actor_user_id: string;
+  actor_email: string | null;
+  action: ActivityAction;
+  entity_type: ActivityEntityType;
+  entity_id: number | null;
+  entity_label: string | null;
+  message: string | null;
+  created_at: string;
+}
 export type DocumentType =
   | "receipt"
   | "invoice"
@@ -399,4 +445,46 @@ export function asInventoryCategory(v: unknown): InventoryCategory {
   return typeof v === "string" && v in INVENTORY_CATEGORY_LABELS
     ? (v as InventoryCategory)
     : "other";
+}
+
+export const ACTIVITY_ACTION_LABELS: Record<ActivityAction, string> = {
+  created: "Added",
+  updated: "Updated",
+  deleted: "Deleted",
+  completed: "Completed",
+  shared: "Shared",
+  revoked: "Unshared",
+};
+
+export const ACTIVITY_ENTITY_LABELS: Record<ActivityEntityType, string> = {
+  property: "Property",
+  object: "Object",
+  document: "Document",
+  event: "Event",
+  schedule: "Maintenance",
+  share: "Sharing",
+};
+
+export function asActivityAction(v: unknown): ActivityAction {
+  return typeof v === "string" &&
+    (v === "created" ||
+      v === "updated" ||
+      v === "deleted" ||
+      v === "completed" ||
+      v === "shared" ||
+      v === "revoked")
+    ? (v as ActivityAction)
+    : "created";
+}
+
+export function asActivityEntityType(v: unknown): ActivityEntityType {
+  return typeof v === "string" &&
+    (v === "property" ||
+      v === "object" ||
+      v === "document" ||
+      v === "event" ||
+      v === "schedule" ||
+      v === "share")
+    ? (v as ActivityEntityType)
+    : "object";
 }
