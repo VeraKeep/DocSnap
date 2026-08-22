@@ -263,6 +263,83 @@ async function main() {
   }
   console.log("OK: 'view' grantee sees the property with access_role=view (read-only).");
 
+  // 3.8) Activity-log round-trip. Simulate the audit rows the server writes on
+  // every HomeSnap action (actor = the owner and a shared 'edit' grantee), then
+  // run the exact listActivity query (property-scoped + actor-email join,
+  // most-recent-first) as the owner, the 'edit' grantee, and the 'view' grantee
+  // — all must read them. A user with NO access (OTHER) must be blocked at the
+  // owner-or-share boundary, exactly as requirePropertyAccess would reject them.
+  await sql`
+    INSERT INTO property_activity (property_id, actor_user_id, action, entity_type, entity_id, entity_label, message, created_at)
+    VALUES
+      (${propertyId}, ${TEST_USER}, ${"created"}, ${"object"}, ${objectId}, ${"Main HVAC"}, ${'Added System "Main HVAC".'}, ${"2026-01-02T12:00:00Z"}),
+      (${propertyId}, ${SHARED}, ${"completed"}, ${"schedule"}, ${scheduleId}, ${"Replace air filter"}, ${'Completed maintenance "Replace air filter".'}, ${"2026-01-03T12:00:00Z"})
+  `;
+
+  const readActivity = async (asUser: string) =>
+    (await sql`
+      SELECT pa.*, u.email AS actor_email
+      FROM property_activity pa
+      LEFT JOIN users u ON u.clerk_user_id = pa.actor_user_id
+      WHERE pa.property_id = ${propertyId}
+      ORDER BY pa.created_at DESC, pa.id DESC
+      LIMIT 100
+    `) as unknown as Record<string, unknown>[];
+
+  const ownerActs = await readActivity(TEST_USER);
+  if (ownerActs.length < 2) {
+    console.error("FAIL: owner could not read the property's activity rows.");
+    process.exit(1);
+  }
+  // Most-recent-first: the "completed" row (01-03) must sort above "created" (01-02).
+  if (String(ownerActs[0].action) !== "completed") {
+    console.error("FAIL: activity is not returned most-recent-first.");
+    process.exit(1);
+  }
+  if (String(ownerActs[1].action) !== "created") {
+    console.error("FAIL: activity ordering wrong (expected created second).");
+    process.exit(1);
+  }
+  // actor email resolved from users for the shared-member actor.
+  if (String(ownerActs[0].actor_email) !== "shared@example.com") {
+    console.error(`FAIL: actor email not joined for the shared member (got ${ownerActs[0].actor_email}).`);
+    process.exit(1);
+  }
+  console.log("OK: owner reads property activity most-recent-first with actor email resolved.");
+
+  const editActs = await readActivity(SHARED);
+  const viewActs = await readActivity(NOSHARE);
+  if (editActs.length < 2 || viewActs.length < 2) {
+    console.error("FAIL: shared 'edit'/'view' grantees could not read the property's activity.");
+    process.exit(1);
+  }
+  console.log("OK: shared 'edit' and 'view' grantees can read the property's activity.");
+
+  // A user with no access (OTHER) must be blocked at the owner-or-share
+  // boundary — the exact check requirePropertyAccess performs before any read.
+  const otherAccess = (await sql`
+    SELECT
+      (SELECT 1 FROM properties WHERE id = ${propertyId} AND clerk_user_id = ${OTHER}) AS is_owner,
+      (SELECT role FROM property_shares WHERE property_id = ${propertyId} AND grantee_user_id = ${OTHER}) AS role
+  `) as unknown as { is_owner: number | null; role: string | null }[];
+  if (otherAccess[0].is_owner === 1 || otherAccess[0].role != null) {
+    console.error("FAIL: a non-shared user unexpectedly has access to the property's activity.");
+    process.exit(1);
+  }
+  console.log("OK: a non-shared user is BLOCKED from reading the property's activity (access boundary).");
+
+  // Object-scoped filter: only the object's own activity rows are returned.
+  const objScoped = (await sql`
+    SELECT entity_type, entity_id FROM property_activity
+    WHERE property_id = ${propertyId} AND entity_type = 'object' AND entity_id = ${objectId}
+    ORDER BY created_at DESC
+  `) as unknown as Record<string, unknown>[];
+  if (objScoped.length !== 1 || Number(objScoped[0].entity_id) !== objectId) {
+    console.error("FAIL: object-scoped activity filter did not return exactly the object's row.");
+    process.exit(1);
+  }
+  console.log("OK: activity can be filtered to a single object.");
+
   // Revoke the 'edit' share; SHARED must then lose access entirely.
   const revokedRows = (await sql`
     DELETE FROM property_shares

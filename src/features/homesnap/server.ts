@@ -27,6 +27,8 @@ import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
 import { hasHomeSnapAddon, findUserByEmail } from "~/subscription";
 import {
+  asActivityAction,
+  asActivityEntityType,
   asDocumentType,
   asEventType,
   asIntervalUnit,
@@ -35,10 +37,17 @@ import {
   asPropertyType,
   asShareRole,
   asTaskType,
+  DOCUMENT_TYPE_LABELS,
+  EVENT_TYPE_LABELS,
+  OBJECT_TYPE_LABELS,
+  SHARE_ROLE_LABELS,
+  TASK_TYPE_LABELS,
+  type ActivityAction,
+  type ActivityEntityType,
+  type AnalyticsData,
   type DocumentType,
   type EventType,
   type IntervalUnit,
-  type AnalyticsData,
   type HomeReportData,
   type InventoryItem,
   type MaintenanceDueItem,
@@ -49,6 +58,7 @@ import {
   type ObjectType,
   type Property,
   type PropertyAccessRole,
+  type PropertyActivity,
   type PropertyObject,
   type PropertyShare,
   type PropertyType,
@@ -165,6 +175,21 @@ function toShare(r: Record<string, unknown>): PropertyShare {
     grantee_user_id: (r.grantee_user_id as string) ?? "",
     grantee_email: (r.grantee_email as string | null) ?? null,
     role: asShareRole(r.role),
+    created_at: String(r.created_at),
+  };
+}
+
+function toActivity(r: Record<string, unknown>): PropertyActivity {
+  return {
+    id: Number(r.id),
+    property_id: Number(r.property_id),
+    actor_user_id: (r.actor_user_id as string) ?? "",
+    actor_email: (r.actor_email as string | null) ?? null,
+    action: asActivityAction(r.action),
+    entity_type: asActivityEntityType(r.entity_type),
+    entity_id: r.entity_id == null ? null : Number(r.entity_id),
+    entity_label: (r.entity_label as string | null) ?? null,
+    message: (r.message as string | null) ?? null,
     created_at: String(r.created_at),
   };
 }
@@ -430,6 +455,50 @@ async function requireChildAccess(
 }
 
 /* ------------------------------------------------------------------ */
+/* Household activity log (append-only audit trail)                    */
+/* ------------------------------------------------------------------ */
+/**
+ * Record ONE append-only activity row for a property's household log.
+ *
+ * This is the single internal helper every HomeSnap write action calls after a
+ * successful change, so the history is complete and consistent (created /
+ * updated / deleted object, document, event, maintenance schedule; maintenance
+ * completed; share granted / revoked; property created). `actor_user_id` is
+ * always the server-resolved current user (the owner or a shared household
+ * member) — never caller-supplied. The display email is resolved at read time
+ * (listActivity joins users), so we don't pay a lookup on every write.
+ *
+ * Recording is BEST-EFFORT and wrapped so it can NEVER break the underlying
+ * write it describes — if the log insert fails, the action still succeeded.
+ */
+async function recordActivity(
+  userId: string,
+  a: {
+    propertyId: number;
+    action: ActivityAction;
+    entityType: ActivityEntityType;
+    entityId?: number | null;
+    entityLabel?: string | null;
+    message: string;
+  },
+): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    await sql`
+      INSERT INTO property_activity (
+        property_id, actor_user_id, action, entity_type, entity_id,
+        entity_label, message
+      ) VALUES (
+        ${a.propertyId}, ${userId}, ${a.action}, ${a.entityType},
+        ${a.entityId ?? null}, ${a.entityLabel ?? null}, ${a.message}
+      )
+    `;
+  } catch {
+    // Best-effort: never fail a real write because the audit insert failed.
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Properties                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -479,6 +548,15 @@ export const createProperty = createServerFn({ method: "POST" })
       VALUES (${userId}, ${data.nickname}, ${data.property_type}, ${data.purchase_date}, ${data.purchase_price})
       RETURNING *
     `) as Record<string, unknown>[];
+    const propertyId = Number(rows[0].id);
+    await recordActivity(userId, {
+      propertyId,
+      action: "created",
+      entityType: "property",
+      entityId: propertyId,
+      entityLabel: data.nickname,
+      message: `Added property "${data.nickname}".`,
+    });
     return { property: toProperty(rows[0]) };
   });
 
@@ -535,6 +613,15 @@ export const shareProperty = createServerFn({ method: "POST" })
       DO UPDATE SET role = ${data.role}, grantee_email = ${email}, created_at = NOW()
       RETURNING *
     `) as Record<string, unknown>[];
+    const shareId = Number(rows[0].id);
+    await recordActivity(userId, {
+      propertyId: data.property_id,
+      action: "shared",
+      entityType: "share",
+      entityId: shareId,
+      entityLabel: email,
+      message: `Shared this home with ${email} (${SHARE_ROLE_LABELS[data.role]}).`,
+    });
     return { share: toShare(rows[0]) };
   });
 
@@ -557,12 +644,30 @@ export const revokeShare = createServerFn({ method: "POST" })
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
+    const before = (await sql`
+      SELECT id, grantee_email, role FROM property_shares
+      WHERE property_id = ${data.property_id} AND grantee_user_id = ${data.grantee_user_id}
+      LIMIT 1
+    `) as Record<string, unknown>[];
     const rows = (await sql`
       DELETE FROM property_shares
       WHERE property_id = ${data.property_id} AND grantee_user_id = ${data.grantee_user_id}
       RETURNING id
     `) as Record<string, unknown>[];
-    return { revoked: rows[0] ? Number(rows[0].id) : null };
+    const removed = rows[0] ? Number(rows[0].id) : null;
+    if (removed != null) {
+      const email = (before[0]?.grantee_email as string | null) ?? data.grantee_user_id;
+      const role = (before[0]?.role as ShareRole) ?? "view";
+      await recordActivity(userId, {
+        propertyId: data.property_id,
+        action: "revoked",
+        entityType: "share",
+        entityId: removed,
+        entityLabel: email,
+        message: `Stopped sharing this home with ${email} (${SHARE_ROLE_LABELS[role]}).`,
+      });
+    }
+    return { revoked: removed };
   });
 
 /**
@@ -584,6 +689,55 @@ export const listShares = createServerFn({ method: "POST" })
       ORDER BY created_at ASC
     `) as Record<string, unknown>[];
     return { configured: true, shares: rows.map(toShare) };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Activity log (household change history)                             */
+/* ------------------------------------------------------------------ */
+/**
+ * Recent change history for one property, most-recent-first. Available to the
+ * owner AND any shared member (view or edit) — it goes through the SAME
+ * owner-or-share choke point (requirePropertyAccess) as every other HomeSnap
+ * read, so a non-shared user gets 404 even guessing ids. Optionally filtered to
+ * a single object's actions (entity_type='object' + entity_id). The actor's
+ * display email is joined from users (null when unknown). Gated HARD with
+ * requireHomeSnapAddon (fails closed) like every HomeSnap read. Append-only
+ * history — recording happens server-side on every write action, never here.
+ */
+export const listActivity = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { property_id?: unknown; object_id?: unknown; limit?: unknown };
+    return {
+      property_id: positiveId(d.property_id, "Property id"),
+      object_id:
+        d.object_id == null || d.object_id === ""
+          ? null
+          : positiveId(d.object_id, "Object id"),
+      limit:
+        d.limit == null
+          ? 100
+          : Math.min(Math.max(positiveId(d.limit, "Limit"), 1), 200),
+    };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireHomeSnapAddon(userId);
+    await requirePropertyAccess(userId, data.property_id, false);
+    if (!process.env.DATABASE_URL) return { configured: false, activities: [] };
+    const rows = (await sql`
+      SELECT pa.*, u.email AS actor_email
+      FROM property_activity pa
+      LEFT JOIN users u ON u.clerk_user_id = pa.actor_user_id
+      WHERE pa.property_id = ${data.property_id}
+        ${
+          data.object_id != null
+            ? sql`AND pa.entity_type = 'object' AND pa.entity_id = ${data.object_id}`
+            : sql``
+        }
+      ORDER BY pa.created_at DESC, pa.id DESC
+      LIMIT ${data.limit}
+    `) as Record<string, unknown>[];
+    return { configured: true, activities: rows.map(toActivity) };
   });
 
 /* ------------------------------------------------------------------ */
@@ -665,6 +819,16 @@ export const createObject = createServerFn({ method: "POST" })
       )
       RETURNING *
     `) as Record<string, unknown>[];
+    const objectId = Number(rows[0].id);
+    const typeLabel = OBJECT_TYPE_LABELS[asObjectType(data.object_type)] ?? "Object";
+    await recordActivity(userId, {
+      propertyId: data.property_id,
+      action: "created",
+      entityType: "object",
+      entityId: objectId,
+      entityLabel: data.name,
+      message: `Added ${typeLabel} "${data.name}".`,
+    });
     return { object: toObject(rows[0]) };
   });
 
@@ -808,6 +972,14 @@ export const createObjectFromReceipt = createServerFn({ method: "POST" })
         ${`Imported from ReceiptSnap receipt #${String(data.receipt_id)}.`}
       )
     `;
+    await recordActivity(userId, {
+      propertyId,
+      action: "created",
+      entityType: "object",
+      entityId: objectId,
+      entityLabel: name,
+      message: `Added Appliance "${name}" from ReceiptSnap receipt #${String(data.receipt_id)}.`,
+    });
     return {
       configured: true,
       object: toObject(objectRows[0]),
@@ -853,7 +1025,7 @@ export const updateObject = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "object", data.id, true);
+    const propertyId = await requireChildAccess(userId, "object", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -876,6 +1048,14 @@ export const updateObject = createServerFn({ method: "POST" })
       RETURNING *
     `) as Record<string, unknown>[];
     if (!rows[0]) throw new Error("Object not found.");
+    await recordActivity(userId, {
+      propertyId,
+      action: "updated",
+      entityType: "object",
+      entityId: data.id,
+      entityLabel: data.name,
+      message: `Updated ${OBJECT_TYPE_LABELS[asObjectType(data.object_type)] ?? "object"} "${data.name}".`,
+    });
     return { object: toObject(rows[0]) };
   });
 
@@ -887,11 +1067,23 @@ export const deleteObject = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "object", data.id, true);
+    const propertyId = await requireChildAccess(userId, "object", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
+    const before = (await sql`
+      SELECT name FROM property_objects WHERE id = ${data.id}
+    `) as Record<string, unknown>[];
+    const name = (before[0]?.name as string | null) ?? "object";
     await sql`DELETE FROM property_objects WHERE id = ${data.id}`;
+    await recordActivity(userId, {
+      propertyId,
+      action: "deleted",
+      entityType: "object",
+      entityId: data.id,
+      entityLabel: name,
+      message: `Deleted "${name}".`,
+    });
     return { deleted: true };
   });
 
@@ -971,7 +1163,7 @@ export const createDocument = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "object", data.object_id, true);
+    const propertyId = await requireChildAccess(userId, "object", data.object_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -980,6 +1172,16 @@ export const createDocument = createServerFn({ method: "POST" })
       VALUES (${data.object_id}, ${data.document_type}, ${data.title}, ${data.file_url}, ${data.notes})
       RETURNING *
     `) as Record<string, unknown>[];
+    const docId = Number(rows[0].id);
+    const label = data.title ?? data.file_url;
+    await recordActivity(userId, {
+      propertyId,
+      action: "created",
+      entityType: "document",
+      entityId: docId,
+      entityLabel: label,
+      message: `Attached ${DOCUMENT_TYPE_LABELS[asDocumentType(data.document_type)] ?? "document"} "${label}".`,
+    });
     return { document: toDocument(rows[0]) };
   });
 
@@ -993,11 +1195,23 @@ export const deleteDocument = createServerFn({ method: "POST" })
     await requireHomeSnapAddon(userId);
     // Scope the document through its owning object/property before deleting —
     // the owner or an 'edit'-role grantee may remove it, never a bare id.
-    await requireChildAccess(userId, "document", data.id, true);
+    const propertyId = await requireChildAccess(userId, "document", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
+    const before = (await sql`
+      SELECT title, document_type FROM object_documents WHERE id = ${data.id}
+    `) as Record<string, unknown>[];
+    const label = (before[0]?.title as string | null) ?? "document";
     await sql`DELETE FROM object_documents WHERE id = ${data.id}`;
+    await recordActivity(userId, {
+      propertyId,
+      action: "deleted",
+      entityType: "document",
+      entityId: data.id,
+      entityLabel: label,
+      message: `Removed ${DOCUMENT_TYPE_LABELS[asDocumentType(before[0]?.document_type)] ?? "document"} "${label}".`,
+    });
     return { deleted: true };
   });
 
@@ -1045,7 +1259,7 @@ export const createEvent = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "object", data.object_id, true);
+    const propertyId = await requireChildAccess(userId, "object", data.object_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -1054,6 +1268,16 @@ export const createEvent = createServerFn({ method: "POST" })
       VALUES (${data.object_id}, ${data.event_type}, ${data.occurred_on}, ${data.title}, ${data.notes}, ${data.cost})
       RETURNING *
     `) as Record<string, unknown>[];
+    const eventId = Number(rows[0].id);
+    const label = data.title ?? EVENT_TYPE_LABELS[asEventType(data.event_type)];
+    await recordActivity(userId, {
+      propertyId,
+      action: "created",
+      entityType: "event",
+      entityId: eventId,
+      entityLabel: label,
+      message: `Added ${EVENT_TYPE_LABELS[asEventType(data.event_type)] ?? "timeline entry"} "${label}".`,
+    });
     return { event: toEvent(rows[0]) };
   });
 
@@ -1067,11 +1291,23 @@ export const deleteEvent = createServerFn({ method: "POST" })
     await requireHomeSnapAddon(userId);
     // Scope the event through its owning object/property before deleting — the
     // owner or an 'edit'-role grantee may remove it, never a bare id.
-    await requireChildAccess(userId, "event", data.id, true);
+    const propertyId = await requireChildAccess(userId, "event", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
+    const before = (await sql`
+      SELECT title, event_type FROM object_events WHERE id = ${data.id}
+    `) as Record<string, unknown>[];
+    const label = (before[0]?.title as string | null) ?? "timeline entry";
     await sql`DELETE FROM object_events WHERE id = ${data.id}`;
+    await recordActivity(userId, {
+      propertyId,
+      action: "deleted",
+      entityType: "event",
+      entityId: data.id,
+      entityLabel: label,
+      message: `Removed ${EVENT_TYPE_LABELS[asEventType(before[0]?.event_type)] ?? "timeline entry"} "${label}".`,
+    });
     return { deleted: true };
   });
 
@@ -1130,7 +1366,7 @@ export const createSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "object", data.object_id, true);
+    const propertyId = await requireChildAccess(userId, "object", data.object_id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -1145,6 +1381,16 @@ export const createSchedule = createServerFn({ method: "POST" })
       )
       RETURNING *
     `) as Record<string, unknown>[];
+    const scheduleId = Number(rows[0].id);
+    const label = data.title ?? TASK_TYPE_LABELS[asTaskType(data.task_type)];
+    await recordActivity(userId, {
+      propertyId,
+      action: "created",
+      entityType: "schedule",
+      entityId: scheduleId,
+      entityLabel: label,
+      message: `Scheduled maintenance "${label}".`,
+    });
     return { schedule: toSchedule(rows[0]) };
   });
 
@@ -1175,7 +1421,7 @@ export const updateSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "schedule", data.id, true);
+    const propertyId = await requireChildAccess(userId, "schedule", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
@@ -1192,6 +1438,15 @@ export const updateSchedule = createServerFn({ method: "POST" })
       RETURNING *
     `) as Record<string, unknown>[];
     if (!rows[0]) throw new Error("Schedule not found.");
+    const label = data.title ?? TASK_TYPE_LABELS[asTaskType(data.task_type)];
+    await recordActivity(userId, {
+      propertyId,
+      action: "updated",
+      entityType: "schedule",
+      entityId: data.id,
+      entityLabel: label,
+      message: `Updated maintenance "${label}".`,
+    });
     return { schedule: toSchedule(rows[0]) };
   });
 
@@ -1208,12 +1463,12 @@ export const completeSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "schedule", data.id, true);
+    const propertyId = await requireChildAccess(userId, "schedule", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
     const schRows = (await sql`
-      SELECT interval_value, interval_unit FROM maintenance_schedules
+      SELECT interval_value, interval_unit, title, task_type FROM maintenance_schedules
       WHERE id = ${data.id}
     `) as Record<string, unknown>[];
     const sch = schRows[0];
@@ -1229,6 +1484,16 @@ export const completeSchedule = createServerFn({ method: "POST" })
       WHERE id = ${data.id}
       RETURNING *
     `) as Record<string, unknown>[];
+    const label =
+      (sch.title as string | null) ?? TASK_TYPE_LABELS[asTaskType(sch.task_type)];
+    await recordActivity(userId, {
+      propertyId,
+      action: "completed",
+      entityType: "schedule",
+      entityId: data.id,
+      entityLabel: label,
+      message: `Completed maintenance "${label}" (next due ${nextDue}).`,
+    });
     return { schedule: toSchedule(rows[0]), last_done: lastDone, next_due: nextDue };
   });
 
@@ -1240,11 +1505,25 @@ export const deleteSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireServerFunctionUser();
     await requireHomeSnapAddon(userId);
-    await requireChildAccess(userId, "schedule", data.id, true);
+    const propertyId = await requireChildAccess(userId, "schedule", data.id, true);
     if (!process.env.DATABASE_URL) {
       throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
     }
+    const before = (await sql`
+      SELECT title, task_type FROM maintenance_schedules WHERE id = ${data.id}
+    `) as Record<string, unknown>[];
+    const label =
+      (before[0]?.title as string | null) ??
+      TASK_TYPE_LABELS[asTaskType(before[0]?.task_type)];
     await sql`DELETE FROM maintenance_schedules WHERE id = ${data.id}`;
+    await recordActivity(userId, {
+      propertyId,
+      action: "deleted",
+      entityType: "schedule",
+      entityId: data.id,
+      entityLabel: label,
+      message: `Removed maintenance "${label}".`,
+    });
     return { deleted: true };
   });
 

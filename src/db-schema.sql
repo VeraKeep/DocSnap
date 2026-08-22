@@ -235,6 +235,35 @@ CREATE TABLE IF NOT EXISTS property_shares (
 );
 CREATE INDEX IF NOT EXISTS idx_property_shares_grantee_user_id
   ON property_shares (grantee_user_id);
+-- Household activity log: an append-only history of what happened to a
+-- property's records and who did it — the owner or a shared household member.
+-- One row is written server-side on every HomeSnap write action (object /
+-- document / event / maintenance-schedule create-update-delete, maintenance
+-- complete, share grant/revoke, property create). It is NEVER edited or
+-- deleted on a data action — it is pure history. Columns are normalized so the
+-- log can be filtered per-property (property_id + created_at index) and
+-- per-object (entity_type='object' + entity_id index, no FK so an object can
+-- be deleted without orphaning its history). `actor_user_id` is the
+-- users.clerk_user_id who performed the action (the owner or a shared grantee);
+-- the display email is resolved at read time by joining users. Read through
+-- the SAME owner-or-share access boundary as every other record, so only the
+-- owner and shared members can see a property's history — a non-shared user is
+-- blocked (404) even guessing ids.
+CREATE TABLE IF NOT EXISTS property_activity (
+  id SERIAL PRIMARY KEY,
+  property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  actor_user_id TEXT NOT NULL,       -- users.clerk_user_id who performed the action
+  action TEXT NOT NULL,              -- created/updated/deleted/completed/shared/revoked
+  entity_type TEXT NOT NULL,         -- property/object/document/event/schedule/share
+  entity_id INTEGER,                 -- affected row id (null when N/A, e.g. a property)
+  entity_label TEXT,                 -- human label of the affected record (name/title)
+  message TEXT,                      -- human-readable description of what happened
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_property_activity_property_created
+  ON property_activity (property_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_property_activity_entity
+  ON property_activity (entity_type, entity_id);
 
 -- Safe upgrade for databases created before the inventory feature existed.
 ALTER TABLE property_objects ADD COLUMN IF NOT EXISTS inventory_category TEXT;

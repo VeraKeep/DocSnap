@@ -42,6 +42,7 @@ import {
   shareProperty,
   updateObject,
 } from "../server";
+import { HomeSnapActivity } from "./HomeSnapActivity";
 import { HomeSnapAnalytics } from "./HomeSnapAnalytics";
 import {
   DOCUMENT_TYPE_LABELS,
@@ -1937,9 +1938,10 @@ export function HomeSnapApp() {
   const [editingObject, setEditingObject] = useState<PropertyObject | null>(null);
   const [dueItems, setDueItems] = useState<MaintenanceDueItem[]>([]);
   // Top-level view: "home" (the property-centric record + maintenance),
-  // "inventory" (the cross-home big-ticket possessions list), or "analytics"
-  // (the spend-over-time dashboard + printable home-sale/insurance report).
-  const [view, setView] = useState<"home" | "inventory" | "analytics">("home");
+  // "inventory" (the cross-home big-ticket possessions list), "analytics"
+  // (the spend-over-time dashboard + printable home-sale/insurance report), or
+  // "activity" (the per-property household change history).
+  const [view, setView] = useState<"home" | "inventory" | "analytics" | "activity">("home");
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
@@ -2147,6 +2149,15 @@ export function HomeSnapApp() {
         >
           📊 Spend
         </button>
+        <button
+          type="button"
+          onClick={() => setView("activity")}
+          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            view === "activity" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          🕘 Activity
+        </button>
       </div>
 
       {view === "inventory" ? (
@@ -2158,6 +2169,13 @@ export function HomeSnapApp() {
         />
       ) : view === "analytics" ? (
         <HomeSnapAnalytics />
+      ) : view === "activity" ? (
+        <HomeSnapActivity
+          properties={properties}
+          defaultPropertyId={selectedPropertyId}
+          defaultObjectId={selectedObjectId}
+          currentUserId={user.id}
+        />
       ) : (
         <>
           {status === "error" && <ErrorCard message={loadError} onRetry={() => void load()} />}
