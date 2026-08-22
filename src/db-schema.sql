@@ -340,3 +340,34 @@ CREATE TABLE IF NOT EXISTS contract_reminders (
 );
 CREATE INDEX IF NOT EXISTS idx_contract_reminders_contract_id
   ON contract_reminders (contract_id);
+
+-- GarageSnap module: workshop inventory — tools & equipment.
+-- Owner-scoped like receipts/HomSnap: each item belongs to one Clerk user
+-- (users.clerk_user_id, NULLABLE to match the receipts convention and leave
+-- room for demo rows; every query filters by the server-resolved owner).
+-- `storage_location` is the room/spot the item lives in — this is the field the
+-- GarageSnap ↔ HomeSnap object-sharing maps later to HomeSnap's object
+-- `room_location`. `home_object_id` is a RESERVED, nullable link to a HomeSnap
+-- PropertyObject (always NULL for now; set by the sharing feature). Date
+-- fields are free-text TEXT to match the receipts store_date / HomeSnap
+-- warranty_expiration convention.
+CREATE TABLE IF NOT EXISTS garage_items (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other', -- power_tool/hand_tool/equipment/supply/other
+  make TEXT,
+  model TEXT,
+  serial_number TEXT,
+  photo_url TEXT,
+  purchase_date TEXT,
+  purchase_price NUMERIC,
+  warranty_expiration TEXT,
+  storage_location TEXT,
+  -- RESERVED for GarageSnap ↔ HomeSnap sharing: HomeSnap PropertyObject id
+  -- this item mirrors. Null now; populated by the sharing feature.
+  home_object_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_garage_items_clerk_user_id_created_at
+  ON garage_items (clerk_user_id, created_at DESC);
