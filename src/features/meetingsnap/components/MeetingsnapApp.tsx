@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
+  analyzeAudio,
   analyzeMeeting,
   askAI,
   draftFollowUpEmail,
@@ -8,6 +9,7 @@ import {
   listMeetings,
   searchMeetings,
 } from "../server";
+import { uploadAudioRecording } from "../../../cloudSync";
 import {
   actionListToMarkdown,
   downloadText,
@@ -464,6 +466,11 @@ export function MeetingsnapApp() {
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Audio recording → speech-to-text
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioBusy, setAudioBusy] = useState(false);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+
   // Ask AI
   const [askQuestion, setAskQuestion] = useState("");
   const [askBusy, setAskBusy] = useState(false);
@@ -501,6 +508,52 @@ export function MeetingsnapApp() {
       setSourceText(await extractFileText(file));
     } catch (e) {
       setError(messageFromError(e, "That file could not be read."));
+    }
+  }
+
+  async function selectAudioFile(file: File) {
+    const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+    if (!["mp3", "wav", "m4a", "mp4", "webm"].includes(ext)) {
+      setError("That file type isn't supported for audio. Please use MP3, WAV, M4A, MP4, or WebM.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setError("That recording is larger than the 25MB limit for transcription. Trim it or split it and try again.");
+      return;
+    }
+    setError("");
+    setAudioFile(file);
+    setTitle((t) => t || file.name.replace(/\.[^.]+$/, ""));
+  }
+
+  async function runAudioAnalyze() {
+    if (!audioFile) return;
+    setError("");
+    setNotice("");
+    setResult(null);
+    setAudioBusy(true);
+    try {
+      const uploaded = await uploadAudioRecording(audioFile);
+      if (!uploaded) {
+        setError(
+          "Recording upload isn't connected yet — the team hasn't configured UploadThing here. You can paste a transcript below in the meantime.",
+        );
+        return;
+      }
+      const res = await analyzeAudio({
+        data: { title, fileUrl: uploaded.fileUrl, fileName: audioFile.name },
+      });
+      setConfigured(res.configured);
+      setResult(res.meeting as MeetingDetail);
+      setNotice(
+        res.configured
+          ? "Recording transcribed and saved — it now appears under Your meetings below."
+          : "Recording transcribed, but storage isn't connected here, so this meeting is shown for this session only.",
+      );
+    } catch (e) {
+      setError(messageFromError(e, "Couldn't transcribe that recording. Please try again."));
+    } finally {
+      setAudioBusy(false);
     }
   }
 
@@ -670,6 +723,58 @@ export function MeetingsnapApp() {
         </button>
         <p className="mt-2 text-center text-xs text-gray-600">
           Your transcript is sent securely for extraction and saved with your meeting.
+        </p>
+      </section>
+
+      {/* Input: upload a recording (speech-to-text) */}
+      <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 sm:p-6">
+        <h2 className="font-semibold">Or upload a meeting recording</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Upload an MP3, WAV, M4A, MP4, or WebM recording (up to 25MB). We
+          transcribe it with speech-to-text, then run the same AI extraction for
+          decisions, action items, owners, due dates, questions, and risks.
+        </p>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) void selectAudioFile(f);
+          }}
+          onClick={() => audioInputRef.current?.click()}
+          className="mt-4 cursor-pointer rounded-2xl border-2 border-dashed border-gray-700 p-5 text-center transition hover:border-indigo-500/60"
+        >
+          <input
+            ref={audioInputRef}
+            className="hidden"
+            type="file"
+            accept=".mp3,.wav,.m4a,.mp4,.webm,audio/*"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void selectAudioFile(f);
+            }}
+          />
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gray-800 text-xl text-gray-300">
+            🎙
+          </div>
+          <p className="mt-3 text-sm font-medium text-gray-200">Drop a recording here</p>
+          <p className="mt-1 text-xs text-gray-500">
+            or click to browse · MP3 / WAV / M4A / MP4 / WebM · up to 25MB
+          </p>
+          {audioFile && (
+            <p className="mt-2 text-xs text-indigo-300">{audioFile.name} selected</p>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={!audioFile || audioBusy}
+          onClick={() => void runAudioAnalyze()}
+          className="mt-4 w-full rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {audioBusy ? "Transcribing & analyzing…" : "Transcribe & analyze recording"}
+        </button>
+        <p className="mt-2 text-center text-xs text-gray-600">
+          Your recording is transcribed securely and treated like a transcript — saved with your meeting.
         </p>
       </section>
 

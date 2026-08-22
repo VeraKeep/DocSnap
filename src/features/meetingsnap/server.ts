@@ -274,6 +274,164 @@ async function extractWithAI(sourceText: string, title: string): Promise<Meeting
 }
 
 /* ------------------------------------------------------------------ */
+/* Shared analyze + persist pipeline                                    */
+/* ------------------------------------------------------------------ */
+
+export interface AnalyzeResult {
+  configured: boolean;
+  meeting: {
+    id: number;
+    title: string;
+    createdAt: string | null;
+    sourceText: string;
+    extraction: MeetingExtraction;
+  };
+  usage: MeetingUsage;
+  meetingTier: MeetingTier;
+}
+
+/**
+ * Shared analyze → extract → persist pipeline used by BOTH the transcript path
+ * (analyzeMeeting) and the audio path (analyzeAudio): enforces the user's tier
+ * + monthly usage limits BEFORE spending AI credits, runs AI extraction on the
+ * given source text, and persists the original transcript (immutable source)
+ * plus the versioned extraction JSON to Neon. Returns the result for the client
+ * to render. The transcribed audio text is just transcript content, so it flows
+ * through this exact same path — no duplicate logic.
+ */
+async function analyzeAndPersist(input: {
+  userId: string;
+  title: string;
+  sourceText: string;
+}): Promise<AnalyzeResult> {
+  const meetingTier = await getUserMeetingTier(input.userId);
+  const tierConfig = MEETING_TIERS[meetingTier];
+  const usage = await getMeetingsUsage(input.userId);
+
+  if (input.sourceText.length > tierConfig.maxTranscriptChars) {
+    throw new Error(
+      `That transcript is ${input.sourceText.length.toLocaleString()} characters — over the ${tierConfig.maxTranscriptChars.toLocaleString()}-character limit for your ${tierConfig.label} plan. Upgrade for larger transcripts.`,
+    );
+  }
+  if (isMeetingLimitReached(usage)) {
+    const remaining =
+      usage.allowed === Infinity ? "unlimited" : String(usage.allowed - usage.usedThisMonth);
+    throw new Error(
+      `You've used all ${usage.allowed} meetings this month on the ${tierConfig.label} plan. Upgrade for more — or wait until next month.`,
+    );
+  }
+
+  const extracted = await extractWithAI(input.sourceText, input.title);
+  // Demo path: no DATABASE_URL → sql() no-ops; return a session-only meeting.
+  if (!process.env.DATABASE_URL) {
+    return {
+      configured: false,
+      meeting: {
+        id: 0,
+        title: input.title || "Untitled meeting",
+        createdAt: null,
+        sourceText: input.sourceText,
+        extraction: extracted,
+      },
+      usage,
+      meetingTier,
+    };
+  }
+  const insert = (await sql`
+    INSERT INTO meetings (clerk_user_id, title, source_text)
+    VALUES (${input.userId}, ${input.title || "Untitled meeting"}, ${input.sourceText})
+    RETURNING id
+  `) as Record<string, unknown>[];
+  const meetingId = Number(insert[0]?.id);
+  if (meetingId > 0) {
+    await sql`
+      INSERT INTO meeting_extractions (meeting_id, extraction)
+      VALUES (${meetingId}, ${JSON.stringify(extracted)}::jsonb)
+    `;
+  }
+  return {
+    configured: true,
+    meeting: {
+      id: meetingId,
+      title: input.title || "Untitled meeting",
+      createdAt: new Date().toISOString(),
+      sourceText: input.sourceText,
+      extraction: extracted,
+    },
+    usage,
+    meetingTier,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Speech-to-text (Whisper)                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Transcribe an uploaded meeting recording via OpenAI's Whisper API
+ * (`https://api.openai.com/v1/audio/transcriptions`, model `whisper-1`).
+ *
+ * The recording was uploaded to UploadThing and is referenced by `fileUrl`
+ * (e.g. `https://utfs.io/f/<key>`). This fetches the bytes back and re-posts
+ * them as multipart form data to Whisper. Reuses `process.env.OPENAI_API_KEY`
+ * exactly like the other AI helpers; if it is unset we throw the same honest
+ * "not enabled yet" message. Returns the raw transcript text.
+ */
+export async function transcribeAudio(input: {
+  fileUrl: string;
+  fileName: string;
+}): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("Audio transcription isn't enabled yet — OPENAI_API_KEY is not connected.");
+  }
+
+  const audioRes = await fetch(input.fileUrl, { method: "GET" });
+  if (!audioRes.ok) {
+    throw new Error(
+      "The uploaded recording could not be retrieved. Please try uploading it again.",
+    );
+  }
+
+  // Whisper accepts a multipart `file` field; the filename extension tells it
+  // how to decode the audio. We reuse the original file name (with extension).
+  const bytes = await audioRes.arrayBuffer();
+  const form = new FormData();
+  form.append(
+    "file",
+    new File([bytes], input.fileName || "recording.mp3", { type: audioRes.headers.get("content-type") ?? "application/octet-stream" }),
+  );
+  form.append("model", "whisper-1");
+
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    let reason = detail;
+    try {
+      const j = JSON.parse(detail);
+      if (j?.error?.message) reason = j.error.message;
+    } catch {
+      /* keep raw body */
+    }
+    throw new Error(
+      `Transcription failed (${res.status}${res.statusText ? ` ${res.statusText}` : ""}): ${reason.slice(0, 300)}`,
+    );
+  }
+
+  const body = (await res.json()) as { text?: unknown };
+  const text = typeof body.text === "string" ? body.text.trim() : "";
+  if (text.length < 20) {
+    throw new Error(
+      "No usable speech was detected in that recording. Try a clearer file, or upload a transcript instead.",
+    );
+  }
+  return text;
+}
+
+/* ------------------------------------------------------------------ */
 /* Server functions                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -366,65 +524,45 @@ export const analyzeMeeting = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
-    // Resolve the user's MeetingSnap tier + monthly usage BEFORE calling the
-    // model, so a capped/blocked user never burns AI credits.
-    const meetingTier = await getUserMeetingTier(userId);
-    const tierConfig = MEETING_TIERS[meetingTier];
-    const usage = await getMeetingsUsage(userId);
+    return analyzeAndPersist({
+      userId,
+      title: opts.data.title,
+      sourceText: opts.data.sourceText,
+    });
+  });
 
-    if (opts.data.sourceText.length > tierConfig.maxTranscriptChars) {
-      throw new Error(
-        `That transcript is ${opts.data.sourceText.length.toLocaleString()} characters — over the ${tierConfig.maxTranscriptChars.toLocaleString()}-character limit for your ${tierConfig.label} plan. Upgrade for larger transcripts.`,
-      );
+/**
+ * Analyze a meeting RECORDING: upload the audio to UploadThing (client-side),
+ * then this server fn transcribes it with Whisper and feeds the resulting
+ * transcript through the SAME `analyzeAndPersist` pipeline as pasted/uploaded
+ * transcripts (extract → AI-extraction → persist, with the same tier + usage
+ * accounting). Owner comes from the verified session, never the client.
+ */
+export const analyzeAudio = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { title?: unknown; fileUrl?: unknown; fileName?: unknown };
+    const title = typeof d.title === "string" ? d.title.trim().slice(0, MAX_TITLE_LENGTH) : "";
+    const fileUrl = typeof d.fileUrl === "string" ? d.fileUrl.trim() : "";
+    const fileName = typeof d.fileName === "string" ? d.fileName.trim() : "";
+    if (!/^https:\/\/[^\s]+$/i.test(fileUrl) || fileUrl.length > 500) {
+      throw new Error("A valid uploaded recording URL is required.");
     }
-    if (isMeetingLimitReached(usage)) {
-      const remaining =
-        usage.allowed === Infinity ? "unlimited" : String(usage.allowed - usage.usedThisMonth);
-      throw new Error(
-        `You've used all ${usage.allowed} meetings this month on the ${tierConfig.label} plan. Upgrade for more — or wait until next month.`,
-      );
-    }
-
-    const extracted = await extractWithAI(opts.data.sourceText, opts.data.title);
-    // Demo path: no DATABASE_URL → sql() no-ops; return a session-only meeting.
-    if (!process.env.DATABASE_URL) {
-      return {
-        configured: false,
-        meeting: {
-          id: 0,
-          title: opts.data.title || "Untitled meeting",
-          createdAt: null,
-          sourceText: opts.data.sourceText,
-          extraction: extracted,
-        },
-        usage,
-        meetingTier,
-      };
-    }
-    const insert = (await sql`
-      INSERT INTO meetings (clerk_user_id, title, source_text)
-      VALUES (${userId}, ${opts.data.title || "Untitled meeting"}, ${opts.data.sourceText})
-      RETURNING id
-    `) as Record<string, unknown>[];
-    const meetingId = Number(insert[0]?.id);
-    if (meetingId > 0) {
-      await sql`
-        INSERT INTO meeting_extractions (meeting_id, extraction)
-        VALUES (${meetingId}, ${JSON.stringify(extracted)}::jsonb)
-      `;
-    }
-    return {
-      configured: true,
-      meeting: {
-        id: meetingId,
-        title: opts.data.title || "Untitled meeting",
-        createdAt: new Date().toISOString(),
-        sourceText: opts.data.sourceText,
-        extraction: extracted,
-      },
-      usage,
-      meetingTier,
-    };
+    return { title, fileUrl, fileName: fileName.slice(0, 200) };
+  })
+  .handler(async (opts) => {
+    const userId = await requireServerFunctionUser();
+    // 1) Speech-to-text. Throws a friendly message if the key is unset, the
+    //    file is unreachable, or Whisper returns no usable text.
+    const transcript = await transcribeAudio({
+      fileUrl: opts.data.fileUrl,
+      fileName: opts.data.fileName || "recording.mp3",
+    });
+    // 2) Same extract → AI-extract → persist path as transcript analysis.
+    return analyzeAndPersist({
+      userId,
+      title: opts.data.title,
+      sourceText: transcript,
+    });
   });
 
 /* ------------------------------------------------------------------ */
