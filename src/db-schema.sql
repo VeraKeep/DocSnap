@@ -151,6 +151,25 @@ CREATE TABLE IF NOT EXISTS bills (
 CREATE INDEX IF NOT EXISTS idx_bills_clerk_user_id_created_at
   ON bills (clerk_user_id, created_at DESC);
 
+-- BillSnap "email-in" transport: per-user inbound address enrollment.
+-- When an owner enables email-in we generate a unique, unguessable token and
+-- assign them an inbound address bills+<token>@inbound.docsnapapp.com. The
+-- token is stored here scoped to the owner's clerk_user_id (unique), and the
+-- provider webhook maps the `to` recipient back to the owner via the token.
+-- Enabled is a soft revoke switch; deleting the row is a hard revoke
+-- (fail closed: unknown/disabled tokens resolve to no owner). Lookup is by
+-- token (indexed) at webhook time only.
+CREATE TABLE IF NOT EXISTS billsnap_inbound_addresses (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT NOT NULL UNIQUE,
+  token TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_billsnap_inbound_token
+  ON billsnap_inbound_addresses (token);
+
 -- Public marketing waitlist: email capture only, never attached to a receipt
 -- owner. Duplicate emails are ignored at insert time.
 CREATE TABLE IF NOT EXISTS waitlist (

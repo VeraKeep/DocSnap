@@ -22,6 +22,12 @@ import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
 import { hasBillSnapAddon } from "~/subscription";
 import {
+  enableBillSnapEmailIn,
+  getBillSnapEmailIn,
+  rotateBillSnapEmailIn,
+  disableBillSnapEmailIn,
+} from "./inboundAddress";
+import {
   type AutopayStatus,
   type Bill,
   type BillStatus,
@@ -529,4 +535,47 @@ export const seedDemoSeries = createServerFn({ method: "POST" })
       `;
     }
     return { configured: true, seeded: series.length };
+  });
+
+/**
+ * BillSnap "email-in" — owner-facing enrollment (Part A of the inbound email
+ * transport). These let the owner enable/disable/rotate their private inbound
+ * address from the /bills UI. The per-user inbound token (and its address,
+ * bills+<token>@inbound.docsnapapp.com) is generated and stored in
+ * billsnap_inbound_addresses (see inboundAddress.ts); a provider webhook later
+ * maps forwarded bills back to this owner via the token.
+ */
+export const enableBillSnapEmailInFn = createServerFn({ method: "POST" })
+  .validator(() => ({ ok: true }))
+  .handler(async () => {
+    const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
+    return enableBillSnapEmailIn(userId);
+  });
+
+/** Read the owner's current email-in status + address (no-op when off). */
+export const getBillSnapEmailInFn = createServerFn({ method: "GET" })
+  .validator(() => ({ ok: true }))
+  .handler(async () => {
+    const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
+    return getBillSnapEmailIn(userId);
+  });
+
+/** Rotate the owner's inbound token (old address stops resolving). */
+export const rotateBillSnapEmailInFn = createServerFn({ method: "POST" })
+  .validator(() => ({ ok: true }))
+  .handler(async () => {
+    const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
+    return rotateBillSnapEmailIn(userId);
+  });
+
+/** Disable/revoke email-in (address stops resolving). */
+export const disableBillSnapEmailInFn = createServerFn({ method: "POST" })
+  .validator(() => ({ ok: true }))
+  .handler(async () => {
+    const userId = await requireServerFunctionUser();
+    await requireBillSnapAddon(userId);
+    return disableBillSnapEmailIn(userId);
   });

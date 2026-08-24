@@ -18,6 +18,10 @@ import {
   POST as billsnapIngestPOST,
   GET as billsnapIngestGET,
 } from "./src/routes/api/-billsnap-email-ingest";
+import {
+  POST as billsnapInboundPOST,
+  GET as billsnapInboundGET,
+} from "./src/routes/api/-billsnap-email-inbound";
 import { GET as uploadGET, POST as uploadPOST } from "./src/routes/api/-uploadthing";
 import {
   POST as sharePOST,
@@ -55,6 +59,11 @@ for (let attempt = 1; ; attempt++) {
         if (pathname === "/api/billsnap-email-ingest") {
           if (req.method === "POST") return billsnapIngestPOST(req);
           if (req.method === "GET") return billsnapIngestGET();
+        }
+        // BillSnap inbound email transport — provider webhook (secret-gated).
+        if (pathname === "/api/billsnap-email-inbound") {
+          if (req.method === "POST") return billsnapInboundPOST(req);
+          if (req.method === "GET") return billsnapInboundGET();
         }
         if (pathname === "/api/uploadthing") {
           if (req.method === "GET") return uploadGET(req);
