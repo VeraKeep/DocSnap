@@ -476,18 +476,50 @@ export function LandingPage({
           }}
         />
         <div className="relative mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Cloud sync, modules, and more are on the way
+          <p className="text-xs font-bold uppercase tracking-widest text-indigo-300">
+            Join the early access list
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+            Get your receipts and documents out of the drawer — and into a
+            single searchable place.
           </h2>
           <p className="mx-auto mt-4 max-w-xl leading-relaxed text-gray-400">
-            DocSnap already scans right in your browser. We're building out
-            accounts, cloud storage, and the full VeraKeep suite — join the
-            early access list and we'll let you know as soon as it's ready.
-            No spam, no commitment.
+            DocSnap already scans right in your browser — point your camera at a
+            receipt and it crops, straightens, and makes the text searchable.
+            We're building the account-based suite on top: cloud sync, your
+            saved library, and the full VeraKeep suite of modules. Join the
+            early access list and we'll email you the moment it's ready. No
+            spam, no commitment.
           </p>
+          <ul className="mx-auto mt-8 max-w-md space-y-3 text-left text-sm text-gray-300">
+            <li className="flex items-start gap-2.5">
+              <span aria-hidden="true" className="shrink-0">🧾</span>
+              <span>
+                <strong>Capture a receipt in seconds</strong> — DocSnap pulls
+                out the merchant, date, and amount for you (`ReceiptSnap`).
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span aria-hidden="true" className="shrink-0">🔍</span>
+              <span>
+                <strong>Search, don't shuffle</strong> — scanned documents
+                become searchable PDFs right in your browser.
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span aria-hidden="true" className="shrink-0">🤫</span>
+              <span>
+                <strong>Your documents stay private</strong> — accessible only
+                to you.
+              </span>
+            </li>
+          </ul>
           <div className="relative z-10 mt-8 flex justify-center">
             <WaitlistForm />
           </div>
+          <p className="mt-3 text-sm text-gray-500">
+            One email address. No credit card. Join in 10 seconds.
+          </p>
         </div>
       </section>
 
