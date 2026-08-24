@@ -129,9 +129,26 @@ export interface ContractDetail extends ContractRow {
   extraction: ContractExtraction | null;
 }
 
-/** One hit from a keyword search over the user's saved contracts. */
+/** One hit from a natural-language search over the user's saved contracts. */
 export interface ContractSearchResult extends ContractRow {
   matchedOn: "title" | "content";
+  /** 0..N relevance score (higher = stronger match). 0 = matched via fallback. */
+  score: number;
+  /** Short human-readable reason this contract matched the query. */
+  matchReason: string;
+}
+
+/**
+ * Response from the natural-language search endpoint. `aiAnswer` is a short
+ * AI-synthesized answer to the user's question when the AI backend is connected
+ * (OPENAI_API_KEY); it is null (and `aiConfigured` is false) on the deterministic
+ * no-AI path so the feature never depends on credentials.
+ */
+export interface ContractSearchResponse {
+  configured: boolean;
+  aiConfigured: boolean;
+  aiAnswer: string | null;
+  contracts: ContractSearchResult[];
 }
 
 /** ContractSnap entitlement/config for the signed-in user. */

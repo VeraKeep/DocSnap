@@ -108,6 +108,8 @@ export function ContractLibrary() {
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [searchScored, setSearchScored] = useState(false);
   const [notice, setNotice] = useState("");
   const [entitled, setEntitled] = useState<boolean | null>(null);
   const [selected, setSelected] = useState<ContractDetail | null>(null);
@@ -124,11 +126,20 @@ export function ContractLibrary() {
   const load = useCallback(async (term: string) => {
     setSearching(true);
     try {
-      const result = term.trim()
-        ? await searchContracts({ data: { query: term } })
-        : await listContracts();
-      setConfigured(result.configured);
-      setContracts(result.contracts as ContractRow[]);
+      if (term.trim()) {
+        const result = await searchContracts({ data: { query: term } });
+        setConfigured(result.configured);
+        setAiConfigured(result.aiConfigured);
+        setAiAnswer(result.aiAnswer);
+        setSearchScored(result.contracts.some((c) => c.score > 0));
+        setContracts(result.contracts as ContractRow[]);
+      } else {
+        const result = await listContracts();
+        setConfigured(result.configured);
+        setAiAnswer(null);
+        setSearchScored(false);
+        setContracts(result.contracts as ContractRow[]);
+      }
       setStatus("ready");
       setLoadError("");
     } catch (error) {
@@ -434,6 +445,21 @@ export function ContractLibrary() {
           </label>
         </div>
 
+        {aiAnswer && (
+          <div
+            role="status"
+            className="mt-4 rounded-2xl border border-indigo-700/50 bg-indigo-950/40 p-4 text-sm leading-relaxed text-indigo-100"
+          >
+            <span className="block text-[11px] font-semibold uppercase tracking-wide text-indigo-400">
+              AI answer
+            </span>
+            <span className="mt-1 block">{aiAnswer}</span>
+            <span className="mt-2 block text-[11px] text-indigo-400/70">
+              Informational, not legal advice · based on your saved contracts.
+            </span>
+          </div>
+        )}
+
         <div className="mt-5 space-y-3">
           {status === "loading" ? (
             <div className="space-y-3" aria-label="Loading contracts">
@@ -463,6 +489,9 @@ export function ContractLibrary() {
                       </span>
                     )}
                   </span>
+                  {"matchReason" in c && c.matchReason && query.trim() && (
+                    <span className="mt-1 block text-[11px] text-indigo-400/80">{c.matchReason}</span>
+                  )}
                 </span>
                 <span className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-400">
                   <span>
