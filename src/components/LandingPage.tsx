@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { SignInButton, SignUpButton, UserButton } from "@clerk/tanstack-start";
 import { trackEvent } from "../analytics";
 import { MODULES } from "../modules";
+import { HomeSnapModuleCard } from "../features/homesnap/components/HomeSnapModuleCard";
 import { MyScans } from "./MyScans";
 import {
   type CloudDocument,
@@ -514,8 +515,11 @@ export function LandingPage({
             receipts, tools, and meetings that go with the things you own.
           </p>
 
-          <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {MODULES.map((m) => (
+          <div className="mt-10 grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {MODULES.map((m) =>
+              m.name === "HomeSnap" ? (
+                <HomeSnapModuleCard key={m.name} />
+              ) : (
               <div
                 key={m.name}
                 className="flex flex-col rounded-2xl border border-gray-800 bg-gray-900/60 p-6 transition hover:border-gray-700"
@@ -566,7 +570,8 @@ export function LandingPage({
                   )}
                 </div>
               </div>
-            ))}
+              )
+            )}
           </div>
         </div>
       </section>

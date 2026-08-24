@@ -15,8 +15,9 @@
  * are out of scope (later phases).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useLocation, useSearch } from "@tanstack/react-router";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
+import { MODULE_CHECKOUT_URLS } from "~/moduleCheckout";
 import {
   completeSchedule,
   createDocument,
@@ -164,33 +165,100 @@ function SignInRequired() {
  * Locked / upgrade screen — shown to a signed-in user WITHOUT the HomeSnap
  * add-on. HomeSnap is a paid add-on sold on the DocSnap side (business-plan
  * rev 2) and is NOT bundled into any tier, so even a paid subscriber sees this
- * until they own the add-on. The buy link is /pricing for now; the real
- * checkout link comes from the owner later (button stays inert until then).
+ * until they own the add-on.
+ *
+ * Conversion copy (file 03): benefit-first headline/subline/bullets, a CTA
+ * that links to the LIVE Stripe checkout, a "See a 30-second demo" helper
+ * link to the first-run tour, and the pre-purchase microcopy placed beside/
+ * under the Buy button (including the "Is this a lot of setup?" info tooltip
+ * and the "Inside your DocSnap account · Cancel anytime." reassurance line).
  */
 function AddonLocked() {
+  const [showSetupTip, setShowSetupTip] = useState(false);
   return (
-    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center sm:p-12">
+    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-6 text-center sm:p-10">
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600/20 text-3xl">
         🏡
       </div>
-      <h2 className="mt-5 text-xl font-semibold">HomeSnap is a paid add-on</h2>
+      <h2 className="mt-5 text-xl font-semibold">HomeSnap — Your home's permanent record</h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-400">
-        HomeSnap isn't included in DocSnap plans — it's a separate add-on.
-        Purchase it to keep a permanent, searchable record of your home's
-        systems, appliances, warranties, and repair history.
+        Know what you own, what it's worth, and what's covered — appliances, systems,
+        warranties, repairs, and receipts, in one place.
       </p>
+
+      <ul className="mx-auto mt-5 max-w-md space-y-2 text-left">
+        {[
+          "Stop re-paying for repairs — warranty dates and repair history saved per object.",
+          "Never miss maintenance — filters, flush, batteries, and annual checks with next-due dates.",
+          "Ready for the big moments — a clean, dated report for a sale or insurance claim.",
+        ].map((b) => (
+          <li key={b} className="flex items-start gap-2 text-sm leading-relaxed text-gray-400">
+            <span className="mt-0.5 text-indigo-400">✓</span>
+            <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-6 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+        <a
+          href={MODULE_CHECKOUT_URLS.HOMESNAP_MONTHLY}
+          className="inline-flex justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+        >
+          Add HomeSnap — $3.99/mo
+        </a>
+        <a
+          href={MODULE_CHECKOUT_URLS.HOMESNAP_ANNUAL}
+          className="inline-flex justify-center rounded-full border border-gray-700 px-6 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+        >
+          or $39.99/yr · two months free
+        </a>
+      </div>
+      <p className="mt-3 text-xs text-gray-600">Inside your DocSnap account · Cancel anytime.</p>
+
+      {/* Pre-purchase microcopy (file 03 Section B) */}
+      <div className="mx-auto mt-6 max-w-md space-y-3 rounded-xl border border-gray-800 bg-gray-950/40 p-4 text-left">
+        <div>
+          <p className="text-sm font-semibold text-gray-100">What you'll do with it this week:</p>
+          <p className="mt-1 text-sm leading-relaxed text-gray-400">
+            add the water heater or HVAC you already know about, and if you have a DocSnap
+            receipt for it, HomeSnap fills in the details for you. Over time it becomes the
+            record you reach for at every repair, sale, and warranty call.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span>Is this a lot of setup?</span>
+          <span
+            className="relative inline-flex cursor-help items-center"
+            onMouseEnter={() => setShowSetupTip(true)}
+            onMouseLeave={() => setShowSetupTip(false)}
+          >
+            <span className="grid h-5 w-5 place-items-center rounded-full border border-gray-700 text-[10px] text-gray-400">
+              i
+            </span>
+            {showSetupTip && (
+              <span className="absolute bottom-6 left-0 z-10 w-64 rounded-lg border border-gray-700 bg-gray-900 p-3 text-left text-xs leading-relaxed text-gray-300 shadow-xl">
+                No. Start with one object — even just your property. Add details when you have
+                them; the record grows as your home does. You can add to it a little at a time,
+                from anywhere.
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
       <Link
-        to="/pricing"
-        className="mt-6 inline-flex rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+        to="/homesnap-demo"
+        className="mt-6 inline-flex items-center gap-1 text-sm font-medium text-indigo-300 transition hover:text-indigo-200"
       >
-        See plans &amp; buy HomeSnap
+        See a 30-second demo of what this does →
       </Link>
-      <p className="mt-4 text-xs text-gray-600">
+      <p className="mt-3 text-xs text-gray-600">
         Your home records stay private to your DocSnap account.
       </p>
     </div>
   );
 }
+
 
 function ErrorCard({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
@@ -1923,6 +1991,12 @@ export function HomeSnapApp() {
   // Optional ?property=<id>&object=<id> params let integrations (e.g. the
   // ReceiptSnap → HomeSnap flow) drop the user straight onto a created object.
   const search = useSearch({ from: "/homesnap" });
+  // First arrival from the live checkout is flagged by ?unlocked=1 (drives
+  // the purchase-confirmation banner, file 03 Section C). Read from the raw URL
+  // so we don't alter the route's search typing (which other <Link to="/homesnap">
+  // usages depend on).
+  const location = useLocation();
+  const unlocked = new URLSearchParams(location.searchStr ?? "").get("unlocked") === "1";
   // HomeSnap add-on entitlement: null = resolving, true = unlocked,
   // false = locked (show the upgrade screen).
   const [entitled, setEntitled] = useState<boolean | null>(null);
@@ -1942,6 +2016,9 @@ export function HomeSnapApp() {
   // (the spend-over-time dashboard + printable home-sale/insurance report), or
   // "activity" (the per-property household change history).
   const [view, setView] = useState<"home" | "inventory" | "analytics" | "activity">("home");
+  // Purchase-confirmation banner (file 03 Section C): shows once after a user
+  // returns from the live checkout with ?unlocked=1 and HomeSnap is now on.
+  const [dismissUnlocked, setDismissUnlocked] = useState(false);
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId) ?? null;
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
@@ -2120,6 +2197,40 @@ export function HomeSnapApp() {
 
   return (
     <div className="mt-8 space-y-8">
+      {/* Purchase-confirmation banner (file 03 Section C) — shown once when a
+          user returns from the live checkout with ?unlocked=1 and HomeSnap is
+          now unlocked. Routes into the first-run demo. */}
+      {entitled && unlocked && !dismissUnlocked && (
+        <div className="rounded-2xl border border-indigo-700/60 bg-indigo-950/40 p-5">
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <p className="font-semibold text-indigo-100">
+                HomeSnap is on. 🎉
+              </p>
+              <p className="mt-1 text-sm text-indigo-200/80">
+                Start with your <span className="font-semibold text-white">Property</span>, then
+                add your first object — we'll show you how in the next screen.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <Link
+                to="/homesnap-demo"
+                className="inline-flex rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+              >
+                Show me how
+              </Link>
+              <button
+                type="button"
+                onClick={() => setDismissUnlocked(true)}
+                className="text-sm text-indigo-300/70 transition hover:text-indigo-100"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* View toggle: the permanent home record vs the big-ticket inventory */}
       <div className="flex items-center gap-1 rounded-full border border-gray-800 bg-gray-900/60 p-1">
         <button
