@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSubscription } from "../hooks/useSubscription";
 import { CHECKOUT_URLS } from "../checkout";
 import { MODULES } from "../modules";
+import { MeetingSnapTiers } from "../components/MeetingSnapTiers";
 import { ALL_ACCESS_CHECKOUT_URLS } from "../allAccessCheckout";
 
 type BillingCadence = "monthly" | "annual";
@@ -302,10 +303,8 @@ function PricingPage() {
           </div>
 
           <p className="mt-8 text-center text-sm text-gray-500">
-            Prefer to buy individually? Pick a module below, or{" "}
-            <Link to="/meetingsnap-pricing" className="font-semibold text-indigo-300 hover:underline">
-              see all MeetingSnap plans →
-            </Link>
+            Prefer to buy individually? Pick an add-on module below — each one
+            attaches to your DocSnap plan.
           </p>
         </div>
       </section>
@@ -314,11 +313,12 @@ function PricingPage() {
       <section className="border-t border-gray-800/50 px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">
-            VeraKeep add-on modules
+            Add-ons inside DocSnap
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-center leading-relaxed text-gray-400">
-            Snap these modules onto DocSnap to organize the receipts, tools, and
-            meetings that go with the things you own.
+            DocSnap is your one place for the documents that matter. Snap these
+            paid add-on modules right onto your DocSnap account — each one is a
+            capability for the things you own, not a separate product.
           </p>
 
           <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -381,6 +381,8 @@ function PricingPage() {
               </div>
             ))}
           </div>
+
+          <MeetingSnapTiers billing={billing} />
         </div>
       </section>
 

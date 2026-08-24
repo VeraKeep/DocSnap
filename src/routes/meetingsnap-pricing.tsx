@@ -131,13 +131,16 @@ function MeetingSnapPricingPage() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-2xl">
           🎙️
         </div>
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-900/40 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-300">
+          The premium add-on inside DocSnap
+        </span>
+        <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
           MeetingSnap pricing
         </h1>
         <p className="mx-auto mt-4 max-w-2xl leading-relaxed text-gray-400">
-          Turn every conversation into action. MeetingSnap records nothing — just
-          upload a transcript and get AI summaries, decisions, owners, and next
-          steps in seconds.
+          Add MeetingSnap to your DocSnap plan to turn every conversation into
+          action. MeetingSnap records nothing — just upload a transcript and get
+          AI summaries, decisions, owners, and next steps in seconds.
         </p>
 
         {/* Monthly / Annual billing toggle */}
