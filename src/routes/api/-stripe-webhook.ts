@@ -191,6 +191,19 @@ async function handleCheckoutCompleted(
         `[stripe-webhook] Set MeetingSnap ${entitlement.meetingTier ?? "free"} for user ${clerkUserId}`,
       );
       break;
+    case "allaccess": {
+      // VeraKeep All Access — one checkout grants the DocSnap tier (Personal or
+      // Family) plus ReceiptSnap + GarageSnap + MeetingSnap Personal.
+      const tier = entitlement.bundleTier ?? "personal";
+      await setSubscriptionTier(clerkUserId, tier, stripeCustomerId ?? "");
+      await setReceiptSnapAddon(clerkUserId, true);
+      await setGarageSnapAddon(clerkUserId, true);
+      await setMeetingSubscriptionTier(clerkUserId, "personal");
+      console.log(
+        `[stripe-webhook] Granted VeraKeep All Access (${tier}) to user ${clerkUserId}: DocSnap ${tier} + ReceiptSnap + GarageSnap + MeetingSnap Personal`,
+      );
+      break;
+    }
   }
 }
 
@@ -245,19 +258,18 @@ function priceTier(priceId: string | undefined): PaidTier {
 
 /**
  * Entitlement routing — the single source of truth for what a checkout price
- * grants. Each price maps to a module `kind` (and, where relevant, a tier).
- * Everything here is ADDITIVE: unknown prices route to no entitlement (see
- * handleCheckoutCompleted) and are logged — they grant nothing.
- *
- * NOTE: The VeraKeep All Access bundle products and MeetingSnap's 'team' tier
- * are intentionally OUT OF SCOPE here (no UI/entitlement semantics yet) — no
- * slots for them.
+ * grants. Each price maps to an entitlement `kind` (and, where relevant, a
+ * tier). Everything here is ADDITIVE: unknown prices route to no entitlement
+ * (see handleCheckoutCompleted) and are logged — they grant nothing.
  */
-type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "homesnap" | "meetingsnap";
+type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "homesnap" | "meetingsnap" | "allaccess";
 interface PriceEntitlement {
   kind: EntitlementKind;
   /** MeetingSnap tier when kind === 'meetingsnap' (else unused). */
   meetingTier?: string;
+  /** DocSnap tier granted by the VeraKeep All Access bundle when
+   *  kind === 'allaccess' (else unused). */
+  bundleTier?: PaidTier;
 }
 /** Every known module + DocSnap price → its entitlement. DocSnap tiers are
  *  resolved via priceTier() (PRICE_TIERS above, incl. legacy folds); the
@@ -294,6 +306,12 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   "price_1U6kntQf4SDuORrEtqIA2PCv": { kind: "meetingsnap", meetingTier: "pro" }, // Pro monthly
   "price_1U6koLQf4SDuORrE62WRLvIw": { kind: "meetingsnap", meetingTier: "pro" }, // Pro annual
   "price_1U6kkQf4SDuORrE1LiJ4Ytx": { kind: "meetingsnap", meetingTier: "free" }, // Free — harmless no-op
+  // VeraKeep All Access bundle — grants DocSnap (Personal/Family) + ReceiptSnap
+  // + GarageSnap + MeetingSnap Personal in one checkout.
+  "price_1U6kqkQf4SDuORrEoLEI1tPk": { kind: "allaccess", bundleTier: "personal" }, // Individual monthly ($11.99)
+  "price_1U6kufQf4SDuORrEWjOSH4cY": { kind: "allaccess", bundleTier: "personal" }, // Individual annual ($119.99)
+  "price_1U6kw9Qf4SDuORrEjfbf8nV5": { kind: "allaccess", bundleTier: "family" }, // Family monthly ($17.99)
+  "price_1U6kxKQf4SDuORrEhoVI8wqF": { kind: "allaccess", bundleTier: "family" }, // Family annual ($179.99)
 };
 
 /** Read the first line item's price id off a Subscription object (or its
@@ -351,6 +369,17 @@ async function revokeSubscriptionEntitlement(
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, "free");
       console.log(`[stripe-webhook] MeetingSnap subscription ended — set free for user ${clerkUserId}`);
+      break;
+    case "allaccess":
+      // VeraKeep All Access ended — revoke exactly what the bundle granted:
+      // DocSnap tier + ReceiptSnap + GarageSnap + MeetingSnap Personal.
+      await setFreeSubscription(clerkUserId);
+      await setReceiptSnapAddon(clerkUserId, false);
+      await setGarageSnapAddon(clerkUserId, false);
+      await setMeetingSubscriptionTier(clerkUserId, "free");
+      console.log(
+        `[stripe-webhook] VeraKeep All Access ended — revoked DocSnap + ReceiptSnap + GarageSnap + MeetingSnap for user ${clerkUserId}`,
+      );
       break;
   }
 }
