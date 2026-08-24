@@ -839,13 +839,8 @@ export const askAI = createServerFn({ method: "POST" })
 
     const context = rows
       .map((r) => {
-        let extractionText: string;
-        try {
-          const parsed = JSON.parse(String(r.extraction ?? "{}"));
-          extractionText = JSON.stringify(parsed);
-        } catch {
-          extractionText = String(r.extraction ?? "{}");
-        }
+        const parsed = parseExtractionRow(r.extraction);
+        const extractionText = JSON.stringify(parsed);
         return (
           `[Meeting #${Number(r.id)} — ${String(r.title ?? "Untitled meeting")}]\n` +
           `Transcript:\n${String(r.source_text ?? "").slice(0, AI_CONTEXT_CHARS)}\n\n` +
@@ -924,12 +919,7 @@ export const draftFollowUpEmail = createServerFn({ method: "POST" })
     const r = rows[0];
     if (!r) throw new Error("That meeting could not be found.");
 
-    let extraction: MeetingExtraction;
-    try {
-      extraction = normalizeExtraction(JSON.parse(String(r.extraction ?? "{}")));
-    } catch {
-      extraction = normalizeExtraction({});
-    }
+    const extraction = parseExtractionRow(r.extraction);
 
     const openItems = extraction.action_items.filter(isOpenActionItem);
     if (openItems.length === 0) {
