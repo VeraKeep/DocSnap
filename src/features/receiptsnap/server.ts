@@ -343,18 +343,4 @@ export const saveReceipt = createServerFn({ method: "POST" })
       RETURNING id
     `) as Record<string, unknown>[];
     return { id: Number(rows[0].id), extracted };
-  });
-
-export const joinWaitlist = createServerFn({ method: "POST" })
-  .validator((data: unknown) => {
-    const d = (data ?? {}) as { email?: unknown };
-    if (typeof d.email !== "string" || d.email.trim().length === 0) {
-      throw new Error("Enter an email address.");
-    }
-    return { email: d.email.trim().toLowerCase() };
-  })
-  .handler(async (opts) => {
-    if (!process.env.DATABASE_URL) return { configured: false };
-    await sql`INSERT INTO waitlist (email) VALUES (${opts.data.email}) ON CONFLICT (email) DO NOTHING`;
-    return { configured: true };
-  });
+    });

@@ -5,6 +5,7 @@ import { MODULES } from "../modules";
 import { HomeSnapModuleCard } from "../features/homesnap/components/HomeSnapModuleCard";
 import { HomeSnapLaunchBanner } from "../features/homesnap/components/HomeSnapLaunchBanner";
 import { MyScans } from "./MyScans";
+import { WaitlistForm } from "./WaitlistForm";
 import {
   type CloudDocument,
   type DocCategory,
@@ -465,6 +466,30 @@ export function LandingPage({
           </p>
         )}
       </div>
+      {/* Early access — audience capture for the account-based suite */}
+      <section className="relative border-t border-gray-800/50 px-6 py-16 sm:px-6">
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            background:
+              "radial-gradient(ellipse 60% 60% at 50% 40%, rgba(99,102,241,0.2) 0%, rgba(3,7,18,0) 70%)",
+          }}
+        />
+        <div className="relative mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            Cloud sync, modules, and more are on the way
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl leading-relaxed text-gray-400">
+            DocSnap already scans right in your browser. We're building out
+            accounts, cloud storage, and the full VeraKeep suite — join the
+            early access list and we'll let you know as soon as it's ready.
+            No spam, no commitment.
+          </p>
+          <div className="relative z-10 mt-8 flex justify-center">
+            <WaitlistForm />
+          </div>
+        </div>
+      </section>
 
       {/* VeraKeep All Access — flagship bundle CTA */}
       <section className="relative border-t border-gray-800/50 px-6 py-16 sm:px-6">
