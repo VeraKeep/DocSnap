@@ -13,6 +13,18 @@ set -euo pipefail
 cd "$(dirname "$0")"
 umask 002
 
+# NEXT_PUBLIC_* vars are inlined by Vite at build time. The Clerk publishable key
+# is mandatory: a missing/empty value produces a bundle that SSRs the "DocSnap is
+# not configured for authentication" page (served with HTTP 200, so it is easy to
+# ship unnoticed). Fail loudly here instead. Export it before building, e.g.:
+#   export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+#   export NEXT_PUBLIC_PLAUSIBLE_DOMAIN=docsnapapp.com
+if [ -z "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}" ]; then
+  echo "ERROR: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is not set." >&2
+  echo "Set it (real Clerk publishable key) before building - see go-live.sh." >&2
+  exit 1
+fi
+
 echo "[1/3] vite build (light — safe under the sandbox memory cap)"
 # The workspace starts as sources only (deps live with the image's pre-built
 # placeholder copy); no-op once node_modules is current.
