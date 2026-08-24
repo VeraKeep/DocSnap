@@ -33,6 +33,7 @@ import {
   type ContractPayment,
   type ContractReminder,
   type ContractRow,
+  type ContractSearchResponse,
   type ContractSummary,
   type SourceStatus,
   type TypedFact,
@@ -614,6 +615,245 @@ export const createContract = createServerFn({ method: "POST" })
     return { configured: true, aiConfigured, analysisStatus, aiError, contract };
   });
 
+/**
+ * Parse the extraction back out of the persisted `summary` JSONB column so
+ * search can span every structured field (phrases, clauses, parties, dates,
+ * payment, obligations) — not just the top-level row columns.
+ */
+export function parseStoredExtraction(summaryRaw: unknown, title: string): ContractExtraction | null {
+  if (summaryRaw == null) return null;
+  const s = String(summaryRaw);
+  if (s === "{}" || s === "null" || s.trim() === "") return null;
+  try {
+    return normalizeExtraction(JSON.parse(s), title);
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Natural-language search                                             */
+/* ------------------------------------------------------------------ */
+/**
+ * Short, high-frequency words stripped from a natural-language query. Whatever
+ * is left becomes the "substantive" terms we actually score against.
+ */
+const SEARCH_STOPWORDS = new Set([
+  "which", "who", "what", "when", "where", "why", "how", "the", "a", "an",
+  "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did",
+  "i", "me", "my", "mine", "we", "our", "ours", "us", "you", "your", "yours",
+  "they", "them", "their", "it", "its", "of", "to", "in", "on", "at", "for",
+  "with", "and", "or", "that", "this", "these", "those", "will", "would", "can",
+  "could", "should", "shall", "have", "has", "had", "about", "from", "by", "as",
+  "all", "any", "some", "get", "gets", "show", "find", "list", "tell", "me",
+  // domain boilerplate that shouldn't gate a search
+  "contract", "contracts", "agreement", "agreements", "documents", "document",
+  "docs", "doc", "paperwork", "module", "lets", "let", "there", "their", "them",
+  "than", "then", "also", "into", "each", "more", "most", "other", "such",
+]);
+
+/**
+ * Synonym expansions turn informal phrasings into the vocabulary that actually
+ * appears in a stored contract ("end" -> "expiration", "paying" -> "payment/money",
+ * "auto" -> "automatic"). Spaces delimit alternatives; each is checked as a
+ * loose substring against the contract's search corpus.
+ */
+const SEARCH_ALIASES: Record<string, string> = {
+  end: " expiration expires expire ending expirationdate ",
+  expire: " expiration expires expire ending end expirationdate ",
+  expires: " expiration expires expire ending ",
+  expiring: " expiration expires expire ",
+  expiration: " expiration expires expire expiry ending ",
+  renew: " renewal renews renew ",
+  renewal: " renewal renews renew auto ",
+  renews: " renewal renews renew ",
+  renewed: " renewal renews renew ",
+  auto: " auto automatic automatically autorenewal autorenews ",
+  automatic: " auto automatic automatically autorenewal ",
+  pay: " payment pay paying price cost charge billed fees ",
+  paying: " payment pay paying price cost charge fees ",
+  paid: " payment pay price cost fees ",
+  price: " payment price pay cost charge ",
+  cost: " payment cost price pay charge ",
+  charge: " payment charge charged fees bills ",
+  charges: " payment charge fees bills ",
+  bill: " payment bill billed charges fees ",
+  bills: " payment bill billed fees ",
+  fees: " fees payment charges ",
+  monthly: " monthly month ",
+  yearly: " yearly year annually annual ",
+  annual: " annual yearly annually peryear ",
+  paymonthly: " monthly month payment ",
+};
+
+/** Tokenize a natural-language query into substantive search terms. */
+export function searchTerms(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/[\u2014\u2013]/g, " ") // em/en dash -> space
+    .replace(/[^a-z0-9$€£%.,+\s-]/g, " ")
+    .replace(/-/g, " ")
+    .split(/[\s,.]+/)
+    .filter((t) => t.length > 1 && !SEARCH_STOPWORDS.has(t));
+}
+
+/**
+ * Build one big lowercase text blob per contract that covers every field we
+ * want natural-language search to reach: title, dates, renewal behaviour,
+ * payment, obligations, the AI summary, clauses, timeline events, reminders.
+ */
+export function buildSearchCorpus(row: Record<string, unknown>, extraction: ContractExtraction | null): string {
+  const p: string[] = [];
+  const push = (v: unknown) => {
+    const s = v == null ? "" : String(v).trim();
+    if (s) p.push(s);
+  };
+  push(row.title);
+  push(row.contract_type);
+  push(row.effective_date);
+  push(row.expiration_date);
+  push(row.renewal_date);
+  push(row.cancellation_deadline);
+  push(row.renewal_type);
+  if (row.auto_renewal === true) p.push("auto automatic renewal renews autorenewal");
+  if (row.auto_renewal === false) p.push("manual renewal does not auto renew");
+  if (extraction) {
+    for (const party of extraction.parties) {
+      push(party.name);
+      push(party.role);
+    }
+    push(extraction.fees);
+    push(extraction.deposits);
+    push(extraction.penalties);
+    push(extraction.jurisdiction);
+    push(extraction.payment?.amount);
+    push(extraction.payment?.currency);
+    push(extraction.payment?.frequency);
+    push(extraction.cancellation_window_days?.value);
+    push(extraction.notice_period_days?.value);
+    for (const f of [
+      extraction.effective_date,
+      extraction.expiration_date,
+      extraction.renewal_date,
+      extraction.cancellation_deadline,
+    ]) {
+      if (f?.value != null && f.value !== "") push(String(f.value));
+    }
+    for (const o of extraction.major_obligations) push(o);
+    const s = extraction.summary;
+    push(s.what_this_contract_does);
+    push(s.what_you_pay);
+    push(s.what_you_must_do);
+    push(s.what_they_must_do);
+    for (const d of s.important_dates) push(d);
+    for (const w of s.watch_out_for) push(w);
+    for (const c of extraction.clauses) push(`${c.type} ${c.text}`);
+    for (const e of extraction.events) push(`${e.event_type} ${e.date}`);
+    for (const m of extraction.reminders) push(`${m.type} ${m.due_date}`);
+  }
+  return p.join(" ").toLowerCase();
+}
+
+/** Expand each query term (plus synonyms) into a list of loose substrings. */
+export function expandTerms(terms: string[]): { raw: string; needles: string[] }[] {
+  return terms.map((raw) => {
+    const aliased = (SEARCH_ALIASES[raw] ?? "").split(/\s+/).filter(Boolean);
+    return { raw, needles: [raw, ...aliased] };
+  });
+}
+
+/** Loose substring scoring: stronger for longer / more specific terms. */
+export function scoreCorpus(corpus: string, terms: { raw: string; needles: string[] }[]): number {
+  let score = 0;
+  for (const t of terms) {
+    if (t.needles.some((n) => n.length > 1 && corpus.includes(n))) {
+      score += Math.max(2, t.raw.length);
+    }
+  }
+  return score;
+}
+
+/**
+ * True when EVERY substantive query term matches the corpus. Requiring all
+ * terms keeps natural-language questions precise ("what am I paying monthly?"
+ * returns only monthly obligations, not every contract that mentions payment).
+ */
+export function allTermsMatch(corpus: string, terms: { raw: string; needles: string[] }[]): boolean {
+  return terms.every((t) => t.needles.some((n) => n.length > 1 && corpus.includes(n)));
+}
+
+/** A short reason for why a contract matched, for the result card. */
+function reasonFor(terms: { raw: string; needles: string[] }[], corpus: string, row: ContractRow): string {
+  const matched = terms.filter((t) => t.needles.some((n) => n.length > 1 && corpus.includes(n)));
+  const titleHit = terms.some((t) => (row.title || "").toLowerCase().includes(t.raw));
+  if (titleHit) return "Matches the contract title.";
+  if (matched.length) {
+    const shown = matched.map((m) => `"${m.raw}"`).slice(0, 3).join(", ");
+    return `Matches ${shown} in its content, dates, clauses, or summary.`;
+  }
+  return "Included in the current view.";
+}
+
+/**
+ * Small capacity-bounded AI prompt so gpt-4o-mini (16k context) is never
+ * overloaded even when a user's library is large.
+ */
+const MAX_AI_CONTRACTS = 8;
+const MAX_AI_CONTEXT_CHARS = 7000;
+
+function compactContextForAI(hits: { row: ContractRow; extraction: ContractExtraction | null }[]): string {
+  const blocks: string[] = [];
+  for (const { row, extraction } of hits) {
+    const lines: string[] = [];
+    lines.push(`- Contract: ${row.title}`);
+    if (row.contract_type) lines.push(`  type: ${row.contract_type}`);
+    if (row.effective_date) lines.push(`  effective: ${row.effective_date}`);
+    if (row.expiration_date) lines.push(`  expires: ${row.expiration_date}`);
+    if (row.renewal_date) lines.push(`  renewal: ${row.renewal_date}`);
+    if (row.cancellation_deadline) lines.push(`  cancellation deadline: ${row.cancellation_deadline}`);
+    lines.push(`  auto-renews: ${row.auto_renewal === true ? "yes" : row.auto_renewal === false ? "no" : "unknown"}`);
+    if (row.renewal_type) lines.push(`  renewal type: ${row.renewal_type}`);
+    if (extraction) {
+      if (extraction.payment?.amount != null) {
+        lines.push(
+          `  payment: ${extraction.payment.currency ?? ""} ${extraction.payment.amount}${extraction.payment.frequency ? ` ${extraction.payment.frequency}` : ""}`,
+        );
+      }
+      if (extraction.summary.what_this_contract_does) lines.push(`  summary: ${extraction.summary.what_this_contract_does}`);
+      if (extraction.summary.what_you_pay) lines.push(`  you pay: ${extraction.summary.what_you_pay}`);
+      if (extraction.major_obligations.length) lines.push(`  obligations: ${extraction.major_obligations.join("; ")}`);
+      const clauses = extraction.clauses.map((c) => `${c.type}: ${c.text}`).slice(0, 4);
+      if (clauses.length) lines.push(`  clauses: ${clauses.join(" | ")}`);
+    }
+    blocks.push(lines.join("\n"));
+  }
+  const joined = blocks.join("\n\n");
+  return joined.length > MAX_AI_CONTEXT_CHARS ? joined.slice(0, MAX_AI_CONTEXT_CHARS) : joined;
+}
+
+const SEARCH_ANSWER_PROMPT = `You answer a user's question about THEIR OWN saved contracts, using ONLY the contract data provided (never invent facts). Be concise, specific and truthful.
+
+RULES:
+- If the question asks for a list (e.g. "which contracts auto-renew?", "what am I paying monthly?", "which contracts end in 2026?"), answer with exactly which contracts qualify, naming each by its title, and the relevant detail (date / amount / reason).
+- If the data does not say, say "I couldn't determine that from your contracts" — do not guess.
+- Keep the answer to 1-4 short sentences. It is informational, not legal advice.
+- Return STRICT JSON only: {"answer": string, "matched_titles": string[]}
+  where matched_titles lists the titles of the contracts your answer relies on.`;
+
+async function answerSearchQuestion(query: string, context: string): Promise<string | null> {
+  try {
+    const parsed = await openAiJson(
+      SEARCH_ANSWER_PROMPT,
+      `Question: ${query}\n\nYour contracts (from the user's own library):\n\n${context}`,
+    );
+    const answer = asString(parsed.answer);
+    return answer;
+  } catch {
+    // AI is best-effort on top of deterministic results — never block a search.
+    return null;
+  }
+}
+
 export const searchContracts = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = (data ?? {}) as { query?: unknown };
@@ -622,34 +862,77 @@ export const searchContracts = createServerFn({ method: "POST" })
     }
     return { query: d.query.trim().slice(0, 200) };
   })
-  .handler(async (opts) => {
+  .handler(async (opts): Promise<ContractSearchResponse> => {
     const userId = await requireServerFunctionUser();
     await requireContractSnapAddon(userId);
-    if (!process.env.DATABASE_URL) return { configured: false, contracts: [] };
-    const q = `%${opts.data.query}%`;
+    const aiConfigured = !!process.env.OPENAI_API_KEY;
+    if (!process.env.DATABASE_URL) return { configured: false, aiConfigured, aiAnswer: null, contracts: [] };
+
     const rows = (await sql`
       SELECT id, title, contract_type, effective_date, expiration_date, renewal_date,
              cancellation_deadline, auto_renewal, renewal_type, analysis_status, status, created_at,
-             source_text, summary
+             summary
       FROM contracts
       WHERE clerk_user_id = ${userId}
-        AND (title ILIKE ${q} OR contract_type ILIKE ${q} OR source_text ILIKE ${q}
-             OR effective_date ILIKE ${q} OR renewal_date ILIKE ${q}
-             OR expiration_date ILIKE ${q} OR cancellation_deadline ILIKE ${q}
-             OR CAST(COALESCE(summary, '{}') AS TEXT) ILIKE ${q})
       ORDER BY created_at DESC
     `) as Record<string, unknown>[];
-    return {
-      configured: true,
-      contracts: rows.map((r) => ({
-        ...toRow(r),
-        matchedOn: String(r.title ?? "")
-          .toLowerCase()
-          .includes(opts.data.query.toLowerCase())
-          ? "title"
-          : "content",
-      })),
-    };
+
+    // Deterministic layer: score each contract against the natural-language query.
+    const candidates = rows.map((r) => {
+      const row = toRow(r);
+      const extraction = parseStoredExtraction(r.summary, row.title);
+      return { row, extraction, corpus: buildSearchCorpus(r, extraction) };
+    });
+
+    const terms = expandTerms(searchTerms(opts.data.query));
+    const autoIntent =
+      searchTerms(opts.data.query).includes("auto") ||
+      searchTerms(opts.data.query).includes("automatic") ||
+      searchTerms(opts.data.query).includes("autoer");
+
+    let hits: { row: ContractRow; extraction: ContractExtraction | null; corpus: string; score: number }[];
+    if (terms.length === 0) {
+      // No substantive terms ("show me my contracts") -> keep everything, score 0.
+      hits = candidates.map((c) => ({ ...c, score: 0 }));
+    } else {
+      hits = [];
+      for (const c of candidates) {
+        // "auto" questions are almost always about auto-RENEWAL, so require the
+        // contract to actually auto-renew rather than matching the words alone.
+        if (autoIntent && !(c.row.auto_renewal === true)) continue;
+        if (!allTermsMatch(c.corpus, terms)) continue;
+        hits.push({ ...c, score: scoreCorpus(c.corpus, terms) });
+      }
+    }
+
+    hits.sort(
+      (a, b) =>
+        b.score - a.score ||
+        String(b.row.created_at ?? "").localeCompare(String(a.row.created_at ?? "")),
+    );
+    const top = hits.slice(0, 25);
+
+    const contracts = top.map((h) => {
+      const titleHit = terms.some((t) => (h.row.title || "").toLowerCase().includes(t.raw));
+      return {
+        ...h.row,
+        matchedOn: titleHit ? ("title" as const) : ("content" as const),
+        score: h.score,
+        matchReason: reasonFor(terms, h.corpus, h.row),
+      };
+    });
+
+    // AI layer: synthesize a short answer from the top matches, when available.
+    let aiAnswer: string | null = null;
+    if (aiConfigured && contracts.length > 0) {
+      const contextHits = top.slice(0, MAX_AI_CONTRACTS);
+      aiAnswer = await answerSearchQuestion(
+        opts.data.query,
+        compactContextForAI(contextHits.map(({ row, extraction }) => ({ row, extraction }))),
+      );
+    }
+
+    return { configured: true, aiConfigured, aiAnswer, contracts };
   });
 
 export const deleteContract = createServerFn({ method: "POST" })
