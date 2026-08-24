@@ -18,6 +18,14 @@ import handler from "./dist/server/server.js";
 // mounted here (below) to make real checkout purchases auto-grant entitlements
 // in production. Everything else still falls through to the SSR handler.
 import { POST as stripePOST } from "./src/routes/api/-stripe-webhook";
+// BillSnap email ingestion — machine endpoint (secret-gated). Mounted here the
+// same way as the Stripe webhook: config.json routes every path to this one
+// function, so the ingest path must be intercepted inside this entry to reach
+// the handler (see the mount below).
+import {
+  POST as billsnapIngestPOST,
+  GET as billsnapIngestGET,
+} from "./src/routes/api/-billsnap-email-ingest";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -44,6 +52,24 @@ const toWebRequest = (req: IncomingMessage): Request => {
   } as RequestInit);
 };
 
+/** Writes a web Response (status/headers/streamed body) to a Node response. */
+async function streamResponse(
+  res: ServerResponse,
+  webRes: Response,
+): Promise<void> {
+  res.statusCode = webRes.status;
+  webRes.headers.forEach((value, key) => res.setHeader(key, value));
+  if (webRes.body) {
+    const reader = webRes.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  }
+  res.end();
+}
+
 export default async function vercelHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -51,38 +77,31 @@ export default async function vercelHandler(
   try {
     const webRequest = toWebRequest(req);
 
-    // Mount the Stripe webhook here: config.json routes EVERY path on the
-    // domain to this one function (single render.func, no per-path rewrite), so
-    // POST /api/stripe-webhook must be intercepted inside this entry for Stripe
-    // to reach the handler. Every other path falls through unchanged to SSR.
-    if (req.method === "POST" && webRequest.url.endsWith("/api/stripe-webhook")) {
-      const webhookRes = await stripePOST(webRequest);
-      res.statusCode = webhookRes.status;
-      webhookRes.headers.forEach((value, key) => res.setHeader(key, value));
-      if (webhookRes.body) {
-        const reader = webhookRes.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
-      }
-      res.end();
+    // Mount the Stripe webhook and BillSnap email ingestion here: config.json
+    // routes EVERY path on the domain to this one function (single render.func,
+    // no per-path rewrite), so these API paths must be intercepted inside this
+    // entry for callers to reach them. Every other path falls through to SSR.
+    const isStripeWebhook =
+      req.method === "POST" && webRequest.url.endsWith("/api/stripe-webhook");
+    const isBillSnapIngest =
+      webRequest.url.endsWith("/api/billsnap-email-ingest") &&
+      (req.method === "POST" || req.method === "GET");
+
+    if (isStripeWebhook) {
+      await streamResponse(res, await stripePOST(webRequest));
+      return;
+    }
+    if (isBillSnapIngest) {
+      const ingestRes =
+        req.method === "GET"
+          ? await billsnapIngestGET()
+          : await billsnapIngestPOST(webRequest);
+      await streamResponse(res, ingestRes);
       return;
     }
 
     const webRes = await fetchHandler.fetch(webRequest);
-    res.statusCode = webRes.status;
-    webRes.headers.forEach((value, key) => res.setHeader(key, value));
-    if (webRes.body) {
-      const reader = webRes.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-    }
-    res.end();
+    await streamResponse(res, webRes);
   } catch (error) {
     // Log the detail server-side (captured by the host's function logs); never
     // return a stack trace to the public visitor of the site.

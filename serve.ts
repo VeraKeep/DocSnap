@@ -14,6 +14,10 @@ import handler from "./dist/server/server.js";
 
 // API route handlers (these use "-" prefix so they're excluded from TanStack Start)
 import { POST as stripePOST } from "./src/routes/api/-stripe-webhook";
+import {
+  POST as billsnapIngestPOST,
+  GET as billsnapIngestGET,
+} from "./src/routes/api/-billsnap-email-ingest";
 import { GET as uploadGET, POST as uploadPOST } from "./src/routes/api/-uploadthing";
 import {
   POST as sharePOST,
@@ -46,6 +50,11 @@ for (let attempt = 1; ; attempt++) {
         // API routes — handle before static files or SSR.
         if (pathname === "/api/stripe-webhook" && req.method === "POST") {
           return stripePOST(req);
+        }
+        // BillSnap email ingestion — machine endpoint (secret-gated).
+        if (pathname === "/api/billsnap-email-ingest") {
+          if (req.method === "POST") return billsnapIngestPOST(req);
+          if (req.method === "GET") return billsnapIngestGET();
         }
         if (pathname === "/api/uploadthing") {
           if (req.method === "GET") return uploadGET(req);
