@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { SignInButton, SignUpButton, UserButton } from "@clerk/tanstack-start";
 import { trackEvent } from "../analytics";
 import { MODULES } from "../modules";
+import { MeetingSnapTiers } from "./MeetingSnapTiers";
 import { HomeSnapModuleCard } from "../features/homesnap/components/HomeSnapModuleCard";
 import { HomeSnapLaunchBanner } from "../features/homesnap/components/HomeSnapLaunchBanner";
 import { MyScans } from "./MyScans";
@@ -520,12 +521,6 @@ export function LandingPage({
             >
               See All Access pricing
             </Link>
-            <Link
-              to="/meetingsnap-pricing"
-              className="inline-flex items-center rounded-full border border-gray-600 bg-gray-800 px-6 py-3.5 text-base font-semibold text-gray-200 transition hover:border-gray-400 hover:bg-gray-700"
-            >
-              MeetingSnap plans →
-            </Link>
           </div>
         </div>
       </section>
@@ -537,11 +532,13 @@ export function LandingPage({
           <HomeSnapLaunchBanner />
 
           <h2 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">
-            One place for everything you own
+            DocSnap, plus add-ons for everything you own
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-center leading-relaxed text-gray-400">
-            The VeraKeep™ suite — modules that snap onto DocSnap to organize the
-            receipts, tools, and meetings that go with the things you own.
+            DocSnap is your one place for the documents that matter. Snap these
+            paid add-on modules — receipts, tools, meetings, your home, contracts,
+            and bills — right onto your DocSnap account to organize the things
+            you own.
           </p>
 
           <div className="mt-10 grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -602,6 +599,8 @@ export function LandingPage({
               )
             )}
           </div>
+
+          <MeetingSnapTiers />
         </div>
       </section>
 
