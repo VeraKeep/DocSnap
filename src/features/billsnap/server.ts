@@ -158,7 +158,24 @@ export interface BillExtraction {
  * OPENAI_API_KEY isn't connected, and readable errors on non-OK responses or
  * unparseable output — the UI degrades to the manual form on any of these.
  */
-async function extractBill(imageBase64: string, mimeType: string): Promise<BillExtraction> {
+/** System prompt for image (photo/PDF-render) extraction. */
+const SYSTEM_IMAGE_PROMPT =
+  "Extract bill payment data with careful visual reading. Return strict JSON only with fields: vendor, category, account_reference, statement_date, due_date, amount_due, minimum_payment, billing_period, autopay_status, confidence_score. autopay_status must be exactly one of 'Detected', 'Not Detected', or 'Unknown'. confidence_score is a number from 0 to 1. Copy values exactly as printed on the bill — especially the account reference (including any prefix and ending digits), statement/due dates, billing period, and money amounts (do not round or alter them). Use null when a value is unreadable or not present.";
+
+/** System prompt for text (email-body) extraction — same schema as image mode. */
+const SYSTEM_TEXT_PROMPT =
+  "Extract bill payment data from the provided text. Return strict JSON only with fields: vendor, category, account_reference, statement_date, due_date, amount_due, minimum_payment, billing_period, autopay_status, confidence_score. autopay_status must be exactly one of 'Detected', 'Not Detected', or 'Unknown'. confidence_score is a number from 0 to 1. Copy values exactly as they appear in the text — especially the account reference, dates, billing period, and money amounts (do not round or alter them). Use null when a value is absent or unreadable. If the text does not look like a bill at all, return null for every field (vendor included).";
+
+/**
+ * Shared OpenAI chat-completions call + parse for BillSnap extraction. Both the
+ * image path (photo / client-rasterized PDF) and the email-body text path route
+ * through here so they share the same model, response format, error handling,
+ * and JSON parse — no parallel extraction pipeline.
+ */
+async function callBillExtraction(
+  systemPrompt: string,
+  userContent: Array<Record<string, unknown>> | string,
+): Promise<BillExtraction> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Extraction isn't enabled yet — OPENAI_API_KEY is not connected.");
   }
@@ -173,18 +190,8 @@ async function extractBill(imageBase64: string, mimeType: string): Promise<BillE
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
-        {
-          role: "system",
-          content:
-            "Extract bill payment data with careful visual reading. Return strict JSON only with fields: vendor, category, account_reference, statement_date, due_date, amount_due, minimum_payment, billing_period, autopay_status, confidence_score. autopay_status must be exactly one of 'Detected', 'Not Detected', or 'Unknown'. confidence_score is a number from 0 to 1. Copy values exactly as printed on the bill — especially the account reference (including any prefix and ending digits), statement/due dates, billing period, and money amounts (do not round or alter them). Use null when a value is unreadable or not present.",
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Read every meaningful field from this bill image." },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-          ],
-        },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
       ],
     }),
   });
@@ -221,6 +228,38 @@ async function extractBill(imageBase64: string, mimeType: string): Promise<BillE
     autopay_status: autopayOf(p.autopay_status),
     confidence_score: num(p.confidence_score),
   };
+}
+
+/**
+ * Reads a bill photo (or client-rasterized PDF PNG) with OpenAI's vision API and
+ * returns the structured BillSnap fields. Mirrors ReceiptSnap's `extract` and is
+ * identical to the path BillLibrary uses for capture. Exported so the email
+ * ingestion path can reuse it server-side for image attachments. Throws clear
+ * errors so callers degrade gracefully.
+ */
+export async function extractBill(
+  imageBase64: string,
+  mimeType: string,
+): Promise<BillExtraction> {
+  return callBillExtraction(SYSTEM_IMAGE_PROMPT, [
+    { type: "text", text: "Read every meaningful field from this bill image." },
+    { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+  ]);
+}
+
+/**
+ * Extracts BillSnap fields from plain email-body text (no image), using the same
+ * model + schema as the vision path so an emailed bill body gets the same
+ * fields pre-filled. This is the server-side counterpart for email ingestion;
+ * the interactive capture flow still uses the image path.
+ */
+export async function extractBillFromText(emailText: string): Promise<BillExtraction> {
+  return callBillExtraction(SYSTEM_TEXT_PROMPT, [
+    {
+      type: "text",
+      text: `Extract the bill fields from this email text. Reply with strict JSON only.\n\n${emailText.slice(0, 20_000)}`,
+    },
+  ]);
 }
 
 /**
