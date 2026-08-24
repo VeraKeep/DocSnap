@@ -3,6 +3,7 @@ import { SignInButton, SignUpButton, UserButton } from "@clerk/tanstack-start";
 import { trackEvent } from "../analytics";
 import { MODULES } from "../modules";
 import { HomeSnapModuleCard } from "../features/homesnap/components/HomeSnapModuleCard";
+import { HomeSnapLaunchBanner } from "../features/homesnap/components/HomeSnapLaunchBanner";
 import { MyScans } from "./MyScans";
 import {
   type CloudDocument,
@@ -507,6 +508,9 @@ export function LandingPage({
       {/* VeraKeep modules */}
       <section className="relative border-t border-gray-800/50 px-6 py-16 sm:px-6">
         <div className="mx-auto max-w-6xl">
+          {/* In-app launch announcement for HomeSnap (dismissible) */}
+          <HomeSnapLaunchBanner />
+
           <h2 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">
             One place for everything you own
           </h2>
