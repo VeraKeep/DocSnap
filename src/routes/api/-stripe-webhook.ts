@@ -22,6 +22,7 @@ import {
   setGarageSnapAddon,
   setBillSnapAddon,
   setContractSnapAddon,
+  setHomeSnapAddon,
   setMeetingSubscriptionTier,
   RECEIPTSNAP_ADDON_PRODUCT_ID,
 } from "../../subscription";
@@ -180,6 +181,10 @@ async function handleCheckoutCompleted(
       await setContractSnapAddon(clerkUserId, true);
       console.log(`[stripe-webhook] Granted ContractSnap add-on for user ${clerkUserId}`);
       break;
+    case "homesnap":
+      await setHomeSnapAddon(clerkUserId, true);
+      console.log(`[stripe-webhook] Granted HomeSnap add-on for user ${clerkUserId}`);
+      break;
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, entitlement.meetingTier ?? "free");
       console.log(
@@ -248,7 +253,7 @@ function priceTier(priceId: string | undefined): PaidTier {
  * are intentionally OUT OF SCOPE here (no UI/entitlement semantics yet) — no
  * slots for them.
  */
-type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "meetingsnap";
+type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "homesnap" | "meetingsnap";
 interface PriceEntitlement {
   kind: EntitlementKind;
   /** MeetingSnap tier when kind === 'meetingsnap' (else unused). */
@@ -280,6 +285,9 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   // BillSnap add-on
   "price_1U6prlQf4SDuORrEAHPWd5hH": { kind: "billsnap" }, // monthly
   "price_1U6ps8Qf4SDuORrEE4T4xr2d": { kind: "billsnap" }, // annual
+  // HomeSnap add-on
+  "price_1U6px3Qf4SDuORrE0QdJIo1Y": { kind: "homesnap" }, // monthly
+  "price_1U6pxfQf4SDuORrElHyfBaae": { kind: "homesnap" }, // annual
   // MeetingSnap (independent 4-tier model)
   "price_1U6km5Qf4SDuORrEPTtvKzCe": { kind: "meetingsnap", meetingTier: "personal" }, // Personal monthly
   "price_1U6kmXQf4SDuORrE1pfncl4K": { kind: "meetingsnap", meetingTier: "personal" }, // Personal annual
@@ -335,6 +343,10 @@ async function revokeSubscriptionEntitlement(
     case "contractsnap":
       await setContractSnapAddon(clerkUserId, false);
       console.log(`[stripe-webhook] ContractSnap subscription ended — revoked add-on for user ${clerkUserId}`);
+      break;
+    case "homesnap":
+      await setHomeSnapAddon(clerkUserId, false);
+      console.log(`[stripe-webhook] HomeSnap subscription ended — revoked add-on for user ${clerkUserId}`);
       break;
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, "free");
