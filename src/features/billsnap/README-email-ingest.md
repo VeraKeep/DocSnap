@@ -1,19 +1,16 @@
 # BillSnap Email Ingestion
 
-This is the last capability TODO in the BillSnap plan — turn an emailed bill
-(image or PDF attachment, or bill text in the body) into a confirmed `bills`
-record using the SAME extraction and record path as interactive capture.
+Turn an emailed bill (image or PDF attachment, or bill text in the body) into a
+confirmed, owner-scoped `bills` record using the SAME extraction and record path
+as interactive capture. There are two layers:
 
-## What's built (this PR)
+- **Ingestion** (server-side, shipped first): `POST /api/billsnap-email-ingest`
+  takes a normalized email payload and writes the bill.
+- **Transport** (this PR): per-user inbound addresses + a provider webhook
+  (`POST /api/billsnap-email-inbound`) so a real inbound-mail provider can
+  deliver forwarded bill emails end-to-end.
 
-- `src/routes/api/-billsnap-email-ingest.ts` — HTTP ingress. `POST /api/billsnap-email-ingest`
-  with a normalized email payload.
-- `src/features/billsnap/emailIngest.ts` — the ingestion pipeline (transport-agnostic).
-- `src/features/billsnap/server.ts` — exported `extractBill` (the existing vision
-  path) and added `extractBillFromText` (same model/schema, text mode). Both share
-  one `callBillExtraction` core — no parallel extraction pipeline.
-
-Payload accepted (JSON):
+## Ingestion payload (JSON)
 
 ```jsonc
 {
@@ -53,10 +50,10 @@ Outcomes (the transport emails these back to the sender):
 - `empty_email` — no usable content.
 - `db_not_configured` — `DATABASE_URL` not set.
 
-## Auth & ownership
+## Ingestion auth & ownership
 
-This is a **machine endpoint**, not a Clerk-session route. It authenticates with a
-shared secret so it stays fail-closed:
+The ingest endpoint is a **machine endpoint**, not a Clerk-session route. It
+authenticates with a shared secret and stays fail-closed:
 
 - Header `x-billsnap-ingest-secret` (or body `secret`) must equal
   `BILLSNAP_EMAIL_INGEST_SECRET`. If the env var is unset the endpoint returns 501.
@@ -66,20 +63,89 @@ shared secret so it stays fail-closed:
   is enforced before any write or AI call, so a caller can only create bills for
   users who actually own the add-on.
 
-## Transport dependency (NOT yet wired — the external piece)
+## Per-user inbound address + owner resolution (Part A)
 
-There is no live inbound mail provider yet. This PR deliberately stops short of
-standing one up. To go live, plug any of these into `POST /api/billsnap-email-ingest`,
-resolving `owner.clerkUserId` from the receiving address (e.g. a per-user inbound
-address token like `bills+<token>@docsnapapp.com`, generated and stored when the
-user enables email-in, then looked up by the provider webhook):
+When an owner turns on "email in" (ServerFn or server helper), we generate a
+unique, unguessable 32-char base64url token and expose the inbound address:
 
-1. **Cloudflare Email Workers** — forward inbound email → POST JSON here (cheap, on
-   the existing stack).
-2. **Postmark / SendGrid Inbound Parse** — provider webhook delivers the parsed
-   email + attachments; map recipient → owner.
-3. **An SMTP-to-HTTP bridge** (e.g. Cloudflare's `email-routing` > worker) that
-   base64-encodes attachments into this payload.
+```
+bills+<token>@inbound.docsnapapp.com
+```
 
-Set `BILLSNAP_EMAIL_INGEST_SECRET` (ingress auth), `DATABASE_URL`, and
-`OPENAI_API_KEY` (for auto-extraction; without it email bills become drafts).
+The token is stored normalized (token-validated) in `billsnap_inbound_addresses`,
+scoped to `users.clerk_user_id` (one row per user, indexed by token). A provider
+webhook extracts the token from the `to` recipient and calls
+`resolveOwnerFromRecipient` / `lookupClerkUserByInboundToken` to map it back to
+the owning Clerk user. Rotation writes a fresh token (old address stops
+resolving); disabling/revoking deletes the row (address stops resolving). Fail
+closed: unknown, malformed, or disabled tokens resolve to `null` — never a
+guessed owner.
+
+## Provider webhook (Part B) — `POST /api/billsnap-email-inbound`
+
+The actual transport receiver. It authenticates, resolves the owner from `to`,
+reshapes the payload, and calls the same `ingestBillFromEmail`, returning the
+same structured outcome (which the provider emails back to the sender — nothing
+is silently dropped).
+
+**Auth (fail closed):** a secret must match `BILLSNAP_INBOUND_SECRET` (falls back
+to `BILLSNAP_EMAIL_INGEST_SECRET`). It is delivered via header
+`x-billsnap-inbound-secret`, OR query `?secret=`, OR a `secret` body/form field —
+pick whichever your provider can set (many can only post to a URL, so `?secret=`
+is the reliable route). Unset env var → 501; wrong/missing → 401.
+
+**Provider payloads (mapped case-insensitively):**
+
+| Field (canonical) | SendGrid Inbound Parse | Postmark Inbound |
+|---|---|---|
+| recipient → owner | `to` (multipart field or JSON) | `To` (JSON) |
+| from | `from` | `From` |
+| subject | `subject` | `Subject` |
+| body text | `text` | `TextBody` / `Text` |
+| attachment filename | multipart part's Content-Disposition filename | `Attachments[].Name` |
+| attachment mime | multipart part Content-Type | `Attachments[].ContentType` |
+| attachment bytes | multipart file part (raw bytes) | `Attachments[].Content` (base64) |
+
+SendGrid posts `multipart/form-data` (default) — headers/body as string fields,
+each attachment as its own file part. Postmark posts JSON. Both are accepted; the
+handler strips any `data:<mime>;base64,` prefix and picks the first image/pdf
+attachment (image/jpeg|png|webp are vision-extracted, PDF becomes an editable
+draft, body text is used as fallback — identical to the ingest path).
+
+**Outcome codes returned to the provider (HTTP 200 so it emails them back):**
+`created`, `created_without_extraction`, `addon_required`, `empty_email`,
+`db_not_configured`, plus `unknown_recipient` (the `to` token isn't an active
+BillSnap address — surfaced, never dropped). 4xx is reserved for auth/shape
+failures. `GET /api/billsnap-email-inbound` returns a handshake/describe doc.
+
+## Wiring
+
+Both server-side endpoints are mounted in `serve.ts` (local) and `vercel-entry.ts`
+(production single-function), alongside the Stripe webhook and the existing
+ingest route.
+
+## Still needs the owner/lead to go fully live
+
+The server-side receiver is complete and build-verified, but no inbound mail
+provider is provisioned yet. To deliver end-to-end:
+
+1. **Create a provider account + DNS record** for `inbound.docsnapapp.com`
+   (or set `BILLSNAP_INBOUND_DOMAIN` to a different subdomain) — e.g. SendGrid
+   Inbound Parse or Postmark Inbound — and configure it to POST parsed mail to
+   `https://docsnapapp.com/api/billsnap-email-inbound?secret=...`.
+2. **Apply the migration**: `psql "$DATABASE_URL" -f src/db-schema.sql` (adds
+   `billsnap_inbound_addresses`) on Neon.
+3. **Set env vars** (below) and turn on "email-in" for a test owner.
+4. Optional: server-side PDF rasterization of email-attached PDFs (currently they
+   become editable drafts).
+
+## Env vars the transport now needs
+
+- `BILLSNAP_INBOUND_SECRET` — webhook auth for `/api/billsnap-email-inbound`
+  (falls back to `BILLSNAP_EMAIL_INGEST_SECRET`; set either).
+- `BILLSNAP_INBOUND_DOMAIN` — the domain inbound addresses live on
+  (default `inbound.docsnapapp.com`).
+- `BILLSNAP_EMAIL_INGEST_SECRET` — auth for the normalized ingest endpoint.
+- `DATABASE_URL` — Neon Postgres (required for the token mapping and bills).
+- `OPENAI_API_KEY` — for auto-extraction of image/text emails; without it bills
+  become editable drafts.

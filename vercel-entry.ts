@@ -26,6 +26,13 @@ import {
   POST as billsnapIngestPOST,
   GET as billsnapIngestGET,
 } from "./src/routes/api/-billsnap-email-ingest";
+// BillSnap inbound email transport — provider webhook reception. Mounted
+// alongside the ingest route because config.json routes every path to this one
+// function (see the mount below).
+import {
+  POST as billsnapInboundPOST,
+  GET as billsnapInboundGET,
+} from "./src/routes/api/-billsnap-email-inbound";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -86,6 +93,9 @@ export default async function vercelHandler(
     const isBillSnapIngest =
       webRequest.url.endsWith("/api/billsnap-email-ingest") &&
       (req.method === "POST" || req.method === "GET");
+    const isBillSnapInbound =
+      webRequest.url.endsWith("/api/billsnap-email-inbound") &&
+      (req.method === "POST" || req.method === "GET");
 
     if (isStripeWebhook) {
       await streamResponse(res, await stripePOST(webRequest));
@@ -97,6 +107,14 @@ export default async function vercelHandler(
           ? await billsnapIngestGET()
           : await billsnapIngestPOST(webRequest);
       await streamResponse(res, ingestRes);
+      return;
+    }
+    if (isBillSnapInbound) {
+      const inboundRes =
+        req.method === "GET"
+          ? await billsnapInboundGET()
+          : await billsnapInboundPOST(webRequest);
+      await streamResponse(res, inboundRes);
       return;
     }
 
