@@ -268,10 +268,9 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   "price_1U6kdfQf4SDuORrEffdSCmFz": { kind: "docsnap" }, // Personal annual
   "price_1U6kcWQf4SDuORrEuBANqNn2": { kind: "docsnap" }, // Family monthly
   "price_1U6keEQf4SDuORrE2lDWZkw5": { kind: "docsnap" }, // Family annual
-  // ContractSnap add-on. The two recurring ContractSnap price IDs (monthly +
-  // annual, $4.99/mo and $49.99/yr) will be added here as { kind: "contractsnap" }
-  // by the lead once the owner provides them. Until then the grant/revoke
-  // mechanism below is wired but inert (no price maps to it), so it fails closed.
+  // ContractSnap add-on ($4.99/mo, $49.99/yr)
+  "price_1U6q0FQf4SDuORrEWBlPdxe5": { kind: "contractsnap" }, // monthly
+  "price_1U6q17Qf4SDuORrEix17ztf7": { kind: "contractsnap" }, // annual
   // ReceiptSnap add-on
   "price_1U6kfsQf4SDuORrEjRw4yNQN": { kind: "receiptsnap" }, // monthly
   "price_1U6khZQf4SDuORrE0ULOHWTT": { kind: "receiptsnap" }, // annual
