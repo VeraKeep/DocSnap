@@ -4,6 +4,7 @@ import { uploadPDFBlob } from "~/cloudSync";
 import { createBook, deleteBook, listBooks } from "../server";
 import { type BookDetail, type BookRow } from "../types";
 import { BookReader } from "./BookReader";
+import { BookSearch } from "./BookSearch";
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
@@ -86,6 +87,13 @@ export function BookLibrary() {
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [openBook, setOpenBook] = useState<BookRow | null>(null);
+  const [openPage, setOpenPage] = useState(1);
+
+  // Open a book at a specific page (used by search results + the Read button).
+  function openAt(book: BookRow, page: number) {
+    setOpenPage(page >= 1 ? page : 1);
+    setOpenBook(book);
+  }
 
   // Add-a-book form state
   const [form, setForm] = useState(EMPTY_FORM);
@@ -223,7 +231,11 @@ export function BookLibrary() {
   if (openBook) {
     return (
       <div className="mt-8">
-        <BookReader book={openBook} onBack={() => setOpenBook(null)} />
+        <BookReader
+          book={openBook}
+          onBack={() => setOpenBook(null)}
+          initialPage={openPage}
+        />
       </div>
     );
   }
@@ -407,6 +419,9 @@ export function BookLibrary() {
         )}
       </section>
 
+      {/* Search your books (Stage 3) */}
+      <BookSearch onOpenBook={(book, page) => openAt(book, page)} />
+
       {/* Bookshelf */}
       <section>
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
@@ -442,7 +457,7 @@ export function BookLibrary() {
               >
                 <button
                   type="button"
-                  onClick={() => setOpenBook(b)}
+                  onClick={() => openAt(b, 1)}
                   className="min-w-0 flex-1 text-left"
                 >
                   <span className="font-medium text-gray-200 transition hover:text-indigo-300">{b.title}</span>
@@ -461,7 +476,7 @@ export function BookLibrary() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setOpenBook(b)}
+                    onClick={() => openAt(b, 1)}
                     className="rounded-full border border-indigo-700 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition hover:bg-indigo-900/40"
                   >
                     Read
