@@ -28,6 +28,9 @@ import {
   type BookListResponse,
   type BookPage,
   type BookRow,
+  type BookSearchInput,
+  type BookSearchResponse,
+  type BookSearchResult,
   type CreateAnnotationResponse,
   type CreateBookResponse,
   type DeleteAnnotationResponse,
@@ -521,4 +524,283 @@ export const deleteAnnotation = createServerFn({ method: "POST" })
       RETURNING id
     `) as Record<string, unknown>[];
     return { configured: true, ok: rows.length > 0 };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Stage 3 — full-text keyword search over book content                */
+/* ------------------------------------------------------------------ */
+/**
+ * Deterministic keyword search over a user's OWN stored book pages. This reuses
+ * the exact ContractSnap search pattern (stopwords + term/synonym expansion +
+ * loose-substring corpus scoring) — copied here so the modules stay decoupled,
+ * per the codebase convention. Search runs over `book_pages.text` (the user's
+ * own stored page text) plus book metadata (title/author/edition/publisher/
+ * year/collection/tags).
+ *
+ * PROVENANCE: every result is attributed to a concrete book + edition + page (+
+ * paragraph when determinable). The snippet is taken VERBATIM from the user's
+ * own stored page text — quotes and page numbers are never fabricated. Only the
+ * user's own library is searched (owner-scoped by `clerk_user_id`).
+ */
+const SEARCH_STOPWORDS = new Set([
+  "which", "who", "what", "when", "where", "why", "how", "the", "a", "an",
+  "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did",
+  "i", "me", "my", "mine", "we", "our", "ours", "us", "you", "your", "yours",
+  "they", "them", "their", "it", "its", "of", "to", "in", "on", "at", "for",
+  "with", "and", "or", "that", "this", "these", "those", "will", "would", "can",
+  "could", "should", "shall", "have", "has", "had", "about", "from", "by", "as",
+  "all", "any", "some", "get", "gets", "show", "find", "list", "tell", "said",
+  "than", "then", "also", "into", "each", "more", "most", "other", "such",
+  // book-domain boilerplate that shouldn't gate a search
+  "book", "books", "chapter", "chapters", "page", "pages", "volume", "edition",
+  "author", "story", "part", "section", "let", "lets", "there",
+]);
+
+/** Light synonym expansion — book/search vocabulary, loose-substring matched. */
+const SEARCH_ALIASES: Record<string, string> = {
+  climate: " climate warming temperature weather ",
+  warming: " climate warming ",
+  environment: " environment environmental ecology ecological ",
+  ecology: " ecology ecological environment ",
+  history: " history historical past ",
+  war: " war wars battle combat ",
+  love: " love loves loved romance romantic ",
+  philosophy: " philosophy philosophical thought ideas ",
+  science: " science scientific research ",
+  psychology: " psychology psychological mind behavior behaviour ",
+  economics: " economics economic economy financial money ",
+  money: " money economic finance financial cost price ",
+  death: " death dying die dead mortality ",
+  time: " time temporal duration past future ",
+  space: " space spatial universe cosmos ",
+  universe: " universe cosmos space astronomical ",
+  quantum: " quantum quanta mechanics ",
+};
+
+/** Tokenize a natural-language query into substantive search terms. */
+function searchTerms(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/[\u2014\u2013]/g, " ")
+    .replace(/[^a-z0-9$€£%.,+\s-]/g, " ")
+    .replace(/-/g, " ")
+    .split(/[\s,.]+/)
+    .filter((t) => t.length > 1 && !SEARCH_STOPWORDS.has(t));
+}
+
+/** Expand each query term (plus synonyms) into a list of loose substrings. */
+function expandTerms(terms: string[]): { raw: string; needles: string[] }[] {
+  return terms.map((raw) => {
+    const aliased = (SEARCH_ALIASES[raw] ?? "").split(/\s+/).filter(Boolean);
+    return { raw, needles: [raw, ...aliased] };
+  });
+}
+
+/** Loose substring scoring: stronger for longer / more specific terms. */
+function scoreCorpus(corpus: string, terms: { raw: string; needles: string[] }[]): number {
+  let score = 0;
+  for (const t of terms) {
+    if (t.needles.some((n) => n.length > 1 && corpus.includes(n))) {
+      score += Math.max(2, t.raw.length);
+    }
+  }
+  return score;
+}
+
+/** True when EVERY substantive query term matches the corpus. */
+function allTermsMatch(corpus: string, terms: { raw: string; needles: string[] }[]): boolean {
+  return terms.every((t) => t.needles.some((n) => n.length > 1 && corpus.includes(n)));
+}
+
+/**
+ * Resolve the matched paragraph (0-based index) + a verbatim snippet for a
+ * matched page. Returns the first paragraph that contains any needle; falls
+ * back to the page's opening text with paragraphIndex null when there are no
+ * clean paragraph boundaries. The snippet is always real stored page text.
+ */
+function pageSnippet(
+  pageText: string,
+  needles: string[],
+  maxLength = 360,
+): { paragraphIndex: number | null; snippet: string } {
+  const paragraphs = pageText
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const lower = paragraphs.map((p) => p.toLowerCase());
+  for (let i = 0; i < paragraphs.length; i++) {
+    if (needles.some((n) => n.length > 1 && lower[i].includes(n))) {
+      const para = paragraphs[i];
+      return {
+        paragraphIndex: i,
+        snippet: para.length > maxLength ? `${para.slice(0, maxLength).trimEnd()}…` : para,
+      };
+    }
+  }
+  const first = paragraphs[0] ?? pageText.slice(0, maxLength).trim();
+  return {
+    paragraphIndex: null,
+    snippet: first.length > maxLength ? `${first.slice(0, maxLength).trimEnd()}…` : first,
+  };
+}
+
+/** Which metadata field the query matched (for the result card's matchedOn). */
+function metadataMatchKind(
+  terms: { raw: string; needles: string[] }[],
+  title: string,
+  author: string | null,
+): "title" | "author" | "metadata" | null {
+  const hit = (s: string) =>
+    terms.some((t) => t.needles.some((n) => n.length > 1 && s.toLowerCase().includes(n)));
+  if (hit(title)) return "title";
+  if (author && hit(author)) return "author";
+  return null;
+}
+
+/**
+ * Search the user's books (across the library, or a single book when
+ * `bookId` is given) and return page-attributed results ranked by relevance.
+ *
+ * Ranking:
+ *  - A page whose stored text actually contains a query term is a precise
+ *    "content" hit, scored by term weight (longer terms weigh more) boosted by
+ *    any metadata match, then ordered newest-book-first within ties.
+ *  - A book whose metadata (title/author/etc.) matches but whose pages don't
+ *    contain the term surfaces as ONE representative hit per book, attributed
+ *    to its first page, so a "find this book" search isn't drowned by every
+ *    page of that book. matchedOn reflects title/author/metadata.
+ */
+export const searchBooks = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as BookSearchInput;
+    const query = typeof d.query === "string" ? d.query.trim() : "";
+    if (!query) throw new Error("Enter a search term.");
+    const bookId = d.bookId == null ? null : Number(d.bookId);
+    if (bookId != null && (!Number.isInteger(bookId) || bookId <= 0)) {
+      throw new Error("Invalid book id.");
+    }
+    const limit = Math.min(60, Math.max(1, Math.floor(Number(d.limit) || 40)));
+    return { query: query.slice(0, 200), bookId, limit };
+  })
+  .handler(async (opts): Promise<BookSearchResponse> => {
+    const userId = await requireServerFunctionUser();
+    const { query, bookId, limit } = opts.data;
+    if (!process.env.DATABASE_URL) return { configured: false, query, noTerms: false, results: [] };
+
+    const terms = expandTerms(searchTerms(query));
+    if (terms.length === 0) {
+      // Nothing substantive to search on ("show me my books") — return no
+      // page-attributed hits rather than fabricating a page to point at.
+      return { configured: true, query, noTerms: true, results: [] };
+    }
+
+    // `bookId` is a validated positive integer (see validator) so it is safe to
+    // interpolate directly into the owner-scoped query.
+    const bookFilter = bookId != null ? `AND bp.book_id = ${bookId}` : "";
+    const rows = (await sql`
+      SELECT bp.id AS page_id, bp.book_id, bp.page_number, bp.text AS page_text,
+             b.title, b.author, b.edition, b.publisher, b.year, b.collection, b.tags
+      FROM book_pages bp
+      JOIN books b ON b.id = bp.book_id
+      WHERE b.clerk_user_id = ${userId}
+        ${bookFilter}
+      ORDER BY b.created_at DESC, bp.page_number
+    `) as Record<string, unknown>[];
+
+    const contentHits: { r: Record<string, unknown>; score: number }[] = [];
+    const metadataOnly = new Map<
+      number,
+      { r: Record<string, unknown>; score: number; kind: "title" | "author" | "metadata" }
+    >();
+
+    for (const r of rows) {
+      const pageText = String(r.page_text ?? "").toLowerCase();
+      const title = String(r.title ?? "");
+      const author = asString(r.author);
+      const metaParts: string[] = [title];
+      if (author) metaParts.push(author);
+      const edition = asString(r.edition);
+      const publisher = asString(r.publisher);
+      const year = asString(r.year);
+      const collection = asString(r.collection);
+      if (edition) metaParts.push(edition);
+      if (publisher) metaParts.push(publisher);
+      if (year) metaParts.push(year);
+      if (collection) metaParts.push(collection);
+      for (const t of asTags(r.tags)) metaParts.push(t);
+      const metaCorpus = metaParts.join(" ").toLowerCase();
+
+      // A page is a hit only when every substantive term matches somewhere in
+      // its combined corpus (metadata + page text), keeping queries precise.
+      const combined = `${metaCorpus} ${pageText}`;
+      if (!allTermsMatch(combined, terms)) continue;
+
+      const metaScore = scoreCorpus(metaCorpus, terms);
+      const pageScore = scoreCorpus(pageText, terms);
+      if (pageScore > 0) {
+        // Precise page-content hit.
+        contentHits.push({ r, score: pageScore * 2 + metaScore * 0.5 });
+      } else {
+        // Pure metadata match — keep one representative hit per book.
+        const kind = metadataMatchKind(terms, title, author) ?? "metadata";
+        const bookIdNum = Number(r.book_id);
+        const existing = metadataOnly.get(bookIdNum);
+        if (!existing || metaScore > existing.score) {
+          metadataOnly.set(bookIdNum, { r, score: metaScore, kind });
+        }
+      }
+    }
+
+    // Rank content hits: score desc, then lower page number first.
+    contentHits.sort(
+      (a, b) =>
+        b.score - a.score ||
+        Number(a.r.page_number) - Number(b.r.page_number),
+    );
+
+    const results: BookSearchResult[] = [];
+
+    // Precise content hits (bounded by limit).
+    for (const { r, score } of contentHits) {
+      if (results.length >= limit) break;
+      const { paragraphIndex, snippet } = pageSnippet(String(r.page_text ?? ""), terms.flatMap((t) => t.needles));
+      results.push({
+        bookId: Number(r.book_id),
+        pageId: Number(r.page_id),
+        pageNumber: Number(r.page_number),
+        paragraphIndex,
+        bookTitle: asString(r.title) ?? "Untitled book",
+        author: asString(r.author),
+        edition: asString(r.edition),
+        publisher: asString(r.publisher),
+        year: asString(r.year),
+        snippet,
+        matchedOn: "content",
+        score: Math.round(score * 10) / 10,
+      });
+    }
+
+    // Representative metadata-only hits (one per book, attributed to first page).
+    if (results.length < limit) {
+      const metaList = Array.from(metadataOnly.values()).sort((a, b) => b.score - a.score);
+      for (const { r, score, kind } of metaList) {
+        if (results.length >= limit) break;
+        results.push({
+          bookId: Number(r.book_id),
+          pageId: Number(r.page_id),
+          pageNumber: Number(r.page_number),
+          paragraphIndex: null,
+          bookTitle: asString(r.title) ?? "Untitled book",
+          author: asString(r.author),
+          edition: asString(r.edition),
+          publisher: asString(r.publisher),
+          year: asString(r.year),
+          snippet: String(r.page_text ?? "").trim().slice(0, 360),
+          matchedOn: kind,
+          score: Math.round(score * 10) / 10,
+        });
+      }
+    }
+
+    return { configured: true, query, noTerms: false, results };
   });

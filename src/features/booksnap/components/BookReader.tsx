@@ -32,14 +32,24 @@ const HIGHLIGHT_COLORS: Record<string, { label: string; bg: string; border: stri
 };
 const DEFAULT_COLOR = "amber";
 
-export function BookReader({ book, onBack }: { book: BookRow; onBack: () => void }) {
+export function BookReader({
+  book,
+  onBack,
+  initialPage,
+}: {
+  book: BookRow;
+  onBack: () => void;
+  /** Open the reader at a specific page (e.g. from a search result). */
+  initialPage?: number;
+}) {
   const bookId = book.id;
+  const startPage = initialPage && initialPage >= 1 ? initialPage : 1;
 
   const [configured, setConfigured] = useState(true);
   const [remotePages, setRemotePages] = useState<BookPage[]>([]);
   const [localPages, setLocalPages] = useState<BookPage[]>([]);
   const [total, setTotal] = useState(0);
-  const [currentPageNumber, setCurrentPageNumber] = useState(1);
+  const [currentPageNumber, setCurrentPageNumber] = useState(startPage);
   const [pageStatus, setPageStatus] = useState<"loading" | "ready" | "error">("loading");
   const [pageError, setPageError] = useState("");
 

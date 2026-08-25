@@ -159,3 +159,52 @@ export interface DeleteAnnotationResponse {
   configured: boolean;
   ok: boolean;
 }
+
+/* ------------------------------------------------------------------ */
+/* Stage 3 — full-text keyword search (page-attributed)                */
+/* ------------------------------------------------------------------ */
+
+/** One page-attributed search hit. Cards render "Title · p.N" + a verbatim
+ *  snippet. Every hit traces back to a concrete book + edition + page (+
+ *  paragraph when available). The `snippet` is taken verbatim from the user's
+ *  own stored page text — never fabricated. */
+export interface BookSearchResult {
+  bookId: number;
+  /** Immutable page anchor id (book_pages.id) — provenance root. */
+  pageId: number;
+  /** Physical page number within the book's stored pages. */
+  pageNumber: number;
+  /** 0-based paragraph index of the matched paragraph on that page, when
+   *  determinable (null = matched on title/author/metadata instead, or the
+   *  page has no clean paragraph boundaries). */
+  paragraphIndex: number | null;
+  bookTitle: string;
+  author: string | null;
+  edition: string | null;
+  publisher: string | null;
+  year: string | null;
+  /** Verbatim excerpt from the book's stored page text (never invented). */
+  snippet: string;
+  /** Which surface produced the match: page content vs book metadata. */
+  matchedOn: "content" | "title" | "author" | "metadata";
+  score: number;
+}
+
+/** The searchBooks input. `bookId` optionally narrows to a single book (else
+ *  the whole library is searched). */
+export interface BookSearchInput {
+  query: string;
+  bookId?: number | null;
+  /** Max results to return (bounds the response size). */
+  limit?: number;
+}
+
+/** Response from searchBooks. `noTerms` is true when the query had no
+ *  substantive terms (all stopwords) — callers can prompt for a more specific
+ *  search rather than showing empty results. */
+export interface BookSearchResponse {
+  configured: boolean;
+  query: string;
+  noTerms: boolean;
+  results: BookSearchResult[];
+}
