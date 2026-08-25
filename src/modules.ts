@@ -23,7 +23,7 @@ interface ModuleBase {
 interface LiveModule extends ModuleBase {
   comingSoon?: false;
   /** App route the module lives at. */
-  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap";
+  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap" | "/books";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;
@@ -136,6 +136,24 @@ export const MODULES: Module[] = [
     checkout: {
       monthly: MODULE_CHECKOUT_URLS.CONTRACTSNAP_MONTHLY,
       annual: MODULE_CHECKOUT_URLS.CONTRACTSNAP_ANNUAL,
+    },
+  },
+  {
+    name: "BookSnap",
+    emoji: "📚",
+    tagline: "Books become searchable memory",
+    description:
+      "Turn your books into searchable memory — add books to your shelf and keep every edition, page, and quote on record, with strict provenance on every answer.",
+    route: "/books",
+    // PLANNED ADD-ON: price + Stripe checkout are pending (the recon/PRD keeps
+    // BookSnap as a growing module; checkout URLs left empty so the Buy button
+    // shows the inert "Pricing coming soon" state while the /books app link
+    // works). No add-on gate yet — any signed-in user can use the bookshelf.
+    priceMonthly: "$3.99",
+    priceAnnual: "$39.99",
+    checkout: {
+      monthly: MODULE_CHECKOUT_URLS.BOOKSNAP_MONTHLY,
+      annual: MODULE_CHECKOUT_URLS.BOOKSNAP_ANNUAL,
     },
   },
 ];
