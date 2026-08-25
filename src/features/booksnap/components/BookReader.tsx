@@ -36,18 +36,23 @@ export function BookReader({
   book,
   onBack,
   initialPage,
+  initialLocalPages,
 }: {
   book: BookRow;
   onBack: () => void;
   /** Open the reader at a specific page (e.g. from a search result). */
   initialPage?: number;
+  /** Per-page text captured when the book was added (session-only storage off):
+   *  seeds the reader's local pages so a just-added PDF is readable without a
+   *  second upload even when storage isn't connected. */
+  initialLocalPages?: BookPage[];
 }) {
   const bookId = book.id;
   const startPage = initialPage && initialPage >= 1 ? initialPage : 1;
 
   const [configured, setConfigured] = useState(true);
   const [remotePages, setRemotePages] = useState<BookPage[]>([]);
-  const [localPages, setLocalPages] = useState<BookPage[]>([]);
+  const [localPages, setLocalPages] = useState<BookPage[]>(initialLocalPages ?? []);
   const [total, setTotal] = useState(0);
   const [currentPageNumber, setCurrentPageNumber] = useState(startPage);
   const [pageStatus, setPageStatus] = useState<"loading" | "ready" | "error">("loading");

@@ -69,6 +69,9 @@ export interface CreateBookInput {
   originalFileRef?: string | null;
   /** Extracted full text (immutable anchor source). */
   sourceText?: string;
+  /** Optional client-extracted per-page text, auto-ingested into book_pages so
+   *  the book is immediately readable in BookReader. */
+  pages?: BookPageInput[];
   pageCount?: number | null;
 }
 
@@ -170,10 +173,13 @@ export interface DeleteAnnotationResponse {
  *  own stored page text — never fabricated. */
 export interface BookSearchResult {
   bookId: number;
-  /** Immutable page anchor id (book_pages.id) — provenance root. */
-  pageId: number;
-  /** Physical page number within the book's stored pages. */
-  pageNumber: number;
+  /** Immutable page anchor id (book_pages.id) — provenance root. Null when the
+   *  hit came from the book's flat `source_text` (no page anchors ingested). */
+  pageId: number | null;
+  /** Physical page number within the book's stored pages. Null when the hit came
+   *  from the book's flat `source_text` (no page anchors ingested) — we never
+   *  fabricate a page number. */
+  pageNumber: number | null;
   /** 0-based paragraph index of the matched paragraph on that page, when
    *  determinable (null = matched on title/author/metadata instead, or the
    *  page has no clean paragraph boundaries). */

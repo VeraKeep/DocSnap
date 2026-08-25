@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import { uploadPDFBlob } from "~/cloudSync";
 import { createBook, deleteBook, listBooks } from "../server";
-import { type BookDetail, type BookRow } from "../types";
+import { type BookDetail, type BookPage, type BookPageInput, type BookRow } from "../types";
 import { BookReader } from "./BookReader";
 import { BookSearch } from "./BookSearch";
 
@@ -103,6 +103,10 @@ export function BookLibrary() {
   const [saved, setSaved] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Pages extracted at add-time, held for session-only mode (storage off) so a
+  // just-added PDF is readable in the reader without re-uploading the same file.
+  const [sessionPages, setSessionPages] = useState<Record<number, BookPage[]>>({});
+
   const load = useCallback(async () => {
     setStatus("loading");
     try {
@@ -147,11 +151,18 @@ export function BookLibrary() {
       let sourceText = "";
       let originalFileRef: string | null = null;
       let pageCount: number | null = null;
+      let pages: BookPageInput[] = [];
       if (file) {
-        // Client-side text extraction (no secrets needed). Works for text-based
-        // PDFs; scanned-image PDFs fall through with an honest error.
-        const { extractFileText } = await import("~/features/meetingsnap/textExtract");
-        sourceText = await extractFileText(file);
+        // Client-side per-page extraction (no secrets needed) via pdfExtract.ts,
+        // which preserves page boundaries (+ OCR fallback for scanned books).
+        // The pages are both stored as immutable `book_pages` anchors (so the
+        // book opens instantly in the reader) and collapsed into `source_text`
+        // (the flat searchable anchor source).
+        const { extractBookPages } = await import("~/features/booksnap/pdfExtract");
+        const extracted = await extractBookPages(file);
+        pages = extracted.map((p) => ({ pageNumber: p.pageNumber, text: p.text }));
+        sourceText = extracted.map((p) => p.text.trim()).filter(Boolean).join("\n\n");
+        pageCount = extracted.length || null;
         // Best-effort: try to store a hosted URL for the user's own file; if the
         // upload isn't configured, fall back to the file name (a name only — never
         // a redistributable copy is persisted beyond the user's licensed original).
@@ -176,6 +187,7 @@ export function BookLibrary() {
           tags,
           originalFileRef,
           sourceText,
+          pages,
           pageCount,
         },
       });
@@ -184,14 +196,31 @@ export function BookLibrary() {
       setForm(EMPTY_FORM);
       if (result.configured && result.book) {
         setSaved(
-          result.book.sourceText
-            ? "Book added to your bookshelf with its extracted text on record."
+          result.book.sourceText || (result.book.page_count ?? 0) > 0
+            ? "Book added to your bookshelf with its extracted text on record — open it to read."
             : "Book added to your bookshelf. (No PDF text was stored.)",
         );
       } else {
-        setSaved("Book added for this session (storage isn't connected here).");
+        setSaved(
+          pages.length
+            ? "Book added for this session (storage isn't connected here) — it's readable now but won't persist."
+            : "Book added for this session (storage isn't connected here).",
+        );
       }
       await load();
+      if (!result.configured && result.book) {
+        // Keep the session-only book on the shelf so it can be opened/read now,
+        // and remember its extracted pages so the reader needs no re-upload.
+        const bookId = result.book.id;
+        const localPages: BookPage[] = pages.map(
+          (p, i): BookPage => ({ id: -(i + 1), bookId, pageNumber: p.pageNumber, text: p.text }),
+        );
+        setSessionPages((prev) => ({ ...prev, [bookId]: localPages }));
+        setBooks((prev) => {
+          const bs = prev.filter((b) => b.id !== bookId);
+          return [result.book! as BookRow, ...bs];
+        });
+      }
     } catch (error) {
       setFormError(
         messageFromError(
@@ -235,6 +264,7 @@ export function BookLibrary() {
           book={openBook}
           onBack={() => setOpenBook(null)}
           initialPage={openPage}
+          initialLocalPages={!configured ? sessionPages[openBook.id] : undefined}
         />
       </div>
     );

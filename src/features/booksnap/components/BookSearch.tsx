@@ -130,14 +130,16 @@ export function BookSearch({ onOpenBook }: { onOpenBook: (book: BookRow, page: n
                           analysis_status: "complete",
                           created_at: null,
                         } satisfies BookRow,
-                        r.pageNumber,
+                        r.pageNumber ?? 1,
                       )
                     }
                     className="w-full rounded-2xl border border-gray-800 bg-gray-950/40 p-4 text-left transition hover:border-indigo-700"
                   >
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium text-gray-200">{r.bookTitle}</span>
-                      <span className="text-sm text-indigo-400">· p.{r.pageNumber}</span>
+                      {r.pageNumber != null && (
+                        <span className="text-sm text-indigo-400">· p.{r.pageNumber}</span>
+                      )}
                       {r.paragraphIndex != null && (
                         <span className="text-xs text-gray-500">· ¶ {r.paragraphIndex + 1}</span>
                       )}
@@ -150,7 +152,7 @@ export function BookSearch({ onOpenBook }: { onOpenBook: (book: BookRow, page: n
                       </span>
                     )}
                     <span className="mt-2 block text-[11px] text-indigo-400">
-                      Open on p.{r.pageNumber} →
+                      {r.pageNumber != null ? `Open on p.${r.pageNumber} →` : "Open this book →"}
                     </span>
                   </button>
                 </li>

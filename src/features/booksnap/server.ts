@@ -198,6 +198,22 @@ export const createBook = createServerFn({ method: "POST" })
       throw new Error("That book is too large to store. Please use a smaller PDF.");
     }
 
+    // Optional client-extracted per-page text (from pdfExtract.ts). Same
+    // validation as ingestBookPages so adding a book feeds the reader directly.
+    const rawPages = Array.isArray(d.pages) ? d.pages : [];
+    const pages: { pageNumber: number; text: string }[] = [];
+    for (const p of rawPages) {
+      const pp = (p ?? {}) as { pageNumber?: unknown; text?: unknown };
+      const pageNumber = Number(pp.pageNumber);
+      const text = typeof pp.text === "string" ? pp.text.slice(0, MAX_PAGE_TEXT) : "";
+      if (Number.isInteger(pageNumber) && pageNumber >= 1 && text.trim()) {
+        pages.push({ pageNumber, text });
+      }
+    }
+    if (pages.length > MAX_PAGES_PER_INGEST) {
+      throw new Error("That book has too many pages to store.");
+    }
+
     return {
       title,
       author: cap(d.author),
@@ -211,6 +227,7 @@ export const createBook = createServerFn({ method: "POST" })
       tags,
       originalFileRef: cap(d.originalFileRef),
       sourceText,
+      pages,
       pageCount: asInt(d.pageCount),
     };
   })
@@ -233,8 +250,8 @@ export const createBook = createServerFn({ method: "POST" })
         collection: data.collection,
         tags: data.tags,
         original_file_ref: data.originalFileRef,
-        page_count: data.pageCount,
-        analysis_status: data.sourceText ? "complete" : "pending",
+        page_count: data.pages.length ? data.pages.length : data.pageCount,
+        analysis_status: data.pages.length || data.sourceText ? "complete" : "pending",
         created_at: null,
         sourceText: data.sourceText,
       };
@@ -250,12 +267,26 @@ export const createBook = createServerFn({ method: "POST" })
         ${userId}, ${data.isbn}, ${data.title}, ${data.author}, ${data.edition},
         ${data.publisher}, ${data.year}, ${data.coverUrl}, ${data.readingStatus},
         ${data.collection}, ${JSON.stringify(data.tags)}::jsonb,
-        ${data.originalFileRef}, ${data.sourceText}, ${data.pageCount},
-        ${data.sourceText ? "complete" : "pending"}
+        ${data.originalFileRef}, ${data.sourceText},
+        ${data.pages.length ? data.pages.length : data.pageCount},
+        ${data.pages.length || data.sourceText ? "complete" : "pending"}
       )
       RETURNING id
     `) as Record<string, unknown>[];
     const bookId = Number(insert[0]?.id);
+
+    // Auto-ingest the attached PDF's pages into book_pages so the book is
+    // immediately readable in BookReader (no duplicate re-upload). The book is
+    // brand-new, so there are no pre-existing pages to duplicate; each page row
+    // is an immutable anchor owned by this user.
+    if (data.pages.length) {
+      for (const p of data.pages) {
+        await sql`
+          INSERT INTO book_pages (book_id, page_number, text)
+          VALUES (${bookId}, ${p.pageNumber}, ${p.text})
+        `;
+      }
+    }
 
     const book: BookDetail = {
       id: bookId,
@@ -270,8 +301,8 @@ export const createBook = createServerFn({ method: "POST" })
       collection: data.collection,
       tags: data.tags,
       original_file_ref: data.originalFileRef,
-      page_count: data.pageCount,
-      analysis_status: data.sourceText ? "complete" : "pending",
+      page_count: data.pages.length ? data.pages.length : data.pageCount,
+      analysis_status: data.pages.length || data.sourceText ? "complete" : "pending",
       created_at: new Date().toISOString(),
       sourceText: data.sourceText,
     };
@@ -751,6 +782,51 @@ export const searchBooks = createServerFn({ method: "POST" })
       }
     }
 
+    // Books whose flat `source_text` matches but that have NO page anchors
+    // (e.g. manually entered books, or PDF-added books whose pages were never
+    // ingested) stay invisible to a pages-only search. Surface them here as
+    // content hits too — the snippet comes verbatim from the user's own stored
+    // `source_text`, and (because there are no page anchors) pageNumber/pageId
+    // are null rather than fabricated. Books already producing a page-content
+    // hit are skipped so a page-attributed hit is always preferred.
+    const pageContentBookIds = new Set(contentHits.map((h) => Number(h.r.book_id)));
+    const stBookFilter = bookId != null ? `AND b.id = ${bookId}` : "";
+    const stRows = (await sql`
+      SELECT b.id AS book_id, b.title, b.author, b.edition, b.publisher, b.year,
+             b.collection, b.tags, b.source_text
+      FROM books b
+      WHERE b.clerk_user_id = ${userId}
+        AND b.source_text IS NOT NULL AND LENGTH(b.source_text) > 0
+        ${stBookFilter}
+      ORDER BY b.created_at DESC
+    `) as Record<string, unknown>[];
+    const sourceTextHits: { r: Record<string, unknown>; score: number }[] = [];
+    for (const r of stRows) {
+      const bookIdNum = Number(r.book_id);
+      if (pageContentBookIds.has(bookIdNum)) continue;
+      const sourceText = String(r.source_text ?? "").toLowerCase();
+      const title = String(r.title ?? "");
+      const author = asString(r.author);
+      const metaParts: string[] = [title];
+      if (author) metaParts.push(author);
+      const edition = asString(r.edition);
+      const publisher = asString(r.publisher);
+      const year = asString(r.year);
+      const collection = asString(r.collection);
+      if (edition) metaParts.push(edition);
+      if (publisher) metaParts.push(publisher);
+      if (year) metaParts.push(year);
+      if (collection) metaParts.push(collection);
+      for (const t of asTags(r.tags)) metaParts.push(t);
+      const metaCorpus = metaParts.join(" ").toLowerCase();
+      const combined = `${metaCorpus} ${sourceText}`;
+      if (!allTermsMatch(combined, terms)) continue;
+      const stScore = scoreCorpus(sourceText, terms);
+      if (stScore <= 0) continue; // metadata-only matches are handled below (pages) / omitted (source-only)
+      sourceTextHits.push({ r, score: stScore * 2 + scoreCorpus(metaCorpus, terms) * 0.5 });
+    }
+    sourceTextHits.sort((a, b) => b.score - a.score);
+
     // Rank content hits: score desc, then lower page number first.
     contentHits.sort(
       (a, b) =>
@@ -760,7 +836,7 @@ export const searchBooks = createServerFn({ method: "POST" })
 
     const results: BookSearchResult[] = [];
 
-    // Precise content hits (bounded by limit).
+    // Precise page-content hits (bounded by limit).
     for (const { r, score } of contentHits) {
       if (results.length >= limit) break;
       const { paragraphIndex, snippet } = pageSnippet(String(r.page_text ?? ""), terms.flatMap((t) => t.needles));
@@ -768,6 +844,28 @@ export const searchBooks = createServerFn({ method: "POST" })
         bookId: Number(r.book_id),
         pageId: Number(r.page_id),
         pageNumber: Number(r.page_number),
+        paragraphIndex,
+        bookTitle: asString(r.title) ?? "Untitled book",
+        author: asString(r.author),
+        edition: asString(r.edition),
+        publisher: asString(r.publisher),
+        year: asString(r.year),
+        snippet,
+        matchedOn: "content",
+        score: Math.round(score * 10) / 10,
+      });
+    }
+
+    // source_text-content hits (books with no page anchors): same provenance
+    // discipline — snippet verbatim from the user's own stored text, no page
+    // number invented.
+    for (const { r, score } of sourceTextHits) {
+      if (results.length >= limit) break;
+      const { paragraphIndex, snippet } = pageSnippet(String(r.source_text ?? ""), terms.flatMap((t) => t.needles));
+      results.push({
+        bookId: Number(r.book_id),
+        pageId: null,
+        pageNumber: null,
         paragraphIndex,
         bookTitle: asString(r.title) ?? "Untitled book",
         author: asString(r.author),
