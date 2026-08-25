@@ -480,3 +480,40 @@ CREATE TABLE IF NOT EXISTS books (
 );
 CREATE INDEX IF NOT EXISTS idx_books_clerk_user_id_created_at
   ON books (clerk_user_id, created_at DESC);
+
+-- =========================================================================
+-- BookSnap — Stage 2: page-aware read & annotate
+-- -------------------------------------------------------------------------
+-- `book_pages` stores immutable page anchors: each row is one concrete page
+-- of text for a specific book edition. It is deliberately a SEPARATE table
+-- from `books` so editing book metadata never disturbs the stored pages or
+-- the annotations anchored to them. Paragraph boundaries are preserved as
+-- blank lines inside `text`, so `paragraph_index` on an annotation refers to
+-- the paragraph at that position in the page's text (split on blank lines).
+-- Extraction is of the user's own licensed upload only — never redistributed.
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS book_pages (
+  id SERIAL PRIMARY KEY,
+  book_id INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  page_number INT NOT NULL,
+  text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_book_pages_book_id_page_number
+  ON book_pages (book_id, page_number);
+
+-- User annotations (highlights + notes) anchored to a concrete page +
+-- paragraph. Every annotation carries book_id + page_id + paragraph_index (+
+-- a page_number derived from the page) so it traces back to a concrete
+-- edition + page + paragraph. Nothing is ever fabricated.
+CREATE TABLE IF NOT EXISTS book_annotations (
+  id SERIAL PRIMARY KEY,
+  book_id INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  page_id INT REFERENCES book_pages(id) ON DELETE CASCADE,
+  paragraph_index INT,
+  quote TEXT,
+  note TEXT,
+  color TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_book_annotations_book_id_page_id
+  ON book_annotations (book_id, page_id);

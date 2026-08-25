@@ -3,6 +3,7 @@ import { SignInButton, useUser } from "@clerk/tanstack-start";
 import { uploadPDFBlob } from "~/cloudSync";
 import { createBook, deleteBook, listBooks } from "../server";
 import { type BookDetail, type BookRow } from "../types";
+import { BookReader } from "./BookReader";
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
@@ -84,6 +85,7 @@ export function BookLibrary() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
+  const [openBook, setOpenBook] = useState<BookRow | null>(null);
 
   // Add-a-book form state
   const [form, setForm] = useState(EMPTY_FORM);
@@ -217,6 +219,14 @@ export function BookLibrary() {
   const inputCls =
     "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-500 transition focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
   const labelCls = "block text-xs font-medium text-gray-500";
+
+  if (openBook) {
+    return (
+      <div className="mt-8">
+        <BookReader book={openBook} onBack={() => setOpenBook(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="mt-8 space-y-8">
@@ -428,10 +438,14 @@ export function BookLibrary() {
             books.map((b) => (
               <div
                 key={b.id}
-                className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-800 bg-gray-900/60 p-4 text-left"
+                className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-800 bg-gray-900/60 p-4 text-left transition hover:border-gray-700"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="font-medium text-gray-200">{b.title}</span>
+                <button
+                  type="button"
+                  onClick={() => setOpenBook(b)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="font-medium text-gray-200 transition hover:text-indigo-300">{b.title}</span>
                   {b.author && <span className="ml-2 text-sm text-gray-500">by {b.author}</span>}
                   <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
                     {b.year && <span>{b.year}</span>}
@@ -443,8 +457,15 @@ export function BookLibrary() {
                       </span>
                     ))}
                   </span>
-                </span>
+                </button>
                 <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setOpenBook(b)}
+                    className="rounded-full border border-indigo-700 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition hover:bg-indigo-900/40"
+                  >
+                    Read
+                  </button>
                   <span
                     className={
                       b.reading_status === "finished"
