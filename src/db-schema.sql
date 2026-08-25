@@ -449,3 +449,34 @@ CREATE TABLE IF NOT EXISTS garage_items (
 );
 CREATE INDEX IF NOT EXISTS idx_garage_items_clerk_user_id_created_at
   ON garage_items (clerk_user_id, created_at DESC);
+
+-- BookSnap module: a personal bookshelf — books become searchable memory.
+-- Owner-scoped like every other module: each book belongs to one Clerk user
+-- (clerk_user_id NULLABLE to match the receipts/homSnap convention and leave
+-- room for demo rows; every query filters by the server-resolved owner).
+-- Provenance guardrail: `source_text` stores the book's own extracted text as
+-- an immutable anchor source (the user's licensed copy, for their own use —
+-- never redistributed). `original_file_ref` stores only a URL/name, never a
+-- redistributable copy of the file. `tags` is JSONB (matches the contractSnap
+-- JSON-payload convention and avoids TEXT[] array-literal pitfalls).
+CREATE TABLE IF NOT EXISTS books (
+  id SERIAL PRIMARY KEY,
+  clerk_user_id TEXT,
+  isbn TEXT,
+  title TEXT NOT NULL,
+  author TEXT,
+  edition TEXT,
+  publisher TEXT,
+  year TEXT,
+  cover_url TEXT,
+  reading_status TEXT NOT NULL DEFAULT 'unread', -- unread/reading/finished
+  collection TEXT,
+  tags JSONB,
+  original_file_ref TEXT,             -- uploaded PDF url/name only (no copy)
+  source_text TEXT NOT NULL DEFAULT '', -- extracted full text (immutable source)
+  page_count INTEGER,
+  analysis_status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_books_clerk_user_id_created_at
+  ON books (clerk_user_id, created_at DESC);

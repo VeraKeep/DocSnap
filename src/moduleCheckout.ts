@@ -44,4 +44,9 @@ HOMESNAP_ANNUAL: "https://buy.stripe.com/bJe14pb9bdjl67t39I7Re0l",
  *  Stripe payment links provided by the owner. */
 CONTRACTSNAP_MONTHLY: "https://buy.stripe.com/aFa28tgtv3IL8fB6lU7Re0m",
 CONTRACTSNAP_ANNUAL: "https://buy.stripe.com/5kQfZj6SV7Z1gM79y67Re0n",
+/** BookSnap — planned add-on. Real recurring Stripe payment links will be
+ *  provided by the owner; left empty for now so the Buy button renders the
+ *  inert "Pricing coming soon" state while the "Open" app link still works. */
+BOOKSNAP_MONTHLY: "",
+BOOKSNAP_ANNUAL: "",
 } as const;
