@@ -61,7 +61,7 @@ async function main() {
   const verifySrc = `
     const { neon } = await import(${JSON.stringify("@neondatabase/serverless")});
     const sql = neon(process.env.DATABASE_URL, { fetchOptions: { cache: "no-store" } });
-    const want = ["users","webhook_events","share_links","receipts","meetings","meeting_extractions","bills","waitlist","properties","property_objects","object_documents","object_events","maintenance_schedules","contracts","contract_clauses","contract_events","contract_reminders","garage_items","property_shares","property_activity"];
+    const want = ["users","webhook_events","share_links","receipts","meetings","meeting_extractions","bills","waitlist","properties","property_objects","object_documents","object_events","maintenance_schedules","contracts","contract_clauses","contract_events","contract_reminders","garage_items","property_shares","property_activity","books","book_pages","book_annotations"];
     for (let i = 0; i < 12; i++) {
       const rows = await sql.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'");
       const have = new Set(rows.map(r => r.table_name));
