@@ -83,3 +83,79 @@ export interface DeleteBookResponse {
   configured: boolean;
   ok: boolean;
 }
+
+/* ------------------------------------------------------------------ */
+/* Stage 2 — page-aware read & annotate                                */
+/* ------------------------------------------------------------------ */
+
+/** One immutable, stored page anchor (book_pages row). */
+export interface BookPage {
+  id: number;
+  bookId: number;
+  pageNumber: number;
+  text: string;
+}
+
+/** Input for ingesting pages (client-extracted, page_number + paragraph text). */
+export interface BookPageInput {
+  pageNumber: number;
+  text: string;
+}
+
+/** A user annotation anchored to a concrete edition + page + paragraph. */
+export interface BookAnnotation {
+  id: number;
+  bookId: number;
+  pageId: number | null;
+  /** Derived from the page — carries provenance (edition + page + paragraph). */
+  pageNumber: number | null;
+  paragraphIndex: number | null;
+  quote: string;
+  note: string | null;
+  color: string;
+  createdAt: string | null;
+}
+
+/** Response from getBookPages — a window of pages for one book. */
+export interface GetBookPagesResponse {
+  configured: boolean;
+  bookId: number;
+  /** Total pages stored for this book (for range UI). */
+  total: number;
+  pages: BookPage[];
+}
+
+/** Response from ingestBookPages. */
+export interface IngestPagesResponse {
+  configured: boolean;
+  bookId: number;
+  count: number;
+}
+
+/** Input for createAnnotation — every value anchored to a page + paragraph. */
+export interface CreateAnnotationInput {
+  bookId: number;
+  pageId: number;
+  paragraphIndex: number;
+  quote: string;
+  note?: string | null;
+  color?: string;
+}
+
+/** Response from createAnnotation. */
+export interface CreateAnnotationResponse {
+  configured: boolean;
+  annotation: BookAnnotation | null;
+}
+
+/** Response from listAnnotations. */
+export interface ListAnnotationsResponse {
+  configured: boolean;
+  annotations: BookAnnotation[];
+}
+
+/** Response from deleteAnnotation. */
+export interface DeleteAnnotationResponse {
+  configured: boolean;
+  ok: boolean;
+}

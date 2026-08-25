@@ -22,18 +22,34 @@ import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
 import {
+  type BookAnnotation,
   type BookDetail,
   type BookDetailResponse,
   type BookListResponse,
+  type BookPage,
   type BookRow,
+  type CreateAnnotationResponse,
   type CreateBookResponse,
+  type DeleteAnnotationResponse,
   type DeleteBookResponse,
+  type GetBookPagesResponse,
+  type IngestPagesResponse,
+  type ListAnnotationsResponse,
 } from "./types";
 
 const MAX_TEXT_LENGTH = 2_000_000; // generous safe cap on a book's raw text
 const MAX_FIELD_LENGTH = 300; // cap on individual metadata fields
 const MAX_TAGS = 50;
 const READING_STATUSES = new Set(["unread", "reading", "finished"]);
+
+const MAX_PAGE_TEXT = 200_000; // safe cap on a single page's stored text
+const PAGE_WINDOW = 1; // default getBookPages window (one page at a time)
+const MAX_PAGES_PER_INGEST = 4_000; // sanity cap on ingest payload size
+
+/** Normalize whitespace for provenance comparison of quotes to page text. */
+function normalizeWs(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
 
 /* ------------------------------------------------------------------ */
 /* Small robust parsing helpers (same convention as ContractSnap)      */
@@ -271,6 +287,237 @@ export const deleteBook = createServerFn({ method: "POST" })
     if (!process.env.DATABASE_URL) throw new Error("Storage isn't connected yet.");
     const rows = (await sql`
       DELETE FROM books WHERE id = ${opts.data.id} AND clerk_user_id = ${userId}
+      RETURNING id
+    `) as Record<string, unknown>[];
+    return { configured: true, ok: rows.length > 0 };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Stage 2 — page-aware read & annotate                                */
+/* ------------------------------------------------------------------ */
+
+function toPage(r: Record<string, unknown>): BookPage {
+  return {
+    id: Number(r.id),
+    bookId: Number(r.book_id),
+    pageNumber: Number(r.page_number),
+    text: String(r.text ?? ""),
+  };
+}
+
+function toAnnotation(r: Record<string, unknown>): BookAnnotation {
+  return {
+    id: Number(r.id),
+    bookId: Number(r.book_id),
+    pageId: r.page_id == null ? null : Number(r.page_id),
+    pageNumber: r.page_number == null ? null : Number(r.page_number),
+    paragraphIndex: r.paragraph_index == null ? null : Number(r.paragraph_index),
+    quote: String(r.quote ?? ""),
+    note: r.note == null ? null : String(r.note),
+    color: String(r.color ?? "amber"),
+    createdAt: r.created_at == null ? null : String(r.created_at),
+  };
+}
+
+/**
+ * Persist client-extracted per-page text (from pdfExtract.ts) into the
+ * immutable `book_pages` anchors for a book the user owns. Re-ingesting is
+ * idempotent: existing pages (and their cascaded annotations) are replaced.
+ * Degrades to a session-only count when DATABASE_URL is unset.
+ */
+export const ingestBookPages = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { bookId?: unknown; pages?: unknown };
+    const bookId = typeof d.bookId === "number" ? d.bookId : Number(d.bookId);
+    if (!Number.isInteger(bookId) || bookId <= 0) throw new Error("Invalid book id.");
+    const raw = Array.isArray(d.pages) ? d.pages : [];
+    const pages: { pageNumber: number; text: string }[] = [];
+    for (const p of raw) {
+      const pp = (p ?? {}) as { pageNumber?: unknown; text?: unknown };
+      const pageNumber = Number(pp.pageNumber);
+      const text = typeof pp.text === "string" ? pp.text.slice(0, MAX_PAGE_TEXT) : "";
+      if (Number.isInteger(pageNumber) && pageNumber >= 1 && text.trim()) {
+        pages.push({ pageNumber, text });
+      }
+    }
+    if (pages.length === 0) throw new Error("No readable pages were extracted.");
+    if (pages.length > MAX_PAGES_PER_INGEST) throw new Error("That book has too many pages to store.");
+    return { bookId, pages };
+  })
+  .handler(async (opts): Promise<IngestPagesResponse> => {
+    const userId = await requireServerFunctionUser();
+    const { bookId, pages } = opts.data;
+    if (!process.env.DATABASE_URL) return { configured: false, bookId, count: pages.length };
+
+    const owned = (await sql`
+      SELECT id FROM books WHERE id = ${bookId} AND clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!owned[0]) throw new Error("Book not found.");
+
+    // Idempotent re-ingest: replace this book's stored pages (annotations
+    // anchored to old pages are cascaded away on delete).
+    await sql`DELETE FROM book_pages WHERE book_id = ${bookId}`;
+    for (const p of pages) {
+      await sql`
+        INSERT INTO book_pages (book_id, page_number, text)
+        VALUES (${bookId}, ${p.pageNumber}, ${p.text})
+      `;
+    }
+    await sql`
+      UPDATE books SET page_count = ${pages.length}, analysis_status = 'complete'
+      WHERE id = ${bookId}
+    `;
+    return { configured: true, bookId, count: pages.length };
+  });
+
+/**
+ * Read one page (a small window around `page`) of a book the user owns. Loads
+ * a bounded window rather than the whole book so large books stay responsive.
+ */
+export const getBookPages = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { bookId?: unknown; page?: unknown; limit?: unknown };
+    const bookId = typeof d.bookId === "number" ? d.bookId : Number(d.bookId);
+    if (!Number.isInteger(bookId) || bookId <= 0) throw new Error("Invalid book id.");
+    const page = Math.max(1, Math.floor(Number(d.page) || 1));
+    const limit = Math.min(50, Math.max(1, Math.floor(Number(d.limit) || PAGE_WINDOW)));
+    return { bookId, page, limit };
+  })
+  .handler(async (opts): Promise<GetBookPagesResponse> => {
+    const userId = await requireServerFunctionUser();
+    const { bookId, page, limit } = opts.data;
+    if (!process.env.DATABASE_URL) return { configured: false, bookId, total: 0, pages: [] };
+
+    const owned = (await sql`
+      SELECT id FROM books WHERE id = ${bookId} AND clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!owned[0]) throw new Error("Book not found.");
+
+    const countRows = (await sql`
+      SELECT COUNT(*)::int AS c FROM book_pages WHERE book_id = ${bookId}
+    `) as Record<string, unknown>[];
+    const total = Number(countRows[0]?.c ?? 0);
+
+    const rows = (await sql`
+      SELECT id, book_id, page_number, text FROM book_pages
+      WHERE book_id = ${bookId} AND page_number >= ${page}
+      ORDER BY page_number
+      LIMIT ${limit}
+    `) as Record<string, unknown>[];
+    return { configured: true, bookId, total, pages: rows.map(toPage) };
+  });
+
+/**
+ * Create a highlight/note anchored to a concrete page + paragraph. Quotes are
+ * NOT fabricated: the requested quote must be found inside that page's stored
+ * text (whitespace-normalized) or the write is rejected.
+ */
+export const createAnnotation = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as Record<string, unknown>;
+    const bookId = Number(d.bookId);
+    const pageId = Number(d.pageId);
+    const paragraphIndex = Number(d.paragraphIndex);
+    const quote = typeof d.quote === "string" ? d.quote.trim().slice(0, 10_000) : "";
+    if (!Number.isInteger(bookId) || bookId <= 0) throw new Error("Invalid book id.");
+    if (!Number.isInteger(pageId) || pageId <= 0) throw new Error("Invalid page id.");
+    if (!quote) throw new Error("Select some text first to create a highlight.");
+    let note: string | null = typeof d.note === "string" && d.note.trim() ? d.note.trim().slice(0, 20_000) : null;
+    if (note === "") note = null;
+    const color = typeof d.color === "string" && d.color.trim() ? d.color.trim().slice(0, 30) : "amber";
+    return {
+      bookId,
+      pageId,
+      paragraphIndex: Number.isInteger(paragraphIndex) && paragraphIndex >= 0 ? paragraphIndex : null,
+      quote,
+      note,
+      color,
+    };
+  })
+  .handler(async (opts): Promise<CreateAnnotationResponse> => {
+    const userId = await requireServerFunctionUser();
+    const { bookId, pageId, paragraphIndex, quote, note, color } = opts.data;
+    if (!process.env.DATABASE_URL) return { configured: false, annotation: null };
+
+    // Verify the page belongs to a book the user owns, and grab its page_number.
+    const pageRows = (await sql`
+      SELECT bp.id, bp.page_number, bp.text
+      FROM book_pages bp
+      JOIN books b ON b.id = bp.book_id
+      WHERE bp.id = ${pageId} AND bp.book_id = ${bookId} AND b.clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    const page = pageRows[0];
+    if (!page) throw new Error("Page not found.");
+
+    // Provenance: the quote must literally exist in this page's text.
+    const pageText = normalizeWs(String(page.text ?? ""));
+    if (!pageText || !normalizeWs(quote) || !pageText.includes(normalizeWs(quote))) {
+      throw new Error(
+        "That text wasn't found on this page. Quotes must come from the book's text — nothing is fabricated.",
+      );
+    }
+
+    const inserted = (await sql`
+      INSERT INTO book_annotations (book_id, page_id, paragraph_index, quote, note, color)
+      VALUES (${bookId}, ${pageId}, ${paragraphIndex}, ${quote}, ${note}, ${color})
+      RETURNING id, book_id, page_id, paragraph_index, quote, note, color, created_at
+    `) as Record<string, unknown>[];
+    const row = inserted[0];
+    if (!row) return { configured: true, annotation: null };
+    return {
+      configured: true,
+      annotation: toAnnotation({ ...row, page_number: page.page_number }),
+    };
+  });
+
+/** List a user's annotations for a book, with page numbers resolved. */
+export const listAnnotations = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { bookId?: unknown };
+    const bookId = Number(d.bookId);
+    if (!Number.isInteger(bookId) || bookId <= 0) throw new Error("Invalid book id.");
+    return { bookId };
+  })
+  .handler(async (opts): Promise<ListAnnotationsResponse> => {
+    const userId = await requireServerFunctionUser();
+    const { bookId } = opts.data;
+    if (!process.env.DATABASE_URL) return { configured: false, annotations: [] };
+
+    const owned = (await sql`
+      SELECT id FROM books WHERE id = ${bookId} AND clerk_user_id = ${userId}
+    `) as Record<string, unknown>[];
+    if (!owned[0]) throw new Error("Book not found.");
+
+    const rows = (await sql`
+      SELECT a.id, a.book_id, a.page_id, a.paragraph_index, a.quote, a.note,
+             a.color, a.created_at, p.page_number
+      FROM book_annotations a
+      LEFT JOIN book_pages p ON p.id = a.page_id
+      WHERE a.book_id = ${bookId}
+      ORDER BY a.created_at DESC
+    `) as Record<string, unknown>[];
+    return { configured: true, annotations: rows.map(toAnnotation) };
+  });
+
+/** Delete one of the user's own annotations. */
+export const deleteAnnotation = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown; bookId?: unknown };
+    const id = Number(d.id);
+    const bookId = Number(d.bookId);
+    if (!Number.isInteger(id) || id <= 0) throw new Error("Invalid annotation id.");
+    if (!Number.isInteger(bookId) || bookId <= 0) throw new Error("Invalid book id.");
+    return { id, bookId };
+  })
+  .handler(async (opts): Promise<DeleteAnnotationResponse> => {
+    const userId = await requireServerFunctionUser();
+    if (!process.env.DATABASE_URL) throw new Error("Storage isn't connected yet.");
+    // Resolve the annotation's book owner to prevent cross-user deletes.
+    const rows = (await sql`
+      DELETE FROM book_annotations
+      WHERE id = ${opts.data.id}
+        AND book_id = ${opts.data.bookId}
+        AND book_id IN (SELECT id FROM books WHERE clerk_user_id = ${userId})
       RETURNING id
     `) as Record<string, unknown>[];
     return { configured: true, ok: rows.length > 0 };
