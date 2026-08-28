@@ -22,8 +22,8 @@
 #                                      Clerk publishable key, e.g. pk_test_...)
 #   NEXT_PUBLIC_PLAUSIBLE_DOMAIN      (optional, build-time)
 #   CLERK_SECRET_KEY, DATABASE_URL, OPENAI_API_KEY, STRIPE_WEBHOOK_SECRET,
-#   STRIPE_CUSTOMER_PORTAL_URL, UPLOADTHING_SECRET, BILLSNAP_EMAIL_INGEST_SECRET,
-#   BILLSNAP_INBOUND_SECRET, BILLSNAP_INBOUND_DOMAIN
+#   STRIPE_CUSTOMER_PORTAL_URL, UPLOADTHING_TOKEN, UPLOADTHING_SECRET,
+#   BILLSNAP_EMAIL_INGEST_SECRET, BILLSNAP_INBOUND_SECRET, BILLSNAP_INBOUND_DOMAIN
 #                                     (optional; passed as runtime env at deploy)
 #   VERCEL_SCOPE / VERCEL_TEAM_ID     (optional; auto-resolved from the token)
 #   VERCEL_PROJECT_NAME               (optional; default = dir basename)
@@ -76,8 +76,8 @@ if [ -n "${VERCEL_SCOPE:-}" ]; then SCOPE_ARGS=(--scope "$VERCEL_SCOPE"); fi
 # Runtime secrets passed with -e so the serverless runtime has them.
 ENV_ARGS=()
 for k in CLERK_SECRET_KEY DATABASE_URL OPENAI_API_KEY STRIPE_WEBHOOK_SECRET \
-         STRIPE_CUSTOMER_PORTAL_URL UPLOADTHING_SECRET BILLSNAP_EMAIL_INGEST_SECRET \
-         BILLSNAP_INBOUND_SECRET BILLSNAP_INBOUND_DOMAIN; do
+         STRIPE_CUSTOMER_PORTAL_URL UPLOADTHING_TOKEN UPLOADTHING_SECRET \
+         BILLSNAP_EMAIL_INGEST_SECRET BILLSNAP_INBOUND_SECRET BILLSNAP_INBOUND_DOMAIN; do
   v="${!k:-}"
   if [ -n "$v" ]; then ENV_ARGS+=(-e "$k=$v"); fi
 done
