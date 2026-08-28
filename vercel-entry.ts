@@ -33,6 +33,16 @@ import {
   POST as billsnapInboundPOST,
   GET as billsnapInboundGET,
 } from "./src/routes/api/-billsnap-email-inbound";
+// BookSnap / shared UploadThing uploads — same route serve.ts mounts directly.
+// Without this mount the live (Vercel) runtime 404s every /api/uploadthing call,
+// so hosted PDF uploads can never receive their presigned POST. Mounted here
+// the same way as the Stripe webhook: config.json routes every path to this one
+// function, so the upload path must be intercepted inside this entry to reach
+// the handler (see the mount below).
+import {
+  GET as uploadthingGET,
+  POST as uploadthingPOST,
+} from "./src/routes/api/-uploadthing";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -115,6 +125,17 @@ export default async function vercelHandler(
           ? await billsnapInboundGET()
           : await billsnapInboundPOST(webRequest);
       await streamResponse(res, inboundRes);
+      return;
+    }
+    // UploadThing — BookSnap PDF (and Garage/Meeting asset) uploads. Same route
+    // serve.ts mounts locally; without this mount the live runtime 404s every
+    // /api/uploadthing call and hosted uploads can never get a presigned POST.
+    if (webRequest.url.endsWith("/api/uploadthing")) {
+      const uploadRes =
+        req.method === "GET"
+          ? await uploadthingGET(webRequest)
+          : await uploadthingPOST(webRequest);
+      await streamResponse(res, uploadRes);
       return;
     }
 
