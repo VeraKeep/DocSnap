@@ -6,6 +6,101 @@ const { useUploadThing } = generateReactHelpers<UploadRouter>();
 export { useUploadThing };
 
 /**
+ * A single UploadThing v7 presigned upload descriptor. The live `/api/uploadthing`
+ * route returns a TOP-LEVEL array of these (`[{url,key,name,customId}]`); older
+ * shapes wrapped them in `{ data: [...] }` and included a `fields` map (S3 presigned
+ * POST). Only `url` (the ingest endpoint) and `key` (used to derive the public URL)
+ * are actually needed for v7.
+ */
+interface UtPresigned {
+  url?: string;
+  key?: string;
+  name?: string;
+  customId?: string | null;
+}
+
+const UPLOADTHING_CLIENT_VERSION = "7.7.4";
+
+/**
+ * Manual client-side UploadThing v7 upload: request a presigned URL from our
+ * `/api/uploadthing` route, then PUT the file to the returned ingest `url` as a
+ * single multipart part named `file`.
+ *
+ * The two things that were wrong before this fix:
+ *  1. The response shape. v7 returns a top-level array `[{url,key,name,customId}]`
+ *     (no `data` wrapper, no `fields`). The old code read `data[0].fields` and
+ *     would find neither.
+ *  2. The HTTP method. v7's ingest endpoint ONLY accepts `PUT` to the presigned
+ *     URL with `multipart/form-data` (POST returns `404 Route POST:/<key> not
+ *     found`; a non-multipart body returns `415 Unsupported Media Type`). The old
+ *     code did a `POST` and always failed.
+ *
+ * Returns `{ fileKey, fileUrl }` on success or `null` on any failure (callers
+ * keep their existing fallback behavior).
+ */
+async function uploadFileToUploadThing(
+  file: File,
+  slug: string,
+): Promise<{ fileKey: string; fileUrl: string } | null> {
+  try {
+    // Step 1: ask our route handler to presign an upload for this file.
+    const initRes = await fetch(
+      `/api/uploadthing?actionType=upload&slug=${encodeURIComponent(slug)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          files: [{ name: file.name, size: file.size, type: file.type }],
+        }),
+      },
+    );
+
+    if (!initRes.ok) {
+      console.error(`Upload init failed (${slug}):`, await initRes.text());
+      return null;
+    }
+
+    const payload = (await initRes.json()) as unknown;
+    // v7 returns a top-level array; tolerate the legacy `{ data: [...] }` shape.
+    const list: UtPresigned[] | undefined = Array.isArray(payload)
+      ? (payload as UtPresigned[])
+      : (payload as { data?: UtPresigned[] })?.data;
+
+    if (!Array.isArray(list) || list.length === 0 || !list[0]?.url || !list[0]?.key) {
+      console.error(`Upload presign returned no usable entry (${slug}).`);
+      return null;
+    }
+
+    const { url, key } = list[0];
+
+    // Step 2: PUT the file to the presigned ingest URL as multipart part "file".
+    const uploadFormData = new FormData();
+    uploadFormData.append("file", file);
+
+    const uploadRes = await fetch(url, {
+      method: "PUT",
+      headers: {
+        // v7 uploads are ranged/resumable; a full upload starts at byte 0.
+        Range: "bytes=0-",
+        "x-uploadthing-version": UPLOADTHING_CLIENT_VERSION,
+      },
+      body: uploadFormData,
+    });
+
+    if (!uploadRes.ok) {
+      console.error(`Upload to ingest failed (${slug}):`, await uploadRes.text());
+      return null;
+    }
+
+    // Step 3: the file is retrievable from the public CDN at this URL.
+    return { fileKey: key, fileUrl: `https://utfs.io/f/${key}` };
+  } catch (err) {
+    console.error("Upload error:", err);
+    return null;
+  }
+}
+
+/**
  * Upload a PDF blob to Uploadthing.
  * Returns upload result or null on failure.
  * Only call this when the user is signed in and env vars are configured.
@@ -14,72 +109,8 @@ export async function uploadPDFBlob(
   blob: Blob,
   fileName: string,
 ): Promise<{ fileKey: string; fileUrl: string } | null> {
-  // Create form data for the upload
-  const formData = new FormData();
-
-  // We need to use the uploadthing endpoint directly
-  // First, get the presigned URL by calling the route handler
-  try {
-    // The uploadthing flow: routeHandler gives us presigned POST info
-    // We use the client-side uploadthing helpers
-
-    // Since we can't use the hook outside React, we do a direct upload
-    // via the uploadthing API route
-
-    // Prepare the file
-    const file = new File([blob], fileName, { type: "application/pdf" });
-
-    // Call our API route to initiate upload
-    const initRes = await fetch("/api/uploadthing?actionType=upload&slug=pdfUploader", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        files: [{ name: file.name, size: file.size, type: file.type }],
-      }),
-    });
-
-    if (!initRes.ok) {
-      console.error("Upload init failed:", await initRes.text());
-      return null;
-    }
-
-    const initData = await initRes.json() as {
-      data: Array<{
-        key: string;
-        url: string;
-        fields: Record<string, string>;
-      }>;
-    };
-
-    if (!initData.data || initData.data.length === 0) {
-      return null;
-    }
-
-    const presigned = initData.data[0];
-
-    // Upload to presigned URL
-    const uploadFormData = new FormData();
-    for (const [k, v] of Object.entries(presigned.fields)) {
-      uploadFormData.append(k, v);
-    }
-    uploadFormData.append("file", file);
-
-    const uploadRes = await fetch(presigned.url, {
-      method: "POST",
-      body: uploadFormData,
-    });
-
-    if (!uploadRes.ok) {
-      console.error("Upload failed:", await uploadRes.text());
-      return null;
-    }
-
-    const fileUrl = `https://utfs.io/f/${presigned.key}`;
-    return { fileKey: presigned.key, fileUrl };
-  } catch (err) {
-    console.error("Upload error:", err);
-    return null;
-  }
+  const file = new File([blob], fileName, { type: "application/pdf" });
+  return uploadFileToUploadThing(file, "pdfUploader");
 }
 
 /**
@@ -95,58 +126,7 @@ export async function uploadPDFBlob(
 export async function uploadAssetImage(
   file: File,
 ): Promise<{ fileKey: string; fileUrl: string } | null> {
-  try {
-    // Ask our route handler for presigned POST info
-    const initRes = await fetch("/api/uploadthing?actionType=upload&slug=imageUploader", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        files: [{ name: file.name, size: file.size, type: file.type }],
-      }),
-    });
-
-    if (!initRes.ok) {
-      console.error("Upload init failed:", await initRes.text());
-      return null;
-    }
-
-    const initData = (await initRes.json()) as {
-      data: Array<{
-        key: string;
-        url: string;
-        fields: Record<string, string>;
-      }>;
-    };
-
-    if (!initData.data || initData.data.length === 0) {
-      return null;
-    }
-
-    const presigned = initData.data[0];
-
-    // Upload the file to the presigned URL
-    const uploadFormData = new FormData();
-    for (const [k, v] of Object.entries(presigned.fields)) {
-      uploadFormData.append(k, v);
-    }
-    uploadFormData.append("file", file);
-
-    const uploadRes = await fetch(presigned.url, {
-      method: "POST",
-      body: uploadFormData,
-    });
-
-    if (!uploadRes.ok) {
-      console.error("Upload failed:", await uploadRes.text());
-      return null;
-    }
-
-    const fileUrl = `https://utfs.io/f/${presigned.key}`;
-    return { fileKey: presigned.key, fileUrl };
-  } catch (err) {
-    console.error("Upload error:", err);
-    return null;
-  }
+  return uploadFileToUploadThing(file, "imageUploader");
 }
 
 /**
@@ -163,54 +143,5 @@ export async function uploadAssetImage(
 export async function uploadAudioRecording(
   file: File,
 ): Promise<{ fileKey: string; fileUrl: string } | null> {
-  try {
-    const initRes = await fetch("/api/uploadthing?actionType=upload&slug=audioUploader", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        files: [{ name: file.name, size: file.size, type: file.type }],
-      }),
-    });
-
-    if (!initRes.ok) {
-      console.error("Audio upload init failed:", await initRes.text());
-      return null;
-    }
-
-    const initData = (await initRes.json()) as {
-      data: Array<{
-        key: string;
-        url: string;
-        fields: Record<string, string>;
-      }>;
-    };
-
-    if (!initData.data || initData.data.length === 0) {
-      return null;
-    }
-
-    const presigned = initData.data[0];
-
-    const uploadFormData = new FormData();
-    for (const [k, v] of Object.entries(presigned.fields)) {
-      uploadFormData.append(k, v);
-    }
-    uploadFormData.append("file", file);
-
-    const uploadRes = await fetch(presigned.url, {
-      method: "POST",
-      body: uploadFormData,
-    });
-
-    if (!uploadRes.ok) {
-      console.error("Audio upload failed:", await uploadRes.text());
-      return null;
-    }
-
-    const fileUrl = `https://utfs.io/f/${presigned.key}`;
-    return { fileKey: presigned.key, fileUrl };
-  } catch (err) {
-    console.error("Audio upload error:", err);
-    return null;
-  }
+  return uploadFileToUploadThing(file, "audioUploader");
 }
