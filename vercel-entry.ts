@@ -94,17 +94,24 @@ export default async function vercelHandler(
   try {
     const webRequest = toWebRequest(req);
 
+    // Match API mounts on the URL *pathname*, not the raw full URL. The client
+    // (src/cloudSync.ts) calls uploadthing with a query string
+    // (`?actionType=upload&slug=pdfUploader`), so a raw `url.endsWith("/api/uploadthing")`
+    // check never matched and the request fell through to the SPA router (HTTP 404).
+    // Stripe/BillSnap are matched the same way for consistency with serve.ts.
+    const pathname = new URL(webRequest.url).pathname;
+
     // Mount the Stripe webhook and BillSnap email ingestion here: config.json
     // routes EVERY path on the domain to this one function (single render.func,
     // no per-path rewrite), so these API paths must be intercepted inside this
     // entry for callers to reach them. Every other path falls through to SSR.
     const isStripeWebhook =
-      req.method === "POST" && webRequest.url.endsWith("/api/stripe-webhook");
+      req.method === "POST" && pathname === "/api/stripe-webhook";
     const isBillSnapIngest =
-      webRequest.url.endsWith("/api/billsnap-email-ingest") &&
+      pathname === "/api/billsnap-email-ingest" &&
       (req.method === "POST" || req.method === "GET");
     const isBillSnapInbound =
-      webRequest.url.endsWith("/api/billsnap-email-inbound") &&
+      pathname === "/api/billsnap-email-inbound" &&
       (req.method === "POST" || req.method === "GET");
 
     if (isStripeWebhook) {
@@ -130,7 +137,7 @@ export default async function vercelHandler(
     // UploadThing — BookSnap PDF (and Garage/Meeting asset) uploads. Same route
     // serve.ts mounts locally; without this mount the live runtime 404s every
     // /api/uploadthing call and hosted uploads can never get a presigned POST.
-    if (webRequest.url.endsWith("/api/uploadthing")) {
+    if (pathname === "/api/uploadthing") {
       const uploadRes =
         req.method === "GET"
           ? await uploadthingGET(webRequest)
