@@ -15,6 +15,7 @@ import { useCamera } from "../hooks/useCamera";
 import { usePages } from "../hooks/usePages";
 import { useOCR } from "../hooks/useOCR";
 import { useCloudSync } from "../hooks/useCloudSync";
+import { useSecureVault } from "../hooks/useSecureVault";
 import { useSubscription } from "../hooks/useSubscription";
 import { useKeyboardShortcuts, useIsDesktop } from "../hooks/useKeyboardShortcuts";
 import { trackEvent } from "../analytics";
@@ -28,6 +29,7 @@ import { ProcessingScreen } from "../components/ProcessingScreen";
 import { ErrorScreen } from "../components/ErrorScreen";
 import { OnboardingModal } from "../components/OnboardingModal";
 import { NameReviewScreen } from "../components/NameReviewScreen";
+import { SecureVaultConnectModal } from "../components/SecureVaultConnectModal";
 
 type AppState = "idle" | "active" | "processing" | "adjusting" | "preview" | "ocr" | "naming" | "error";
 type CornerName = keyof Quad;
@@ -86,6 +88,7 @@ function Home() {
   const { pages, addPage, addPages, deletePage, resetPages, newPageIndices, dragRef, handleDragPointerDown, handleDragPointerMove, handleDragPointerUp, handleDragPointerCancel } = usePages();
   const { runOCR, skipOCR: skipOCRFn, ocrProgress, ocrAbortRef, ocrPhase, categorizationResult } = useOCR();
   const { saveToCloud, isSaving, saveSuccess, isCloudReady: cloudConfigured, myScans: savedDocs, deleteScan, updateDocCategory, loadingDocs, deletingDocId, authLoaded, isSignedIn, user } = useCloudSync();
+  const vault = useSecureVault();
   const { isPro, docLimit, upgradeUrl } = useSubscription();
   const isDesktop = useIsDesktop();
 
@@ -120,6 +123,9 @@ function Home() {
   const [reminderDays, setReminderDays] = useState<NotifyBefore | null>(null);
   const [reminderNotificationsBlocked, setReminderNotificationsBlocked] = useState(false);
   const pendingPdfBlobRef = useRef<Blob | null>(null);
+  // SecureVault (opt-in connected identity): modal visibility + last save state.
+  const [showVaultConnect, setShowVaultConnect] = useState(false);
+  const [vaultSaveState, setVaultSaveState] = useState<"idle" | "success" | "error">("idle");
 
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const activeCornerRef = useRef<CornerName | null>(null);
@@ -380,6 +386,37 @@ function Home() {
     finally { setIsGenerating(false); }
   }, [capturedImage, isSignedIn, user?.id, buildAllPages, saveToCloud, categorizationResult, normalizedDocumentName, savedDocs, isPro]);
 
+  // ── SecureVault save (opt-in connected identity) ──
+  // Explicit user opt-in: this only runs when the user taps "Save to Vault".
+  // The PDF blob goes to DocSnap's own server route, which forwards it to
+  // SecureVault using the stored token; the browser never holds that token.
+  const handleSaveToVault = useCallback(async () => {
+    vibrate(12); if (!capturedImage || !isSignedIn || !user?.id) return;
+    if (vault.connected !== true) { setShowVaultConnect(true); return; }
+    setIsGenerating(true); setVaultSaveState("idle");
+    try {
+      const allPages = buildAllPages();
+      trackEvent("save-to-vault", { pages: allPages.length });
+      const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number; redactions?: Redaction[] }[] = [];
+      for (const page of allPages) {
+        const src = getSourceForFilter(page.original, page.processed, page.filter);
+        const imgUrl = await applyFilter(src, page.filter);
+        const img = new Image();
+        await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("Failed")); img.src = imgUrl; });
+        pageEntries.push({ imageUrl: imgUrl, imgNaturalWidth: img.naturalWidth, imgNaturalHeight: img.naturalHeight, redactions: page.redactions });
+      }
+      const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
+      const result = await vault.saveToVault(blob, normalizedDocumentName());
+      setVaultSaveState(result?.document_id ? "success" : "error");
+      if (result?.document_id) {
+        setTimeout(() => setVaultSaveState("idle"), 5000);
+      }
+    } catch (err) {
+      console.error("Save to vault failed:", err);
+      setVaultSaveState("error");
+    } finally { setIsGenerating(false); }
+  }, [capturedImage, isSignedIn, user?.id, buildAllPages, vault, normalizedDocumentName]);
+
   // ── File import ──
   async function processFile(file: File): Promise<PageEntry> {
     const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Failed")); i.src = URL.createObjectURL(file); });
@@ -482,7 +519,7 @@ function Home() {
         </div>
       )}
 
-      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onDone={startOCR} isDesktop={isDesktop} redactions={redactions} redactionMode={redactionMode} onRedactionChange={setRedactions} onRedactionModeChange={(open) => { if (open && !isPro) { setShowRedactionUpgrade(true); return; } setRedactionMode(open); }} redactionUpgrade={showRedactionUpgrade} onRedactionUpgradeDismiss={() => setShowRedactionUpgrade(false)} />}
+      {state === "preview" && previewImage && <PreviewScreen documentName={documentName} onDocumentNameChange={setDocumentName} previewImage={previewImage} filterPulseKey={filterPulseKey} isComputingFilter={isComputingFilter} currentFilter={currentFilter} onFilterChange={setCurrentFilter} pages={pages} newPageIndices={newPageIndices} dragRef={dragRef} pageCount={pages.length} isGenerating={isGenerating} isSaving={isSaving} saveSuccess={saveSuccess} isSignedIn={isSignedIn ?? false} cloudConfigured={cloudConfigured} cloudDocCount={savedDocs.length} docLimit={docLimit} upgradeUrl={upgradeUrl} isPro={isPro} password={pdfPassword} passwordEnabled={passwordEnabled} onPasswordEnabledChange={(enabled) => { setPasswordEnabled(enabled); if (!enabled) setPdfPassword(""); }} onPasswordChange={setPdfPassword} onDeletePage={deletePage} onDragPointerDown={handleDragPointerDown} onDragPointerMove={handleDragPointerMove} onDragPointerUp={handleDragPointerUp} onDragPointerCancel={handleDragPointerCancel} onRetake={retake} onAddFromCamera={addFromCamera} onAddFromPhotos={addFromPhotos} onSaveToCloud={handleSaveToCloud} onSaveToVault={handleSaveToVault} onConnectVault={() => setShowVaultConnect(true)} isVaultSaving={vault.isSaving} vaultSaveState={vaultSaveState} secureVaultConfigured={vault.connected === true} onDone={startOCR} isDesktop={isDesktop} redactions={redactions} redactionMode={redactionMode} onRedactionChange={setRedactions} onRedactionModeChange={(open) => { if (open && !isPro) { setShowRedactionUpgrade(true); return; } setRedactionMode(open); }} redactionUpgrade={showRedactionUpgrade} onRedactionUpgradeDismiss={() => setShowRedactionUpgrade(false)} />}
 
       {state === "ocr" && <OCRProgress isGenerating={isGenerating || ocrPhase === "assembling"} ocrProgress={ocrProgress} onSkip={handleSkipOCR} />}
 
@@ -493,6 +530,16 @@ function Home() {
       {state === "error" && <ErrorScreen errorMessage={errorMessage} onTryAgain={() => { vibrate(12); setErrorMessage(""); startCamera(); }} />}
 
       {showOnboarding && state === "idle" && <OnboardingModal onDismiss={() => setShowOnboarding(false)} />}
+
+      <SecureVaultConnectModal
+        open={showVaultConnect}
+        onClose={() => setShowVaultConnect(false)}
+        connected={vault.connected === true}
+        isConnecting={vault.isConnecting}
+        error={vault.connectError}
+        onConnect={vault.connectSecureVault}
+        onDisconnect={vault.disconnectSecureVault}
+      />
 
       {/* Keyboard shortcuts hint (desktop only, subtle) */}
       {isDesktop && (

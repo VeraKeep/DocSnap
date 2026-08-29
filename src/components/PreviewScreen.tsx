@@ -28,6 +28,8 @@ interface PreviewScreenProps {
   saveSuccess: boolean;
   isSignedIn: boolean;
   cloudConfigured: boolean;
+  /** True when the user has connected a SecureVault vault (opt-in). */
+  secureVaultConfigured: boolean;
   /** Number of documents currently in cloud storage */
   cloudDocCount: number;
   /** Maximum cloud documents allowed (Infinity for Pro) */
@@ -50,6 +52,10 @@ interface PreviewScreenProps {
   documentName: string;
   onDocumentNameChange: (name: string) => void;
   onSaveToCloud: () => void;
+  onSaveToVault: () => void;
+  onConnectVault: () => void;
+  isVaultSaving: boolean;
+  vaultSaveState: "idle" | "success" | "error";
   onDone: () => void;
   isDesktop: boolean;
   redactions: Redaction[];
@@ -76,6 +82,7 @@ export function PreviewScreen({
   saveSuccess,
   isSignedIn,
   cloudConfigured,
+  secureVaultConfigured,
   cloudDocCount,
   docLimit,
   upgradeUrl,
@@ -95,6 +102,10 @@ export function PreviewScreen({
   documentName,
   onDocumentNameChange,
   onSaveToCloud,
+  onSaveToVault,
+  onConnectVault,
+  isVaultSaving,
+  vaultSaveState,
   onDone,
   isDesktop, redactions, redactionMode, onRedactionChange, onRedactionModeChange, redactionUpgrade, onRedactionUpgradeDismiss,
 }: PreviewScreenProps) {
@@ -223,6 +234,7 @@ export function PreviewScreen({
         saveSuccess={saveSuccess}
         isSignedIn={isSignedIn}
         cloudConfigured={cloudConfigured}
+        secureVaultConfigured={secureVaultConfigured}
         cloudDocCount={cloudDocCount}
         docLimit={docLimit}
         upgradeUrl={upgradeUrl}
@@ -237,6 +249,10 @@ export function PreviewScreen({
         documentName={documentName}
         onDocumentNameChange={onDocumentNameChange}
         onSaveToCloud={onSaveToCloud}
+        onSaveToVault={onSaveToVault}
+        onConnectVault={onConnectVault}
+        isVaultSaving={isVaultSaving}
+        vaultSaveState={vaultSaveState}
         onDone={onDone}
       />
       <button onClick={() => onRedactionModeChange(true)} className="mx-4 mb-2 rounded-lg border border-red-500/50 bg-red-950/40 px-3 py-2 text-sm font-medium text-red-200">▰ Redact <span className="text-xs text-red-300">(Pro)</span>{redactions.length > 0 && ` · ${redactions.length}`}</button>

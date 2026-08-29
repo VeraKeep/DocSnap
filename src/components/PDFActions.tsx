@@ -5,6 +5,8 @@ interface PDFActionsProps {
   saveSuccess: boolean;
   isSignedIn: boolean;
   cloudConfigured: boolean;
+  /** True when the user has connected a SecureVault vault (opt-in). */
+  secureVaultConfigured: boolean;
   /** Number of documents currently in cloud storage */
   cloudDocCount: number;
   /** Maximum cloud documents allowed (Infinity for Pro) */
@@ -22,6 +24,13 @@ interface PDFActionsProps {
   documentName: string;
   onDocumentNameChange: (name: string) => void;
   onSaveToCloud: () => void;
+  onSaveToVault: () => void;
+  /** Open the connect-vault modal. */
+  onConnectVault: () => void;
+  /** True while a Save to Vault is in flight. */
+  isVaultSaving: boolean;
+  /** Short status after a vault save (e.g. a SecureVault document id prefix). */
+  vaultSaveState: "idle" | "success" | "error";
   onDone: () => void;
 }
 
@@ -41,6 +50,7 @@ export function PDFActions({
   saveSuccess,
   isSignedIn,
   cloudConfigured,
+  secureVaultConfigured,
   cloudDocCount,
   docLimit,
   upgradeUrl,
@@ -55,6 +65,10 @@ export function PDFActions({
   documentName,
   onDocumentNameChange,
   onSaveToCloud,
+  onSaveToVault,
+  onConnectVault,
+  isVaultSaving,
+  vaultSaveState,
   onDone,
 }: PDFActionsProps) {
   const disabled = isGenerating || isSaving;
@@ -145,6 +159,46 @@ export function PDFActions({
                 Save to Cloud
               </>
             )}
+          </button>
+        )
+      )}
+      {isSignedIn && (
+        secureVaultConfigured ? (
+          <button
+            onClick={() => { vibrate(12); onSaveToVault(); }}
+            disabled={disabled || isVaultSaving}
+            className={`inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition active:scale-95 disabled:opacity-40 ${
+              vaultSaveState === "success"
+                ? "bg-teal-700 text-white"
+                : vaultSaveState === "error"
+                  ? "bg-rose-700 text-white"
+                  : "border border-teal-500 bg-teal-600/20 text-teal-300 hover:bg-teal-600 hover:text-white"
+            }`}
+          >
+            {isVaultSaving ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Saving to vault…
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                </svg>
+                {vaultSaveState === "success" ? "Saved to vault!" : "Save to Vault"}
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => { vibrate(10); onConnectVault(); }}
+            disabled={disabled}
+            className="inline-flex items-center gap-2 rounded-full border border-teal-500/50 px-5 py-3 text-sm font-medium text-teal-400 transition hover:border-teal-400 hover:text-teal-300 active:scale-95 disabled:opacity-40"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+            </svg>
+            Connect vault
           </button>
         )
       )}

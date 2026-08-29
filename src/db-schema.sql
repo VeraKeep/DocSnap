@@ -517,3 +517,24 @@ CREATE TABLE IF NOT EXISTS book_annotations (
 );
 CREATE INDEX IF NOT EXISTS idx_book_annotations_book_id_page_id
   ON book_annotations (book_id, page_id);
+
+-- SecureVault integration — OPT-IN CONNECTED IDENTITY (owner decision).
+-- Maps a DocSnap Clerk user to their SecureVault (Supabase) account so DocSnap
+-- can push scanned documents into their vault via `POST /v1/ingest`.
+--   * access_token is the SecureVault user bearer token, stored SERVER-SIDE
+--     ONLY. It is never logged, never returned to the client after connect, and
+--     never bundled. At-rest encryption of this column is a follow-up (see
+--     docs/docsnap-securevault-integration.md).
+--   * One row per Clerk user (clerk_user_id is the PK). Connect = upsert;
+--     disconnect = delete.
+--   * Default OFF: a row only exists after the user explicitly connects, and
+--     no document is pushed until the user explicitly taps "Save to Vault".
+CREATE TABLE IF NOT EXISTS securevault_connections (
+  clerk_user_id TEXT PRIMARY KEY,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  expires_at TIMESTAMPTZ,
+  vault_user_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
