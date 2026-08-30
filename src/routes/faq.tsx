@@ -24,7 +24,7 @@ const faqs: FAQItem[] = [
       <>
         Yes! All core features — camera capture, image filters, edge
         detection, multi-page PDFs, and searchable OCR — are completely free
-        and run locally in your browser. Cloud Sync is included with paid Personal, Household, and Complete plans. Scanning and local PDF downloads remain free forever.
+        and run locally in your browser. Cloud Sync is included with paid Personal and Family plans. Scanning and local PDF downloads remain free forever.
       </>
     ),
   },

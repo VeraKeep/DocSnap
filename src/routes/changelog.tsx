@@ -20,9 +20,9 @@ interface ChangelogEntry {
 const entries: ChangelogEntry[] = [
   {
     date: "August 2026",
-    title: "Pro subscription & 4-tier pricing",
+    title: "Pro subscription & tiered plans",
     items: [
-      "Pro subscription with 4-tier pricing — Free ($0), Personal ($7.99/mo), Household ($12.99/mo), and Complete ($19.99/mo)",
+      "Pro subscription with tiered plans — Free, Personal ($5.99/mo), and Family, plus the VeraKeep All Access bundle and add-on modules (ReceiptSnap, GarageSnap, MeetingSnap, HomeSnap, ContractSnap, BillSnap, BookSnap)",
       "Password-protected PDFs — encrypt scans with a password",
       "AI document naming — automatic titles generated from OCR text",
       "Expiration detection and reminders — browser notifications when important dates approach",

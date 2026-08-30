@@ -7,8 +7,7 @@ import type { Tier } from "../subscription";
 const TIER_LABELS: Record<Tier, string> = {
   free: "Free",
   personal: "Personal",
-  household: "Household",
-  complete: "Complete",
+  family: "Family",
 };
 
 export const Route = createFileRoute("/profile")({

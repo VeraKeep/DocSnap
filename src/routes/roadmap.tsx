@@ -71,7 +71,7 @@ const sections: Section[] = [
       "Cloud Sync with Clerk authentication and Uploadthing storage",
       "Document naming with date defaults, folder organization, and full-text search",
       "User profiles with storage meters and plan badges",
-      "Pro subscription (Stripe) with 4-tier pricing — Free, Personal, Household, and Complete",
+      "Pro subscription (Stripe) — Free / Personal / Family tiers, the VeraKeep All Access bundle, and add-on modules",
       "Password-protected PDFs — encrypt scans with a password",
       "AI document naming — automatic titles generated from OCR text",
       "Expiration detection and reminders — browser notifications for important dates",
