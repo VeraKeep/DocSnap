@@ -40,7 +40,7 @@ const sections: Section[] = [
     labelClass: "text-amber-400",
     borderClass: "border-amber-400/30",
     items: [
-      "Offline mode — scan and save documents without an internet connection",
+      "Full offline document workflow — scan, edit, save, and manage documents entirely without an internet connection",
       "AI document summaries and Q&A on your scanned documents",
     ],
   },
