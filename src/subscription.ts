@@ -277,6 +277,40 @@ export async function setContractSnapAddon(clerkUserId: string, owned: boolean):
     `;
   } catch (err) { console.error("[subscription] Failed to set ContractSnap add-on:", err); }
 }
+/**
+ * BookSnap add-on entitlement.
+ *
+ * BookSnap is a PAID ADD-ON sold on the DocSnap side ($3.99/mo or $39.99/yr).
+ * It is NOT bundled into any DocSnap tier: a paid subscriber does NOT
+ * automatically get BookSnap. Access is gated by the add-on flag
+ * (`users.addon_booksnap`), mirroring the other module add-on flags.
+ */
+/** Single source of truth for whether a user owns the BookSnap add-on.
+ *  FAILS CLOSED: a missing users row, a NULL/false flag, or any DB error all
+ *  resolve to `false` (locked). Only an explicit `addon_booksnap = true`
+ *  grants access. */
+export async function hasBookSnapAddon(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT addon_booksnap FROM users WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+    `;
+    const row = rows[0] as { addon_booksnap?: unknown } | undefined;
+    return row?.addon_booksnap === true;
+  } catch (err) {
+    console.error("[subscription] Failed to read BookSnap add-on:", err);
+    return false;
+  }
+}
+/** Grant or revoke the BookSnap add-on entitlement (webhook/admin use). */
+export async function setBookSnapAddon(clerkUserId: string, owned: boolean): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO users (clerk_user_id, addon_booksnap)
+      VALUES (${clerkUserId}, ${owned})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET addon_booksnap = ${owned}, updated_at = NOW()
+    `;
+  } catch (err) { console.error("[subscription] Failed to set BookSnap add-on:", err); }
+}
 /** MeetingSnap's independent 4-tier model (mirrors features/meetingsnap). */
 export type MeetingTier = "free" | "personal" | "pro" | "team";
 /** Grant/revoke the MEETING_SNAP independent subscription tier (webhook use).

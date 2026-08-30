@@ -23,6 +23,7 @@ import {
   setBillSnapAddon,
   setContractSnapAddon,
   setHomeSnapAddon,
+  setBookSnapAddon,
   setMeetingSubscriptionTier,
   RECEIPTSNAP_ADDON_PRODUCT_ID,
 } from "../../subscription";
@@ -193,14 +194,19 @@ async function handleCheckoutCompleted(
       break;
     case "allaccess": {
       // VeraKeep All Access — one checkout grants the DocSnap tier (Personal or
-      // Family) plus ReceiptSnap + GarageSnap + MeetingSnap Personal.
+      // Family) plus the FULL seven-module suite: ReceiptSnap + GarageSnap +
+      // MeetingSnap Personal + HomeSnap + ContractSnap + BillSnap + BookSnap.
       const tier = entitlement.bundleTier ?? "personal";
       await setSubscriptionTier(clerkUserId, tier, stripeCustomerId ?? "");
       await setReceiptSnapAddon(clerkUserId, true);
       await setGarageSnapAddon(clerkUserId, true);
       await setMeetingSubscriptionTier(clerkUserId, "personal");
+      await setHomeSnapAddon(clerkUserId, true);
+      await setContractSnapAddon(clerkUserId, true);
+      await setBillSnapAddon(clerkUserId, true);
+      await setBookSnapAddon(clerkUserId, true);
       console.log(
-        `[stripe-webhook] Granted VeraKeep All Access (${tier}) to user ${clerkUserId}: DocSnap ${tier} + ReceiptSnap + GarageSnap + MeetingSnap Personal`,
+        `[stripe-webhook] Granted VeraKeep All Access (${tier}) to user ${clerkUserId}: DocSnap ${tier} + all seven modules (ReceiptSnap, GarageSnap, MeetingSnap Personal, HomeSnap, ContractSnap, BillSnap, BookSnap)`,
       );
       break;
     }
@@ -250,6 +256,10 @@ const PRICE_TIERS: Record<string, PaidTier> = {
   "price_1U6kdfQf4SDuORrEffdSCmFz": "personal", // Personal annual
   "price_1U6kcWQf4SDuORrEuBANqNn2": "family", // Family monthly
   "price_1U6keEQf4SDuORrE2lDWZkw5": "family", // Family annual
+  // ── NEW DocSnap prices (2026 price change) ──
+  "price_1UA7frQf4SDuORrEX5BWEcJT": "personal", // Personal monthly
+  "price_1UA7d0Qf4SDuORrERGvVGUVk": "family", // Family monthly
+  "price_1UA7dRQf4SDuORrEwhEVzZEC": "family", // Family yearly
 };
 
 function priceTier(priceId: string | undefined): PaidTier {
@@ -285,6 +295,10 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   "price_1U6kdfQf4SDuORrEffdSCmFz": { kind: "docsnap" }, // Personal annual
   "price_1U6kcWQf4SDuORrEuBANqNn2": { kind: "docsnap" }, // Family monthly
   "price_1U6keEQf4SDuORrE2lDWZkw5": { kind: "docsnap" }, // Family annual
+  // ── NEW DocSnap prices (2026 price change) ──
+  "price_1UA7frQf4SDuORrEX5BWEcJT": { kind: "docsnap" }, // Personal monthly
+  "price_1UA7d0Qf4SDuORrERGvVGUVk": { kind: "docsnap" }, // Family monthly
+  "price_1UA7dRQf4SDuORrEwhEVzZEC": { kind: "docsnap" }, // Family yearly
   // ContractSnap add-on ($4.99/mo, $49.99/yr)
   "price_1U6q0FQf4SDuORrEWBlPdxe5": { kind: "contractsnap" }, // monthly
   "price_1U6q17Qf4SDuORrEix17ztf7": { kind: "contractsnap" }, // annual
@@ -306,12 +320,19 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   "price_1U6kntQf4SDuORrEtqIA2PCv": { kind: "meetingsnap", meetingTier: "pro" }, // Pro monthly
   "price_1U6koLQf4SDuORrE62WRLvIw": { kind: "meetingsnap", meetingTier: "pro" }, // Pro annual
   "price_1U6kkQf4SDuORrE1LiJ4Ytx": { kind: "meetingsnap", meetingTier: "free" }, // Free — harmless no-op
-  // VeraKeep All Access bundle — grants DocSnap (Personal/Family) + ReceiptSnap
-  // + GarageSnap + MeetingSnap Personal in one checkout.
+  // VeraKeep All Access bundle — grants DocSnap (Personal/Family) + all seven
+  // module add-ons (ReceiptSnap + GarageSnap + MeetingSnap Personal + HomeSnap
+  // + ContractSnap + BillSnap + BookSnap) in one checkout.
+  // Pre-price-change ("old") IDs, kept for existing subscribers.
   "price_1U6kqkQf4SDuORrEoLEI1tPk": { kind: "allaccess", bundleTier: "personal" }, // Individual monthly ($11.99)
   "price_1U6kufQf4SDuORrEWjOSH4cY": { kind: "allaccess", bundleTier: "personal" }, // Individual annual ($119.99)
   "price_1U6kw9Qf4SDuORrEjfbf8nV5": { kind: "allaccess", bundleTier: "family" }, // Family monthly ($17.99)
   "price_1U6kxKQf4SDuORrEhoVI8wqF": { kind: "allaccess", bundleTier: "family" }, // Family annual ($179.99)
+  // ── NEW All Access prices (2026 price change) ──
+  "price_1UA7bCQf4SDuORrEsqdCo2XT": { kind: "allaccess", bundleTier: "personal" }, // Individual monthly ($19.99)
+  "price_1UA7byQf4SDuORrEDbEQ9chv": { kind: "allaccess", bundleTier: "personal" }, // Individual yearly ($199.99)
+  "price_1UA7evQf4SDuORrEWSQToZT0": { kind: "allaccess", bundleTier: "family" }, // Family monthly ($24.99)
+  "price_1UA7fQQf4SDuORrEM1qRWnbE": { kind: "allaccess", bundleTier: "family" }, // Family yearly ($249.99)
 };
 
 /** Read the first line item's price id off a Subscription object (or its
@@ -372,13 +393,17 @@ async function revokeSubscriptionEntitlement(
       break;
     case "allaccess":
       // VeraKeep All Access ended — revoke exactly what the bundle granted:
-      // DocSnap tier + ReceiptSnap + GarageSnap + MeetingSnap Personal.
+      // DocSnap tier + all seven module add-ons.
       await setFreeSubscription(clerkUserId);
       await setReceiptSnapAddon(clerkUserId, false);
       await setGarageSnapAddon(clerkUserId, false);
       await setMeetingSubscriptionTier(clerkUserId, "free");
+      await setHomeSnapAddon(clerkUserId, false);
+      await setContractSnapAddon(clerkUserId, false);
+      await setBillSnapAddon(clerkUserId, false);
+      await setBookSnapAddon(clerkUserId, false);
       console.log(
-        `[stripe-webhook] VeraKeep All Access ended — revoked DocSnap + ReceiptSnap + GarageSnap + MeetingSnap for user ${clerkUserId}`,
+        `[stripe-webhook] VeraKeep All Access ended — revoked DocSnap + all seven modules (ReceiptSnap, GarageSnap, MeetingSnap, HomeSnap, ContractSnap, BillSnap, BookSnap) for user ${clerkUserId}`,
       );
       break;
   }

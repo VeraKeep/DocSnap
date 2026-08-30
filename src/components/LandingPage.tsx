@@ -540,11 +540,9 @@ export function LandingPage({
             Get the whole suite with VeraKeep All Access
           </h2>
           <p className="mx-auto mt-4 max-w-2xl leading-relaxed text-gray-400">
-            One bundle, everything you own. DocSnap Personal + ReceiptSnap +
-            GarageSnap + MeetingSnap Personal for one simple price —{" "}
-            <span className="font-semibold text-green-400">
-              ~33% less than buying separately.
-            </span>
+            One bundle, everything you own. DocSnap Personal unlocks the whole
+            VeraKeep suite — ReceiptSnap, GarageSnap, MeetingSnap, HomeSnap,
+            ContractSnap, BillSnap, and BookSnap — for one simple price.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

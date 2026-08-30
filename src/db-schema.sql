@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- this exactly like `addon_receiptsnap` gates /receipts. Fails closed:
   -- default false and any missing row = locked.
   addon_billsnap BOOLEAN NOT NULL DEFAULT false,
+  -- BookSnap add-on flag ($3.99/mo or $39.99/yr recurring). Gates bookshelf
+  -- access exactly like `addon_receiptsnap` gates /receipts. Fails closed:
+  -- default false and any missing row = locked.
+  addon_booksnap BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -47,6 +51,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_homesnap BOOLEAN NOT NULL DEFAU
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_contractsnap BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_subscription_status TEXT DEFAULT 'free';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_billsnap BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS addon_booksnap BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id SERIAL PRIMARY KEY,
