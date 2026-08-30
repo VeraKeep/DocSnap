@@ -32,12 +32,15 @@ const faqs: FAQItem[] = [
     q: "Do my documents leave my device?",
     a: (
       <>
-        No. All processing — scanning, cropping, filtering, OCR, and PDF
-        generation — happens entirely in your browser. Your images and
-        documents never touch our servers. The only exception is if you
-        choose to use Cloud Sync and actively save a document to the cloud.
-        Even then, only the final PDF is uploaded; the original camera images
-        stay on your device.
+        By default, no. All core processing — scanning, cropping, filtering,
+        OCR, and PDF generation — happens entirely in your browser, and your
+        images stay on your device. There are two exceptions, and both are
+        things you opt into: if you choose to use Cloud Sync and actively save
+        a document to the cloud, that final document is stored for you
+        securely; and if you use an AI-powered module (such as MeetingSnap,
+        ReceiptSnap, BillSnap, or ContractSnap), the content you submit to
+        that feature is sent to our servers for processing. Everything else
+        stays local.
       </>
     ),
   },
