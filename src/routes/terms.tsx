@@ -51,7 +51,9 @@ function Terms() {
               needs no account. Paid tiers add features such as cloud storage, and paid
               add-on modules (ReceiptSnap, GarageSnap, MeetingSnap, HomeSnap,
               ContractSnap, BillSnap, and BookSnap) add tools for the things you own.
-              Each module is a separate service with its own subscription.
+              Paid add-on modules extend your DocSnap account with additional
+              capabilities. Modules may be purchased individually or included through an
+              eligible bundle.
             </p>
           </section>
 
@@ -123,9 +125,10 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Module services &amp; access</h2>
             <p className="mt-3">
-              Each paid module (for example, HomeSnap, ContractSnap, BookSnap, and
-              others) is a separate service. Your ability to use a module is tied to
-              your subscription or add-on ownership. Access is granted based on your
+              Paid add-on modules extend your DocSnap account with additional
+              capabilities, and may be purchased individually or included through an
+              eligible bundle. Your ability to use a module is tied to your subscription
+              or add-on ownership. Access is granted based on your
               active subscription and can be removed if that subscription is cancelled
               or lapses. Your plan and which modules you can use are shown in your
               DocSnap © 2026 profile.
