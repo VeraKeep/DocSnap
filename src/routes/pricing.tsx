@@ -60,7 +60,7 @@ const PLANS: Plan[] = [
   },
   {
     name: "DocSnap Family",
-    price: { monthly: "$8.99", annual: "$89.99" },
+    price: { monthly: "$9.99", annual: "$99.99" },
     cadence: { monthly: "/month", annual: "/year" },
     description: "Everything in Personal, plus shared household storage and family organization.",
     badge: "Best Value",
@@ -203,12 +203,9 @@ function PricingPage() {
               VeraKeep All Access
             </h2>
             <p className="mx-auto mt-4 max-w-3xl leading-relaxed text-gray-400">
-              Everything in DocSnap Personal + ReceiptSnap + GarageSnap +
-              MeetingSnap Personal in one bundle. Get the whole VeraKeep™ suite
-              for one simple price —{" "}
-              <span className="font-semibold text-green-400">
-                ~33% less than buying separately.
-              </span>
+              DocSnap Personal plus the entire seven-module VeraKeep™ suite —
+              ReceiptSnap, GarageSnap, MeetingSnap, HomeSnap, ContractSnap,
+              BillSnap, and BookSnap — in one bundle for one simple price.
             </p>
           </div>
 
@@ -220,13 +217,14 @@ function PricingPage() {
               </span>
               <h3 className="text-xl font-bold">All Access</h3>
               <p className="mt-2 text-sm text-gray-400">
-                The entire VeraKeep™ suite for one person. $11.99/mo — everything
-                in DocSnap Personal + ReceiptSnap + GarageSnap + MeetingSnap Personal.
+                The entire VeraKeep™ suite for one person. $19.99/mo — everything
+                in DocSnap Personal + all seven add-ons: ReceiptSnap, GarageSnap,
+                MeetingSnap, HomeSnap, ContractSnap, BillSnap, and BookSnap.
               </p>
 
               <div className="mt-5 flex items-baseline gap-1">
                 <span className="text-4xl font-bold">
-                  {billing === "monthly" ? "$11.99" : "$119.99"}
+                  {billing === "monthly" ? "$19.99" : "$199.99"}
                 </span>
                 <span className="text-sm text-gray-400">
                   {billing === "monthly" ? "/month" : "/year"}
@@ -248,7 +246,10 @@ function PricingPage() {
                   "ReceiptSnap — receipts, warranties, returns",
                   "GarageSnap — tools, equipment, maintenance",
                   "MeetingSnap Personal — AI meeting summaries",
-                  "~33% savings vs. buying separately",
+                  "HomeSnap — your home & its systems on record",
+                  "ContractSnap — key contract terms at a glance",
+                  "BillSnap — know what you owe and when",
+                  "BookSnap — every edition, page, and quote",
                 ].map((feature) => (
                   <li key={feature} className="flex items-start gap-3 text-sm text-gray-300">
                     <CheckIcon />
@@ -269,7 +270,7 @@ function PricingPage() {
 
               <div className="mt-5 flex items-baseline gap-1">
                 <span className="text-4xl font-bold">
-                  {billing === "monthly" ? "$17.99" : "$179.99"}
+                  {billing === "monthly" ? "$24.99" : "$249.99"}
                 </span>
                 <span className="text-sm text-gray-400">
                   {billing === "monthly" ? "/month" : "/year"}

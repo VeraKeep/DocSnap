@@ -2,25 +2,17 @@
  * Checkout URL config — the single source of truth for the pricing page's
  * "Subscribe" links.
  *
- * The real recurring buy.stripe.com URLs for the new 3-tier model are owned
- * by the owner in Stripe and will be provided by the team lead AFTER this
- * code change lands. Do NOT fabricate buy.stripe.com URLs.
- *
- * To go live: fill in the four URLs below (the lead will insert the real
- * Personal/Family monthly + annual Stripe payment-link URLs). The pricing
- * page reads these constants, so dropping in the real URL requires no page
- * logic changes.
- *
- * @example
- *   PERSONAL_MONTHLY: "https://buy.stripe.com/..." // TODO(lead): insert real URL
+ * Recurring buy.stripe.com URLs for the 3-tier model, provided by the owner.
+ * The pricing page reads these constants, so dropping in the real URL requires
+ * no page logic changes.
  */
 export const CHECKOUT_URLS = {
   /** Personal — $5.99/month recurring. */
-  PERSONAL_MONTHLY: "https://buy.stripe.com/9B6fZj4KN3IL7bxdOm7Re0g",
+  PERSONAL_MONTHLY: "https://buy.stripe.com/5kQ8wR5ORa792VhbGe7Re0q",
   /** Personal — $59.99/year recurring. */
   PERSONAL_ANNUAL: "https://buy.stripe.com/9B69AVdhj1AD67t11A7Re0e",
-  /** Family — $8.99/month recurring. */
-  FAMILY_MONTHLY: "https://buy.stripe.com/00w3cxgtv5QTbrNeSq7Re0f",
-  /** Family — $89.99/year recurring. */
-  FAMILY_ANNUAL: "https://buy.stripe.com/bJe14pa57bbd3ZlaCa7Re0d",
+  /** Family — $9.99/month recurring. */
+  FAMILY_MONTHLY: "https://buy.stripe.com/9B69AVcdf2EH67t11A7Re0u",
+  /** Family — $99.99/year recurring. */
+  FAMILY_ANNUAL: "https://buy.stripe.com/8x26oJ4KNenpanJ25E7Re0t",
 } as const;
