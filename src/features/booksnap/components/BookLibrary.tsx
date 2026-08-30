@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SignInButton, useUser } from "@clerk/tanstack-start";
 import { uploadPDFBlob } from "~/cloudSync";
-import { createBook, deleteBook, listBooks } from "../server";
+import { MODULE_CHECKOUT_URLS } from "~/moduleCheckout";
+import { createBook, deleteBook, getBooksEntitlement, listBooks } from "../server";
 import { type BookDetail, type BookPage, type BookPageInput, type BookRow } from "../types";
 import { BookReader } from "./BookReader";
 import { BookSearch } from "./BookSearch";
@@ -61,6 +62,45 @@ function Notice({ children }: { children: string }) {
   );
 }
 
+/**
+ * Locked/upgrade screen — shown to a signed-in user WITHOUT the BookSnap
+ * add-on. BookSnap is a paid add-on sold on the DocSnap side ($3.99/month or
+ * $39.99/year) and is NOT bundled into any DocSnap tier, so even a paid
+ * (Personal/Family) subscriber sees this until they own the add-on (or hold
+ * VeraKeep All Access, which sets addon_booksnap). The Buy buttons link to the
+ * live recurring Stripe checkouts from moduleCheckout.ts.
+ */
+function AddonLocked() {
+  return (
+    <div className="mt-8 rounded-2xl border border-gray-800 bg-gray-900/60 p-8 text-center sm:p-12">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600/20">📚</div>
+      <h2 className="mt-5 text-xl font-semibold">BookSnap is a paid add-on</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-400">
+        BookSnap isn't included in DocSnap plans — it's a separate add-on
+        ($3.99/month or $39.99/year). Purchase it to keep every book, edition,
+        page, and quote on your shelf and searchable.
+      </p>
+      <div className="mt-6 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+        <a
+          href={MODULE_CHECKOUT_URLS.BOOKSNAP_MONTHLY}
+          className="inline-flex justify-center rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+        >
+          Add BookSnap — $3.99/mo
+        </a>
+        <a
+          href={MODULE_CHECKOUT_URLS.BOOKSNAP_ANNUAL}
+          className="inline-flex justify-center rounded-full border border-gray-700 px-6 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+        >
+          or $39.99/yr · two months free
+        </a>
+      </div>
+      <p className="mt-4 text-xs text-gray-600">
+        Your bookshelf stays private to your DocSnap account.
+      </p>
+    </div>
+  );
+}
+
 const READING_STATUSES: { value: string; label: string }[] = [
   { value: "unread", label: "Unread" },
   { value: "reading", label: "Currently reading" },
@@ -86,6 +126,7 @@ export function BookLibrary() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
+  const [entitled, setEntitled] = useState<boolean | null>(null);
   const [openBook, setOpenBook] = useState<BookRow | null>(null);
   const [openPage, setOpenPage] = useState(1);
 
@@ -122,7 +163,20 @@ export function BookLibrary() {
   }, []);
 
   useEffect(() => {
-    if (user) void load();
+    if (!user) return;
+    setEntitled(null);
+    setStatus("loading");
+    void getBooksEntitlement()
+      .then((result) => {
+        const has = result.configured && result.hasAddon;
+        setEntitled(has);
+        if (has) void load();
+      })
+      .catch(() => {
+        setEntitled(false);
+        setStatus("error");
+        setLoadError("BookSnap couldn't be unlocked right now. Please try again.");
+      });
   }, [user, load]);
 
   function setField(field: keyof typeof EMPTY_FORM, value: string) {
@@ -248,6 +302,7 @@ export function BookLibrary() {
     );
   }
   if (!user) return <SignInRequired />;
+  if (entitled === false) return <AddonLocked />;
 
   const countLabel = `${books.length} ${books.length === 1 ? "book" : "books"}`;
   const readingCount = books.filter((b) => b.reading_status === "reading").length;

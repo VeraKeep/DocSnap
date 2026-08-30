@@ -186,6 +186,10 @@ async function handleCheckoutCompleted(
       await setHomeSnapAddon(clerkUserId, true);
       console.log(`[stripe-webhook] Granted HomeSnap add-on for user ${clerkUserId}`);
       break;
+    case "booksnap":
+      await setBookSnapAddon(clerkUserId, true);
+      console.log(`[stripe-webhook] Granted BookSnap add-on for user ${clerkUserId}`);
+      break;
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, entitlement.meetingTier ?? "free");
       console.log(
@@ -272,7 +276,7 @@ function priceTier(priceId: string | undefined): PaidTier {
  * tier). Everything here is ADDITIVE: unknown prices route to no entitlement
  * (see handleCheckoutCompleted) and are logged — they grant nothing.
  */
-type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "homesnap" | "meetingsnap" | "allaccess";
+type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "homesnap" | "meetingsnap" | "booksnap" | "allaccess";
 interface PriceEntitlement {
   kind: EntitlementKind;
   /** MeetingSnap tier when kind === 'meetingsnap' (else unused). */
@@ -314,6 +318,9 @@ const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
   // HomeSnap add-on
   "price_1U6px3Qf4SDuORrE0QdJIo1Y": { kind: "homesnap" }, // monthly
   "price_1U6pxfQf4SDuORrElHyfBaae": { kind: "homesnap" }, // annual
+  // BookSnap add-on ($3.99/mo, $39.99/yr)
+  "price_1U8ZUwQf4SDuORrEWXCzi5uY": { kind: "booksnap" }, // monthly $3.99
+  "price_1U8ZVFQf4SDuORrEJQrl6TMt": { kind: "booksnap" }, // yearly $39.99
   // MeetingSnap (independent 4-tier model)
   "price_1U6km5Qf4SDuORrEPTtvKzCe": { kind: "meetingsnap", meetingTier: "personal" }, // Personal monthly
   "price_1U6kmXQf4SDuORrE1pfncl4K": { kind: "meetingsnap", meetingTier: "personal" }, // Personal annual
@@ -386,6 +393,10 @@ async function revokeSubscriptionEntitlement(
     case "homesnap":
       await setHomeSnapAddon(clerkUserId, false);
       console.log(`[stripe-webhook] HomeSnap subscription ended — revoked add-on for user ${clerkUserId}`);
+      break;
+    case "booksnap":
+      await setBookSnapAddon(clerkUserId, false);
+      console.log(`[stripe-webhook] BookSnap subscription ended — revoked add-on for user ${clerkUserId}`);
       break;
     case "meetingsnap":
       await setMeetingSubscriptionTier(clerkUserId, "free");

@@ -21,6 +21,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
+import { hasBookSnapAddon } from "~/subscription";
 import {
   type BookAnnotation,
   type BookDetail,
@@ -95,6 +96,48 @@ function asInt(v: unknown): number | null {
 }
 
 /* ------------------------------------------------------------------ */
+/* Hard add-on entitlement gate                                        */
+/* ------------------------------------------------------------------ */
+
+/** Clear, honest message for users without the add-on. */
+export const ADDON_LOCKED_MESSAGE =
+  "BookSnap is a paid add-on - purchase it to unlock.";
+/** Machine-readable code the UI can use to render the locked/upgrade screen. */
+export const ADDON_LOCKED_CODE = "booksnap_addon_required";
+
+/**
+ * HARD entitlement gate. BookSnap is a paid add-on, NOT bundled into any
+ * DocSnap tier (mirrors ContractSnap/HomeSnap/BillSnap). Fails CLOSED with HTTP
+ * 403 for any signed-in user who does not own the add-on — including every paid
+ * (Personal/Family) subscriber. Anonymous callers are already rejected with 401
+ * by requireServerFunctionUser. All Access auto-grant (webhook) sets the
+ * addon_booksnap flag, so bundle owners pass this gate.
+ */
+async function requireBookSnapAddon(userId: string): Promise<void> {
+  const owned = await hasBookSnapAddon(userId);
+  if (!owned) {
+    throw new Response(
+      JSON.stringify({ error: ADDON_LOCKED_MESSAGE, code: ADDON_LOCKED_CODE }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
+
+/**
+ * BookSnap entitlement for the signed-in user. This is the UI's gate channel
+ * (does not throw for a locked user — it reports the state). `hasAddon` is
+ * true only when the user owns the add-on. Anonymous → 401 (fail closed).
+ */
+export const getBooksEntitlement = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ configured: boolean; hasAddon: boolean }> => {
+    const userId = await requireServerFunctionUser();
+    if (!process.env.DATABASE_URL) return { configured: false, hasAddon: false };
+    const hasAddon = await hasBookSnapAddon(userId);
+    return { configured: true, hasAddon };
+  },
+);
+
+/* ------------------------------------------------------------------ */
 /* Row mapper                                                          */
 /* ------------------------------------------------------------------ */
 function toRow(r: Record<string, unknown>): BookRow {
@@ -130,6 +173,7 @@ function toDetail(r: Record<string, unknown>): BookDetail {
 export const listBooks = createServerFn({ method: "GET" }).handler(
   async (): Promise<BookListResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, books: [] };
     const rows = (await sql`
       SELECT id, isbn, title, author, edition, publisher, year, cover_url,
@@ -152,6 +196,7 @@ export const getBook = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<BookDetailResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, book: null };
     const rows = (await sql`
       SELECT id, isbn, title, author, edition, publisher, year, cover_url,
@@ -233,6 +278,7 @@ export const createBook = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<CreateBookResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     const data = opts.data;
 
     if (!process.env.DATABASE_URL) {
@@ -318,6 +364,7 @@ export const deleteBook = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<DeleteBookResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     if (!process.env.DATABASE_URL) throw new Error("Storage isn't connected yet.");
     const rows = (await sql`
       DELETE FROM books WHERE id = ${opts.data.id} AND clerk_user_id = ${userId}
@@ -380,6 +427,7 @@ export const ingestBookPages = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<IngestPagesResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     const { bookId, pages } = opts.data;
     if (!process.env.DATABASE_URL) return { configured: false, bookId, count: pages.length };
 
@@ -419,6 +467,7 @@ export const getBookPages = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<GetBookPagesResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     const { bookId, page, limit } = opts.data;
     if (!process.env.DATABASE_URL) return { configured: false, bookId, total: 0, pages: [] };
 
@@ -470,6 +519,7 @@ export const createAnnotation = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<CreateAnnotationResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     const { bookId, pageId, paragraphIndex, quote, note, color } = opts.data;
     if (!process.env.DATABASE_URL) return { configured: false, annotation: null };
 
@@ -514,6 +564,7 @@ export const listAnnotations = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<ListAnnotationsResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     const { bookId } = opts.data;
     if (!process.env.DATABASE_URL) return { configured: false, annotations: [] };
 
@@ -545,6 +596,7 @@ export const deleteAnnotation = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<DeleteAnnotationResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     if (!process.env.DATABASE_URL) throw new Error("Storage isn't connected yet.");
     // Resolve the annotation's book owner to prevent cross-user deletes.
     const rows = (await sql`
@@ -715,6 +767,7 @@ export const searchBooks = createServerFn({ method: "POST" })
   })
   .handler(async (opts): Promise<BookSearchResponse> => {
     const userId = await requireServerFunctionUser();
+    await requireBookSnapAddon(userId);
     const { query, bookId, limit } = opts.data;
     if (!process.env.DATABASE_URL) return { configured: false, query, noTerms: false, results: [] };
 
