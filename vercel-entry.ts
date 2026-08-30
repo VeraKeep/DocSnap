@@ -43,6 +43,12 @@ import {
   GET as uploadthingGET,
   POST as uploadthingPOST,
 } from "./src/routes/api/-uploadthing";
+import {
+  POST as secureVaultIngestPOST,
+  POST_CONNECT as secureVaultConnectPOST,
+  GET_STATUS as secureVaultStatusGET,
+  DELETE_DISCONNECT as secureVaultDisconnectDELETE,
+} from "./src/routes/api/-securevault";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -143,6 +149,24 @@ export default async function vercelHandler(
           ? await uploadthingGET(webRequest)
           : await uploadthingPOST(webRequest);
       await streamResponse(res, uploadRes);
+      return;
+    }
+    // SecureVault integration — opt-in connected identity. Same routes as
+    // serve.ts; without this mount the live runtime 404s every call.
+    if (pathname === "/api/securevault/ingest" && req.method === "POST") {
+      await streamResponse(res, await secureVaultIngestPOST(webRequest));
+      return;
+    }
+    if (pathname === "/api/securevault/connect" && req.method === "POST") {
+      await streamResponse(res, await secureVaultConnectPOST(webRequest));
+      return;
+    }
+    if (pathname === "/api/securevault" && req.method === "GET") {
+      await streamResponse(res, await secureVaultStatusGET(webRequest));
+      return;
+    }
+    if (pathname === "/api/securevault" && req.method === "DELETE") {
+      await streamResponse(res, await secureVaultDisconnectDELETE(webRequest));
       return;
     }
 

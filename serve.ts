@@ -30,6 +30,12 @@ import {
   GET_LIST as sharesGET,
 } from "./src/routes/api/-share";
 import { GET as receiptImageGET } from "./src/routes/api/-receipt-image";
+import {
+  POST as secureVaultIngestPOST,
+  POST_CONNECT as secureVaultConnectPOST,
+  GET_STATUS as secureVaultStatusGET,
+  DELETE_DISCONNECT as secureVaultDisconnectDELETE,
+} from "./src/routes/api/-securevault";
 
 const PORT = 3000;
 const HOST = "0.0.0.0";
@@ -85,6 +91,19 @@ for (let attempt = 1; ; attempt++) {
         const receiptImageMatch = pathname.match(/^\/api\/receipts\/([^/]+)\/image$/);
         if (receiptImageMatch && req.method === "GET") {
           return receiptImageGET(req, receiptImageMatch[1]);
+        }
+        // SecureVault integration — opt-in connected identity (mount in vercel-entry.ts too).
+        if (pathname === "/api/securevault/ingest" && req.method === "POST") {
+          return secureVaultIngestPOST(req);
+        }
+        if (pathname === "/api/securevault/connect" && req.method === "POST") {
+          return secureVaultConnectPOST(req);
+        }
+        if (pathname === "/api/securevault" && req.method === "GET") {
+          return secureVaultStatusGET(req);
+        }
+        if (pathname === "/api/securevault" && req.method === "DELETE") {
+          return secureVaultDisconnectDELETE(req);
         }
 
         // Static files.
