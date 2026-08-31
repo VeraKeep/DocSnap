@@ -97,6 +97,91 @@ async function main() {
   }
   console.log("OK: searchReceipts finds by merchant AND by extracted item/extra content.");
 
+  // 5b) updateReceipt — METADATA edit persists (merchant + amount) while the
+  //     scanned IMAGE stays immutable (image_base64 is never changed by edit).
+  const updated = (await sql`
+    UPDATE receipts SET
+      merchant = ${"ACME Test Supply (edited)"},
+      store_date = ${"2026-08-02"},
+      total = ${55.0},
+      currency = ${"USD"},
+      extra = extra || ${JSON.stringify({ category: "Test Category", notes: "a test note", tags: ["kitchen", "warranty"] })}::jsonb
+    WHERE id = ${receiptId} AND clerk_user_id = ${TEST_USER}
+    RETURNING id, merchant, total, image_base64
+  `) as unknown as { id: number; merchant: string; total: string; image_base64: string }[];
+  if (!updated[0] || updated[0].merchant !== "ACME Test Supply (edited)") {
+    console.error("FAIL: updateReceipt merchant edit did not persist.");
+    process.exit(1);
+  }
+  if (Number(updated[0].total) !== 55) {
+    console.error("FAIL: updateReceipt amount edit did not persist.");
+    process.exit(1);
+  }
+  if (updated[0].image_base64 !== "data:image/jpeg;base64,VERIFY") {
+    console.error("FAIL: updateReceipt must leave the scanned image immutable.");
+    process.exit(1);
+  }
+  const editedExtra = (await sql`
+    SELECT extra FROM receipts WHERE id = ${receiptId}
+  `) as unknown as { extra: Record<string, unknown> }[];
+  if (
+    editedExtra[0]?.extra?.category !== "Test Category" ||
+    editedExtra[0]?.extra?.notes !== "a test note" ||
+    !Array.isArray(editedExtra[0]?.extra?.tags)
+  ) {
+    console.error("FAIL: updateReceipt did not merge category/notes/tags into extra.");
+    process.exit(1);
+  }
+  console.log("OK: updateReceipt metadata edit persists (merchant, amount, category/notes/tags) and image stays immutable.");
+
+  // 5c) archiveReceipt (SOFT-DELETE) — excluded from the DEFAULT list, but the
+  //     row is retained, owned, and still listed in the archived view.
+  await sql`
+    UPDATE receipts SET archived = true
+    WHERE id = ${receiptId} AND clerk_user_id = ${TEST_USER}
+  `;
+  const activeList = (await sql`
+    SELECT id FROM receipts WHERE clerk_user_id = ${TEST_USER} AND archived = false
+  `) as unknown as { id: number }[];
+  if (activeList.some((r) => Number(r.id) === receiptId)) {
+    console.error("FAIL: archived receipt still appears in the default list.");
+    process.exit(1);
+  }
+  const archivedRow = (await sql`
+    SELECT id, archived, clerk_user_id, image_base64 FROM receipts WHERE id = ${receiptId}
+  `) as unknown as { id: number; archived: boolean; clerk_user_id: string; image_base64: string }[];
+  if (
+    archivedRow.length !== 1 ||
+    archivedRow[0].archived !== true ||
+    archivedRow[0].clerk_user_id !== TEST_USER ||
+    !archivedRow[0].image_base64
+  ) {
+    console.error("FAIL: archived receipt not retained/owned/persisted (soft-delete broken).");
+    process.exit(1);
+  }
+  const archList = (await sql`
+    SELECT id FROM receipts WHERE clerk_user_id = ${TEST_USER} AND archived = true
+  `) as unknown as { id: number }[];
+  if (!archList.some((r) => Number(r.id) === receiptId)) {
+    console.error("FAIL: archived receipt not listed in the archived view.");
+    process.exit(1);
+  }
+  console.log("OK: archive removes from default list, retains owned row (no hard delete, restorable).");
+
+  // 5d) unarchiveReceipt (RESTORE) — brings it back to the default list.
+  await sql`
+    UPDATE receipts SET archived = false
+    WHERE id = ${receiptId} AND clerk_user_id = ${TEST_USER}
+  `;
+  const restoredList = (await sql`
+    SELECT id FROM receipts WHERE clerk_user_id = ${TEST_USER} AND archived = false
+  `) as unknown as { id: number }[];
+  if (!restoredList.some((r) => Number(r.id) === receiptId)) {
+    console.error("FAIL: unarchive did not restore the receipt to the default list.");
+    process.exit(1);
+  }
+  console.log("OK: unarchive restores the receipt to the default list.");
+
   // 6) Owner scoping: another user must NOT see this receipt.
   const leak = (await sql`
     SELECT id FROM receipts WHERE id = ${receiptId} AND clerk_user_id = ${OTHER}

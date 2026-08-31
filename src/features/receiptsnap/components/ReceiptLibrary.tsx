@@ -4,6 +4,7 @@ import { SignInButton, useUser } from "@clerk/tanstack-start";
 import {
   getReceipt,
   getReceiptsEntitlement,
+  listArchivedReceipts,
   listReceipts,
   saveReceipt,
   searchReceipts,
@@ -157,25 +158,17 @@ export function ReceiptLibrary() {
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<ReceiptDetail | null>(null);
   const [notice, setNotice] = useState("");
-  // ReceiptSnap add-on entitlement: null = resolving, true = unlocked,
-  // false = locked (show the upgrade screen).
-  const [entitled, setEntitled] = useState<boolean | null>(null);
+  // Active vs Archived (soft-deleted) view toggle.
+  const [showArchived, setShowArchived] = useState(false);
 
-  // Upload state
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [uploadError, setUploadError] = useState("");
-  const [uploaded, setUploaded] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const load = useCallback(async (term: string) => {
+  const load = useCallback(async (term: string, archived = showArchived) => {
     setSearching(true);
     try {
       const result = term.trim()
-        ? await searchReceipts({ data: { query: term } })
-        : await listReceipts();
+        ? await searchReceipts({ data: { query: term, archived } })
+        : archived
+          ? await listArchivedReceipts()
+          : await listReceipts();
       setConfigured(result.configured);
       setReceipts(result.receipts as ReceiptSummary[]);
       setStatus("ready");
@@ -188,7 +181,19 @@ export function ReceiptLibrary() {
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [showArchived]);
+  // ReceiptSnap add-on entitlement: null = resolving, true = unlocked,
+  // false = locked (show the upgrade screen).
+  const [entitled, setEntitled] = useState<boolean | null>(null);
+
+  // Upload state
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploaded, setUploaded] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial load once signed in; also a safe mount path when the session is
   // already established at hydration time. First resolve the add-on
@@ -322,17 +327,24 @@ export function ReceiptLibrary() {
     return <AddonLocked />;
   }
 
+  const noun = showArchived
+    ? `archived ${receipts.length === 1 ? "receipt" : "receipts"}`
+    : receipts.length === 1
+      ? "receipt"
+      : "receipts";
   const countLabel = searching
     ? "Searching…"
     : query.trim()
       ? `${receipts.length} ${receipts.length === 1 ? "result" : "results"} for "${query.trim()}"`
-      : `${receipts.length} ${receipts.length === 1 ? "receipt" : "receipts"}`;
+      : `${receipts.length} ${noun}`;
 
   const emptyLabel = !configured
     ? "Receipts will appear here once storage is connected."
     : query.trim()
       ? `No receipts match "${query.trim()}".`
-      : "Your receipts will appear here. Upload your first receipt above — its details are extracted automatically.";
+      : showArchived
+        ? "No archived receipts. Archiving hides a receipt from the default list while keeping it on your account."
+        : "Your receipts will appear here. Upload your first receipt above — its details are extracted automatically.";
 
   return (
     <div className="mt-8 space-y-8">
@@ -482,6 +494,38 @@ export function ReceiptLibrary() {
           </label>
         </div>
 
+        {/* Active vs Archived (soft-delete) view toggle */}
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowArchived(false);
+              setQuery("");
+            }}
+            className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+              !showArchived
+                ? "bg-indigo-600 text-white"
+                : "border border-gray-700 text-gray-300 hover:border-indigo-500"
+            }`}
+          >
+            Receipts
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowArchived(true);
+              setQuery("");
+            }}
+            className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+              showArchived
+                ? "bg-indigo-600 text-white"
+                : "border border-gray-700 text-gray-300 hover:border-indigo-500"
+            }`}
+          >
+            Archived
+          </button>
+        </div>
+
         <div className="mt-5 space-y-3">
           {status === "loading" ? (
             <div className="space-y-3" aria-label="Loading receipts">
@@ -511,7 +555,11 @@ export function ReceiptLibrary() {
       </section>
 
       {selected && (
-        <ReceiptDetailModal receipt={selected} onClose={() => setSelected(null)} />
+        <ReceiptDetailModal
+          receipt={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => void load(query)}
+        />
       )}
     </div>
   );

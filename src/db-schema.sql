@@ -117,10 +117,21 @@ CREATE TABLE IF NOT EXISTS receipts (
   items JSONB NOT NULL DEFAULT '[]',
   extra JSONB NOT NULL DEFAULT '{}',
   image_base64 TEXT,
+  -- Soft-delete / archive flag: "removed from view" is a state, never a hard
+  -- delete. Archived receipts leave the default list but stay owned, stored,
+  -- searchable and restorable, protecting the "every receipt, searchable
+  -- forever" promise and guarding against accidental loss. NO hard-delete of
+  -- financial records.
+  archived BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Retro-active for existing databases (idempotent like the rest of the schema).
+-- MUST precede any index on `archived` so the column exists first.
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_receipts_clerk_user_id_created_at
   ON receipts (clerk_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_receipts_clerk_user_id_archived_created_at
+  ON receipts (clerk_user_id, archived, created_at DESC);
 
 -- MeetingSnap module: meeting transcripts and their AI extractions.
 -- Owner-scoped: each meeting belongs to one Clerk user (users.clerk_user_id).

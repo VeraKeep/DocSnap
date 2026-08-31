@@ -5,6 +5,11 @@ import {
   getHomeEntitlement,
 } from "../../homesnap/server";
 import {
+  archiveReceipt,
+  unarchiveReceipt,
+  updateReceipt,
+} from "../server";
+import {
   type ReceiptDetail,
   type ReceiptItem,
   displayDate,
@@ -35,6 +40,16 @@ function Field({ label, value }: { label: string; value: unknown }) {
       </dt>
       <dd className="mt-1 text-sm text-gray-200">{text}</dd>
     </div>
+  );
+}
+
+/** Transient status banner (success notices, etc.). */
+function Notice({ children }: { children: string }) {
+  if (!children) return null;
+  return (
+    <p role="status" className="mt-3 text-center text-sm text-indigo-300">
+      {children}
+    </p>
   );
 }
 
@@ -130,6 +145,8 @@ const KNOWN_KEYS = new Set([
 interface ReceiptDetailModalProps {
   receipt: ReceiptDetail;
   onClose: () => void;
+  /** Called after an edit / archive / restore so the library can refresh. */
+  onChanged: () => void;
 }
 
 /**
@@ -242,8 +259,31 @@ function AddToHomeSnapCard({ receipt, onDone }: { receipt: ReceiptDetail; onDone
     </div>
   );
 }
-export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps) {
+export function ReceiptDetailModal({ receipt, onClose, onChanged }: ReceiptDetailModalProps) {
   useLockScroll(true);
+
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  // Confirm-before-archive (two-step, matches GarageSnap's delete pattern).
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  // Metadata edit fields (the scanned image is immutable and never editable).
+  const [merchant, setMerchant] = useState(receipt.merchant ?? "");
+  const [total, setTotal] = useState(
+    receipt.total == null ? "" : String(receipt.total),
+  );
+  const [category, setCategory] = useState(() =>
+    displayText((receipt.extra as Record<string, unknown> | null)?.category) ?? "",
+  );
+  const [notes, setNotes] = useState(() =>
+    displayText((receipt.extra as Record<string, unknown> | null)?.notes) ?? "",
+  );
+  const [tags, setTags] = useState(() => {
+    const t = (receipt.extra as Record<string, unknown> | null)?.tags;
+    return Array.isArray(t) ? t.map((x) => String(x)).join(", ") : "";
+  });
+  const [storeDate, setStoreDate] = useState(receipt.store_date ?? "");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -262,6 +302,62 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
   const otherFields = Object.entries(extra)
     .filter(([key]) => !KNOWN_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b));
+
+  async function saveEdit() {
+    setBusy(true);
+    setError("");
+    try {
+      await updateReceipt({
+        data: {
+          id: receipt.id,
+          fields: {
+            merchant,
+            total,
+            store_date: storeDate,
+            category,
+            notes,
+            tags,
+          },
+        },
+      });
+      setEditing(false);
+      setNotice("Receipt details updated.");
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't update this receipt.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function archive() {
+    setBusy(true);
+    setError("");
+    try {
+      await archiveReceipt({ data: { id: receipt.id } });
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't archive this receipt.");
+      setBusy(false);
+    }
+  }
+
+  async function restore() {
+    setBusy(true);
+    setError("");
+    try {
+      await unarchiveReceipt({ data: { id: receipt.id } });
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't restore this receipt.");
+      setBusy(false);
+    }
+  }
+
+  const inputCls =
+    "mt-1 w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
   return (
     <div
@@ -340,6 +436,123 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
             )}
           </div>
         </div>
+
+        {error && <p role="alert" className="mt-4 text-sm text-red-400">{error}</p>}
+        <Notice>{notice}</Notice>
+
+        {/* Immutable image note */}
+        <p className="mt-4 rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3 text-xs leading-relaxed text-gray-500">
+          Your scanned receipt image is kept exactly as captured and can't be
+          edited — only its details above are editable. Archiving hides it from
+          the default list without deleting the record.
+        </p>
+
+        {editing ? (
+          <div className="mt-5 rounded-2xl border border-indigo-900/50 bg-gray-900/60 p-5">
+            <h3 className="text-sm font-semibold">Edit receipt details</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Metadata only — merchant, amount, and your own category / notes /
+              tags. The saved image stays unchanged.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-xs font-medium text-gray-400">Merchant / vendor</span>
+                <input type="text" value={merchant} onChange={(e) => setMerchant(e.target.value)} className={inputCls} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-400">Amount (total)</span>
+                <input type="number" step="0.01" value={total} onChange={(e) => setTotal(e.target.value)} className={inputCls} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-400">Date</span>
+                <input type="text" value={storeDate} onChange={(e) => setStoreDate(e.target.value)} className={inputCls} placeholder="e.g. 2026-08-01" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-400">Category</span>
+                <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls} placeholder="e.g. Appliance" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="text-xs font-medium text-gray-400">Notes</span>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputCls} placeholder="Anything worth remembering…" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="text-xs font-medium text-gray-400">Tags</span>
+                <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className={inputCls} placeholder="comma separated, e.g. warranty, kitchen" />
+              </label>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setEditing(false)}
+                className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void saveEdit()}
+                className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-45"
+              >
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 flex flex-wrap justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+            >
+              Edit details
+            </button>
+            {receipt.archived ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void restore()}
+                className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white disabled:opacity-45"
+              >
+                Restore to receipts
+              </button>
+            ) : confirmingArchive ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmingArchive(false)}
+                  className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-gray-500"
+                >
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void archive()}
+                  className="rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:opacity-45"
+                >
+                  {busy ? "Archiving…" : "Confirm archive"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingArchive(true)}
+                className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-amber-500 hover:text-amber-200"
+              >
+                Archive
+              </button>
+            )}
+          </div>
+        )}
+        {receipt.archived && !editing && (
+          <p className="mt-2 text-xs text-gray-500">
+            This receipt is archived — it's hidden from the default list but
+            kept on your account. Use "Restore to receipts" to bring it back.
+          </p>
+        )}
       </div>
     </div>
   );

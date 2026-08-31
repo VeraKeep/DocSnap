@@ -171,12 +171,19 @@ interface ReceiptSummary {
   currency: string | null;
   items: Json;
   extra: Json;
+  /** Soft-delete flag. Archived receipts leave the default list but stay owned. */
+  archived: boolean;
   created_at: string;
 }
 
 interface ReceiptDetail extends ReceiptSummary {
   image_base64: string | null;
   clerk_user_id: string | null;
+}
+
+/** Parses a boolean DB column (Postgres returns true/false). */
+function toBool(v: unknown): boolean {
+  return v === true || v === 1 || v === "true" || v === "t";
 }
 
 function toReceiptSummary(r: Record<string, unknown>): ReceiptSummary {
@@ -188,6 +195,7 @@ function toReceiptSummary(r: Record<string, unknown>): ReceiptSummary {
     currency: (r.currency as string | null) ?? null,
     items: r.items as Json,
     extra: r.extra as Json,
+    archived: toBool(r.archived),
     created_at: String(r.created_at),
   };
 }
@@ -255,10 +263,28 @@ export const listReceipts = createServerFn({ method: "GET" }).handler(async () =
   const userId = await requireServerFunctionUser();
   await requireReceiptSnapAddon(userId);
   if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
+  // Soft-delete: the DEFAULT list excludes archived receipts (archived = the
+  // "removed from view" state). Archived rows stay owned + stored and are
+  // restored by unarchiving or listing the archived view.
   const rows = (await sql`
-    SELECT id, merchant, store_date, total, currency, items, extra, created_at
+    SELECT id, merchant, store_date, total, currency, items, extra, archived, created_at
     FROM receipts
-    WHERE clerk_user_id = ${userId}
+    WHERE clerk_user_id = ${userId} AND archived = false
+    ORDER BY created_at DESC
+  `) as Record<string, unknown>[];
+  return { configured: true, receipts: rows.map(toReceiptSummary) };
+});
+
+/** Archived-only view: returns receipts hidden from the default list so they
+ *  remain searchable and restorable (soft-delete never destroys records). */
+export const listArchivedReceipts = createServerFn({ method: "GET" }).handler(async () => {
+  const userId = await requireServerFunctionUser();
+  await requireReceiptSnapAddon(userId);
+  if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
+  const rows = (await sql`
+    SELECT id, merchant, store_date, total, currency, items, extra, archived, created_at
+    FROM receipts
+    WHERE clerk_user_id = ${userId} AND archived = true
     ORDER BY created_at DESC
   `) as Record<string, unknown>[];
   return { configured: true, receipts: rows.map(toReceiptSummary) };
@@ -266,21 +292,23 @@ export const listReceipts = createServerFn({ method: "GET" }).handler(async () =
 
 export const searchReceipts = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = (data ?? {}) as { query?: unknown };
+    const d = (data ?? {}) as { query?: unknown; archived?: unknown };
     if (typeof d.query !== "string" || d.query.trim().length === 0) {
       throw new Error("Enter a search term.");
     }
-    return { query: d.query.trim().slice(0, 200) };
+    return { query: d.query.trim().slice(0, 200), archived: d.archived === true };
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
     await requireReceiptSnapAddon(userId);
     if (!process.env.DATABASE_URL) return { configured: false, receipts: [] };
     const q = `%${opts.data.query}%`;
+    // Search is scoped to the same view (active/archived) as the list.
     const rows = (await sql`
-      SELECT id, merchant, store_date, total, currency, items, extra, created_at
+      SELECT id, merchant, store_date, total, currency, items, extra, archived, created_at
       FROM receipts
       WHERE clerk_user_id = ${userId}
+        AND archived = ${opts.data.archived}
         AND (merchant ILIKE ${q} OR CAST(items AS TEXT) ILIKE ${q} OR CAST(extra AS TEXT) ILIKE ${q})
       ORDER BY created_at DESC
     `) as Record<string, unknown>[];
@@ -344,3 +372,140 @@ export const saveReceipt = createServerFn({ method: "POST" })
     `) as Record<string, unknown>[];
     return { id: Number(rows[0].id), extracted };
     });
+
+/** Coerces a user-provided tags value into a clean string array (or null). */
+function tagsOf(v: unknown): string[] | null {
+  if (v == null) return null;
+  const raw = Array.isArray(v)
+    ? v.map((x) => String(x))
+    : String(v).split(/[,;]/);
+  const cleaned = raw
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .slice(0, 50);
+  return cleaned.length ? cleaned : null;
+}
+
+/** Coerces a free-text field to a trimmed string or null. */
+function nullableText(v: unknown, max = 500): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().slice(0, max);
+  return t.length ? t : null;
+}
+
+/**
+ * Edit a receipt's METADATA only — merchant, amount (total), date, category,
+ * notes, and tags. The underlying scanned IMAGE is immutable: `image_base64`
+ * is never read, updated, or replaced by this path (there is no way to swap
+ * the image through edit). Category/notes/tags live in the `extra` JSONB so
+ * they stay honest with the record and remain searchable (search already scans
+ * extra). Owner-scoped + hard-gated like every other ReceiptSnap write. Fails
+ * closed: returns null when the receipt doesn't belong to the caller.
+ */
+export const updateReceipt = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = (data ?? {}) as { id?: unknown; fields?: unknown };
+    const id = typeof d.id === "number" ? d.id : Number(d.id);
+    if (!Number.isInteger(id) || id <= 0) throw new Error("Invalid receipt id.");
+    const f = (d.fields ?? {}) as Record<string, unknown>;
+    // Validate numeric amount if present.
+    if (f.total != null && f.total !== "" && !Number.isFinite(Number(f.total))) {
+      throw new Error("Amount must be a number.");
+    }
+    return {
+      id,
+      merchant: nullableText(f.merchant, 200),
+      store_date: nullableText(f.store_date, 100),
+      total: f.total == null || f.total === "" ? null : Number(f.total),
+      currency: nullableText(f.currency, 10) ?? "USD",
+      category: nullableText(f.category, 100),
+      notes: nullableText(f.notes, 2000),
+      tags: tagsOf(f.tags),
+    };
+  })
+  .handler(async ({ data }): Promise<{ configured: boolean; receipt: ReceiptDetail | null }> => {
+    const userId = await requireServerFunctionUser();
+    await requireReceiptSnapAddon(userId);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const f = data;
+    // Merge ONLY the editable metadata keys into `extra` (category/notes/tags).
+    // `items` and the extraction provenance keys are left untouched, and
+    // `image_base64` is never referenced — the image is immutable.
+    const extraPatch: Record<string, unknown> = {
+      category: f.category,
+      notes: f.notes,
+      tags: f.tags,
+    };
+    const rows = (await sql`
+      UPDATE receipts SET
+        merchant = ${f.merchant},
+        store_date = ${f.store_date},
+        total = ${f.total},
+        currency = ${f.currency},
+        extra = extra || ${JSON.stringify(extraPatch)}::jsonb
+      WHERE id = ${f.id} AND clerk_user_id = ${userId}
+      RETURNING id, merchant, store_date, total, currency, items, extra, archived, image_base64, clerk_user_id, created_at
+    `) as Record<string, unknown>[];
+    if (!rows[0]) return { configured: true, receipt: null };
+    return { configured: true, receipt: toReceipt(rows[0]) };
+  });
+
+/**
+ * Soft-delete / ARCHIVE a receipt: flips `archived = true`, removing it from
+ * the default list while keeping the row owned, stored, and searchable. This
+ * is NOT a hard delete — the record and image are preserved and can be restored
+ * via unarchiveReceipt. Protects the "every receipt, searchable forever"
+ * promise and guards against accidental loss.
+ */
+export const archiveReceipt = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const id = typeof (data as { id?: unknown })?.id === "number"
+      ? (data as { id: number }).id
+      : Number((data as { id?: unknown })?.id);
+    if (!Number.isInteger(id) || id <= 0) throw new Error("Invalid receipt id.");
+    return { id };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireReceiptSnapAddon(userId);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const rows = (await sql`
+      UPDATE receipts SET archived = true
+      WHERE id = ${data.id} AND clerk_user_id = ${userId}
+      RETURNING id
+    `) as Record<string, unknown>[];
+    if (!rows[0]) return { configured: true, ok: false };
+    return { configured: true, ok: true, id: Number(rows[0].id) };
+  });
+
+/**
+ * Unarchive (RESTORE) a receipt: flips `archived = false`, bringing it back to
+ * the default list. Row + image were never deleted — this simply restores the
+ * view state. Owner-scoped: another user cannot restore someone else's receipt.
+ */
+export const unarchiveReceipt = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const id = typeof (data as { id?: unknown })?.id === "number"
+      ? (data as { id: number }).id
+      : Number((data as { id?: unknown })?.id);
+    if (!Number.isInteger(id) || id <= 0) throw new Error("Invalid receipt id.");
+    return { id };
+  })
+  .handler(async ({ data }) => {
+    const userId = await requireServerFunctionUser();
+    await requireReceiptSnapAddon(userId);
+    if (!process.env.DATABASE_URL) {
+      throw new Error("Storage isn't connected yet — DATABASE_URL is not set.");
+    }
+    const rows = (await sql`
+      UPDATE receipts SET archived = false
+      WHERE id = ${data.id} AND clerk_user_id = ${userId}
+      RETURNING id
+    `) as Record<string, unknown>[];
+    if (!rows[0]) return { configured: true, ok: false };
+    return { configured: true, ok: true, id: Number(rows[0].id) };
+  });
