@@ -101,6 +101,40 @@ async function main() {
   }
   console.log("OK: setStatus(Paid) + setReminder(3) persist.");
 
+  // 5b) ARCHIVE = soft-delete via status: excluded from the DEFAULT ("All")
+  //     active view, but the row is retained and owned (no hard delete).
+  await sql`UPDATE bills SET status = ${"Archived"} WHERE id = ${billId} AND clerk_user_id = ${TEST_USER}`;
+  const activeBills = (await sql`
+    SELECT id FROM bills WHERE clerk_user_id = ${TEST_USER} AND status <> ${"Archived"}
+  `) as unknown as { id: number }[];
+  if (activeBills.some((b) => Number(b.id) === billId)) {
+    console.error("FAIL: archived bill still appears in the default (active) view.");
+    process.exit(1);
+  }
+  const archivedBillRow = (await sql`
+    SELECT id, status, clerk_user_id FROM bills WHERE id = ${billId}
+  `) as unknown as { id: number; status: string; clerk_user_id: string }[];
+  if (
+    archivedBillRow.length !== 1 ||
+    archivedBillRow[0].status !== "Archived" ||
+    archivedBillRow[0].clerk_user_id !== TEST_USER
+  ) {
+    console.error("FAIL: archived bill not retained/owned (soft-delete broken).");
+    process.exit(1);
+  }
+  console.log("OK: archive removes a bill from the default view but retains the owned row.");
+
+  // 5c) UNARCHIVE / RESTORE brings the bill back to the default view.
+  await sql`UPDATE bills SET status = ${"Upcoming"} WHERE id = ${billId} AND clerk_user_id = ${TEST_USER}`;
+  const restoredBills = (await sql`
+    SELECT id FROM bills WHERE clerk_user_id = ${TEST_USER} AND status <> ${"Archived"}
+  `) as unknown as { id: number }[];
+  if (!restoredBills.some((b) => Number(b.id) === billId)) {
+    console.error("FAIL: unarchive did not restore the bill to the default view.");
+    process.exit(1);
+  }
+  console.log("OK: unarchive restores the bill to the default view.");
+
   // 6) Owner scoping: another user cannot read/edit this bill.
   const leak = (await sql`
     SELECT id FROM bills WHERE id = ${billId} AND clerk_user_id = ${OTHER}

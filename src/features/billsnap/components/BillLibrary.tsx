@@ -356,7 +356,14 @@ export function BillLibrary() {
     return <AddonLocked />;
   }
 
-  const filtered = filter === "All" ? bills : bills.filter((b) => b.status === filter);
+  // Soft-delete: the DEFAULT "All" view excludes archived bills so an
+  // erroneous/hostile entry is removed from the default list. Archived bills
+  // stay owned + stored and are still reachable under the "Archived" tab
+  // (and restored via the detail modal's Restore action).
+  const filtered =
+    filter === "All"
+      ? bills.filter((b) => b.status !== "Archived")
+      : bills.filter((b) => b.status === filter);
   const countLabel = `${filtered.length} ${filtered.length === 1 ? "bill" : "bills"}${filter === "All" ? "" : ` (${filter})`}`;
 
   return (

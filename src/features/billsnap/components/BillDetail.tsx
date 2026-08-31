@@ -49,6 +49,8 @@ export function BillDetailModal({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  // Two-step confirm before archiving (soft-delete), matching GarageSnap.
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
   // Edit form state (strings so empty fields round-trip cleanly).
   const [vendor, setVendor] = useState(bill.vendor ?? "");
   const [category, setCategory] = useState(bill.category ?? "");
@@ -65,6 +67,7 @@ export function BillDetailModal({
 
   useEffect(() => {
     setEditing(false);
+    setConfirmingArchive(false);
     setNotice("");
     setError("");
     setVendor(bill.vendor ?? "");
@@ -379,11 +382,30 @@ export function BillDetailModal({
                   >
                     Restore
                   </button>
+                ) : confirmingArchive ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setConfirmingArchive(false)}
+                      className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-gray-500"
+                    >
+                      Keep
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void changeStatus("Archived")}
+                      className="rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:opacity-45"
+                    >
+                      {busy ? "Archiving…" : "Confirm archive"}
+                    </button>
+                  </div>
                 ) : (
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void changeStatus("Archived")}
+                    onClick={() => setConfirmingArchive(true)}
                     className="rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-amber-500 hover:text-amber-200 disabled:opacity-45"
                   >
                     Archive

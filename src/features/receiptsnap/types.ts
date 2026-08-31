@@ -25,6 +25,8 @@ export interface ReceiptSummary {
   currency: string | null;
   items: unknown;
   extra: Record<string, unknown>;
+  /** Soft-delete flag. Archived receipts leave the default list but stay owned. */
+  archived: boolean;
   created_at: string;
 }
 
