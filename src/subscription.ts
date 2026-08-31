@@ -5,6 +5,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "./db";
 import { getVerifiedUserId } from "./serverAuth";
+import { reconcilePendingEntitlements } from "./entitlements";
 
 export type Tier = "free" | "personal" | "family";
 
@@ -51,16 +52,36 @@ export async function upsertUser(clerkUserId: string, email: string): Promise<vo
       ON CONFLICT (clerk_user_id) DO UPDATE SET email = ${email}, updated_at = NOW()
     `;
   } catch (err) { console.error("[subscription] Failed to upsert user:", err); }
+
+  // The user is now identifiable by their email. Grant any Stripe purchases
+  // they made ANONYMOUSLY with this email before signing in (the "paid but not
+  // granted" bug): each pending checkout is applied now. Only ever reconciles
+  // what was actually PAID for — never invents a grant.
+  if (email) {
+    const settled = await reconcilePendingEntitlements(email, clerkUserId);
+    if (settled > 0) {
+      console.log(
+        `[subscription] Reconciled ${settled} pending entitlement(s) for ${email} onto user ${clerkUserId}`,
+      );
+    }
+  }
 }
 
-/** Set a paid subscription tier after a successful Stripe checkout. */
+/** Set a paid subscription tier after a successful Stripe checkout.
+ *  UPSERT (matches the add-on setters): a tier grant lands even if the `users`
+ *  row doesn't exist yet (e.g. granting via client_reference_id before the
+ *  first sign-in sync), rather than silently no-op'ing on a missing row. */
 export async function setSubscriptionTier(
   clerkUserId: string, tier: Exclude<Tier, "free">, stripeCustomerId: string,
 ): Promise<void> {
   try {
     await sql`
-      UPDATE users SET subscription_status = ${tier}, stripe_customer_id = ${stripeCustomerId}, updated_at = NOW()
-      WHERE clerk_user_id = ${clerkUserId}
+      INSERT INTO users (clerk_user_id, subscription_status, stripe_customer_id)
+      VALUES (${clerkUserId}, ${tier}, ${stripeCustomerId})
+      ON CONFLICT (clerk_user_id) DO UPDATE SET
+        subscription_status = ${tier},
+        stripe_customer_id = COALESCE(${stripeCustomerId}, users.stripe_customer_id),
+        updated_at = NOW()
     `;
   } catch (err) { console.error("[subscription] Failed to set subscription tier:", err); }
 }

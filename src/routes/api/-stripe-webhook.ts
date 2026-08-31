@@ -14,7 +14,6 @@
 import Stripe from "stripe";
 import { sql } from "../../db";
 import {
-  setSubscriptionTier,
   setFreeSubscription,
   findUserByEmail,
   findUserByStripeCustomerId,
@@ -25,9 +24,13 @@ import {
   setHomeSnapAddon,
   setBookSnapAddon,
   setMeetingSubscriptionTier,
-  RECEIPTSNAP_ADDON_PRODUCT_ID,
 } from "../../subscription";
-import type { Tier } from "../../subscription";
+import {
+  PRICE_ENTITLEMENTS,
+  applyEntitlementToUser,
+  enqueuePendingEntitlement,
+  reconcilePendingEntitlements,
+} from "../../entitlements";
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 
@@ -112,109 +115,86 @@ export async function POST(request: Request) {
 
 /**
  * Handle checkout.session.completed — the user paid.
- * We look up the Clerk user by email (passed in the checkout session)
- * and promote them to Pro.
+ *
+ * Identity is resolved in this priority order (most → least reliable):
+ *   1. `client_reference_id` — the Clerk user id our Buy buttons stamp onto
+ *      the payment link when the buyer is signed in. This ties the grant to
+ *      EXACTLY the Clerk user who initiated checkout, even if they pay with a
+ *      different billing email. This is the fix for the "paid-but-not-granted"
+ *      bug in its signed-in form.
+ *   2. The checkout email (legacy path) — the Clerk user whose `users` record
+ *      holds that email, if any.
+ * When neither resolves to a user (an anonymous buyer), the purchase is NOT
+ * dropped: it is recorded in the pending-entitlement queue keyed by the buying
+ * email, and granted automatically the moment that email completes sign-in
+ * (reconciled from `upsertUser`). A paying customer is therefore never
+ * silently un-granted.
  */
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
 ): Promise<void> {
-  const customerEmail = session.customer_details?.email;
+  const customerEmail = session.customer_details?.email ?? null;
   const stripeCustomerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id;
+  const checkoutSessionId = session.id ?? null;
 
-  if (!customerEmail) {
-    console.warn("[stripe-webhook] No customer email in checkout session");
-    return;
-  }
-
-  const clerkUserId = await findUserByEmail(customerEmail);
-  if (!clerkUserId) {
-    console.warn(
-      `[stripe-webhook] No Clerk user found for email: ${customerEmail}. ` +
-        `User may not have signed in yet — the webhook will retry.`,
-    );
-    return;
-  }
-
-  // Payment links may provide price_id in metadata; otherwise retrieve line items.
+  // Payment links may provide price_id in metadata; otherwise read the first
+  // line item from the session object (no Stripe API call needed).
   const priceId = session.metadata?.price_id ?? await getCheckoutPriceId(session);
 
-  // Keep the legacy env-based ReceiptSnap add-on product fallback working: if
-  // the checkout was for that product, grant the add-on and stop (don't touch
-  // any DocSnap tier). When unset, this gracefully no-ops so normal checkouts
-  // keep flowing through the entitlement map below.
-  if (priceId && RECEIPTSNAP_ADDON_PRODUCT_ID && priceId === RECEIPTSNAP_ADDON_PRODUCT_ID) {
-    await setReceiptSnapAddon(clerkUserId, true);
-    console.log(`[stripe-webhook] Granted ReceiptSnap add-on for user ${clerkUserId}`);
+  // ── 1. Resolve the Clerk user, preferring the explicit client_reference_id ──
+  let clerkUserId: string | null = null;
+  const clientRef = session.client_reference_id;
+  if (clientRef && /^user_/.test(clientRef)) {
+    // Our Buy buttons stamp this when the buyer is signed in. A light format
+    // check (`user_…`, Clerk's id shape) keeps scripted junk from creating
+    // orphan rows, while still granting on real, paid checkouts.
+    clerkUserId = clientRef;
+  } else if (customerEmail) {
+    clerkUserId = await findUserByEmail(customerEmail);
+  }
+
+  // ── 2. Known user → grant immediately + settle any older anonymous buys ──
+  if (clerkUserId) {
+    const status = await applyEntitlementToUser(clerkUserId, priceId, stripeCustomerId ?? "");
+    if (status === "unknown") {
+      // FAIL CLOSED: unknown / unlisted price grants nothing, just logs.
+      console.warn(
+        `[stripe-webhook] Unknown price ${priceId ?? "(none)"} — no entitlement granted (user ${clerkUserId})`,
+      );
+    }
+
+    // Also grant any earlier ANONYMOUS purchases made with this same email
+    // (e.g. they paid for a module, then signed in and bought more).
+    if (customerEmail) {
+      const settled = await reconcilePendingEntitlements(customerEmail, clerkUserId);
+      if (settled > 0) {
+        console.log(
+          `[stripe-webhook] Reconciled ${settled} pending purchase(s) for email ${customerEmail} onto user ${clerkUserId}`,
+        );
+      }
+    }
     return;
   }
 
-  // Route the checkout price to exactly the entitlement it purchased.
-  const entitlement = priceId ? PRICE_ENTITLEMENTS[priceId] : undefined;
-  if (!entitlement) {
-    // FAIL CLOSED: unknown / unlisted price grants nothing, just logs.
+  // ── 3. Can't identify the user yet — hold the purchase, don't drop it ──
+  if (customerEmail) {
+    await enqueuePendingEntitlement({
+      email: customerEmail,
+      priceId,
+      stripeCustomerId: stripeCustomerId ?? "",
+      checkoutSessionId: checkoutSessionId ?? undefined,
+    });
     console.warn(
-      `[stripe-webhook] Unknown price ${priceId ?? "(none)"} — no entitlement granted (user ${clerkUserId})`,
+      `[stripe-webhook] No Clerk user for email ${customerEmail} — recorded a pending entitlement (` +
+        `${priceId ?? "unknown price"}). It will be granted automatically when a user signs in with this email.`,
     );
     return;
   }
 
-  switch (entitlement.kind) {
-    case "docsnap": {
-      const tier = priceTier(priceId);
-      await setSubscriptionTier(clerkUserId, tier, stripeCustomerId ?? "");
-      console.log(`[stripe-webhook] Set DocSnap ${tier} for user ${clerkUserId}`);
-      break;
-    }
-    case "receiptsnap":
-      await setReceiptSnapAddon(clerkUserId, true);
-      console.log(`[stripe-webhook] Granted ReceiptSnap add-on for user ${clerkUserId}`);
-      break;
-    case "garagesnap":
-      await setGarageSnapAddon(clerkUserId, true);
-      console.log(`[stripe-webhook] Granted GarageSnap add-on for user ${clerkUserId}`);
-      break;
-    case "billsnap":
-      await setBillSnapAddon(clerkUserId, true);
-      console.log(`[stripe-webhook] Granted BillSnap add-on for user ${clerkUserId}`);
-      break;
-    case "contractsnap":
-      await setContractSnapAddon(clerkUserId, true);
-      console.log(`[stripe-webhook] Granted ContractSnap add-on for user ${clerkUserId}`);
-      break;
-    case "homesnap":
-      await setHomeSnapAddon(clerkUserId, true);
-      console.log(`[stripe-webhook] Granted HomeSnap add-on for user ${clerkUserId}`);
-      break;
-    case "booksnap":
-      await setBookSnapAddon(clerkUserId, true);
-      console.log(`[stripe-webhook] Granted BookSnap add-on for user ${clerkUserId}`);
-      break;
-    case "meetingsnap":
-      await setMeetingSubscriptionTier(clerkUserId, entitlement.meetingTier ?? "free");
-      console.log(
-        `[stripe-webhook] Set MeetingSnap ${entitlement.meetingTier ?? "free"} for user ${clerkUserId}`,
-      );
-      break;
-    case "allaccess": {
-      // VeraKeep All Access — one checkout grants the DocSnap tier (Personal or
-      // Family) plus the FULL seven-module suite: ReceiptSnap + GarageSnap +
-      // MeetingSnap Personal + HomeSnap + ContractSnap + BillSnap + BookSnap.
-      const tier = entitlement.bundleTier ?? "personal";
-      await setSubscriptionTier(clerkUserId, tier, stripeCustomerId ?? "");
-      await setReceiptSnapAddon(clerkUserId, true);
-      await setGarageSnapAddon(clerkUserId, true);
-      await setMeetingSubscriptionTier(clerkUserId, "personal");
-      await setHomeSnapAddon(clerkUserId, true);
-      await setContractSnapAddon(clerkUserId, true);
-      await setBillSnapAddon(clerkUserId, true);
-      await setBookSnapAddon(clerkUserId, true);
-      console.log(
-        `[stripe-webhook] Granted VeraKeep All Access (${tier}) to user ${clerkUserId}: DocSnap ${tier} + all seven modules (ReceiptSnap, GarageSnap, MeetingSnap Personal, HomeSnap, ContractSnap, BillSnap, BookSnap)`,
-      );
-      break;
-    }
-  }
+  console.warn(
+    "[stripe-webhook] Checkout with no identifiable buyer (no client_reference_id and no email) — nothing to grant or queue",
+  );
 }
 
 /**
@@ -246,101 +226,6 @@ async function handleSubscriptionDeleted(
   // module add-on flag, or the MeetingSnap tier).
   await revokeSubscriptionEntitlement(clerkUserId, subscription);
 }
-
-/** The paid tiers a checkout price can grant: Personal or Family. */
-type PaidTier = Exclude<Tier, "free">;
-const PRICE_TIERS: Record<string, PaidTier> = {
-  "price_1U2SjQDjQBNY25JvY49czw5w": "personal",
-  "price_1U2SjQDjQBNY25JvHW3Jgxoi": "family", // legacy Household → Family
-  "price_1U2SjQDjQBNY25JvnOS572z2": "family", // legacy Complete → Family
-  "price_1TzAj6DjQBNY25Jv2G11crty": "personal",
-  "price_1TzAj7DjQBNY25JvJ6F1YHOE": "personal",
-  // ── NEW DocSnap prices (owner-provided Stripe price IDs) ──
-  "price_1U6kboQf4SDuORrEFu9UcESF": "personal", // Personal monthly
-  "price_1U6kdfQf4SDuORrEffdSCmFz": "personal", // Personal annual
-  "price_1U6kcWQf4SDuORrEuBANqNn2": "family", // Family monthly
-  "price_1U6keEQf4SDuORrE2lDWZkw5": "family", // Family annual
-  // ── NEW DocSnap prices (2026 price change) ──
-  "price_1UA7frQf4SDuORrEX5BWEcJT": "personal", // Personal monthly
-  "price_1UA7d0Qf4SDuORrERGvVGUVk": "family", // Family monthly
-  "price_1UA7dRQf4SDuORrEwhEVzZEC": "family", // Family yearly
-};
-
-function priceTier(priceId: string | undefined): PaidTier {
-  return (priceId && PRICE_TIERS[priceId]) || "personal";
-}
-
-/**
- * Entitlement routing — the single source of truth for what a checkout price
- * grants. Each price maps to an entitlement `kind` (and, where relevant, a
- * tier). Everything here is ADDITIVE: unknown prices route to no entitlement
- * (see handleCheckoutCompleted) and are logged — they grant nothing.
- */
-type EntitlementKind = "docsnap" | "receiptsnap" | "garagesnap" | "billsnap" | "contractsnap" | "homesnap" | "meetingsnap" | "booksnap" | "allaccess";
-interface PriceEntitlement {
-  kind: EntitlementKind;
-  /** MeetingSnap tier when kind === 'meetingsnap' (else unused). */
-  meetingTier?: string;
-  /** DocSnap tier granted by the VeraKeep All Access bundle when
-   *  kind === 'allaccess' (else unused). */
-  bundleTier?: PaidTier;
-}
-/** Every known module + DocSnap price → its entitlement. DocSnap tiers are
- *  resolved via priceTier() (PRICE_TIERS above, incl. legacy folds); the
- *  entry here only marks the price as a DocSnap checkout. */
-const PRICE_ENTITLEMENTS: Record<string, PriceEntitlement> = {
-  // DocSnap — Personal / Family (incl. legacy Household/Complete folds)
-  "price_1U2SjQDjQBNY25JvY49czw5w": { kind: "docsnap" },
-  "price_1U2SjQDjQBNY25JvHW3Jgxoi": { kind: "docsnap" },
-  "price_1U2SjQDjQBNY25JvnOS572z2": { kind: "docsnap" },
-  "price_1TzAj6DjQBNY25Jv2G11crty": { kind: "docsnap" },
-  "price_1TzAj7DjQBNY25JvJ6F1YHOE": { kind: "docsnap" },
-  "price_1U6kboQf4SDuORrEFu9UcESF": { kind: "docsnap" }, // Personal monthly
-  "price_1U6kdfQf4SDuORrEffdSCmFz": { kind: "docsnap" }, // Personal annual
-  "price_1U6kcWQf4SDuORrEuBANqNn2": { kind: "docsnap" }, // Family monthly
-  "price_1U6keEQf4SDuORrE2lDWZkw5": { kind: "docsnap" }, // Family annual
-  // ── NEW DocSnap prices (2026 price change) ──
-  "price_1UA7frQf4SDuORrEX5BWEcJT": { kind: "docsnap" }, // Personal monthly
-  "price_1UA7d0Qf4SDuORrERGvVGUVk": { kind: "docsnap" }, // Family monthly
-  "price_1UA7dRQf4SDuORrEwhEVzZEC": { kind: "docsnap" }, // Family yearly
-  // ContractSnap add-on ($4.99/mo, $49.99/yr)
-  "price_1U6q0FQf4SDuORrEWBlPdxe5": { kind: "contractsnap" }, // monthly
-  "price_1U6q17Qf4SDuORrEix17ztf7": { kind: "contractsnap" }, // annual
-  // ReceiptSnap add-on
-  "price_1U6kfsQf4SDuORrEjRw4yNQN": { kind: "receiptsnap" }, // monthly
-  "price_1U6khZQf4SDuORrE0ULOHWTT": { kind: "receiptsnap" }, // annual
-  // GarageSnap add-on
-  "price_1U6kjFQf4SDuORrEVVcQ82hO": { kind: "garagesnap" }, // monthly
-  "price_1U6kjaQf4SDuORrEfYIEGIX1": { kind: "garagesnap" }, // annual
-  // BillSnap add-on
-  "price_1U6prlQf4SDuORrEAHPWd5hH": { kind: "billsnap" }, // monthly
-  "price_1U6ps8Qf4SDuORrEE4T4xr2d": { kind: "billsnap" }, // annual
-  // HomeSnap add-on
-  "price_1U6px3Qf4SDuORrE0QdJIo1Y": { kind: "homesnap" }, // monthly
-  "price_1U6pxfQf4SDuORrElHyfBaae": { kind: "homesnap" }, // annual
-  // BookSnap add-on ($3.99/mo, $39.99/yr)
-  "price_1U8ZUwQf4SDuORrEWXCzi5uY": { kind: "booksnap" }, // monthly $3.99
-  "price_1U8ZVFQf4SDuORrEJQrl6TMt": { kind: "booksnap" }, // yearly $39.99
-  // MeetingSnap (independent 4-tier model)
-  "price_1U6km5Qf4SDuORrEPTtvKzCe": { kind: "meetingsnap", meetingTier: "personal" }, // Personal monthly
-  "price_1U6kmXQf4SDuORrE1pfncl4K": { kind: "meetingsnap", meetingTier: "personal" }, // Personal annual
-  "price_1U6kntQf4SDuORrEtqIA2PCv": { kind: "meetingsnap", meetingTier: "pro" }, // Pro monthly
-  "price_1U6koLQf4SDuORrE62WRLvIw": { kind: "meetingsnap", meetingTier: "pro" }, // Pro annual
-  "price_1U6kkQf4SDuORrE1LiJ4Ytx": { kind: "meetingsnap", meetingTier: "free" }, // Free — harmless no-op
-  // VeraKeep All Access bundle — grants DocSnap (Personal/Family) + all seven
-  // module add-ons (ReceiptSnap + GarageSnap + MeetingSnap Personal + HomeSnap
-  // + ContractSnap + BillSnap + BookSnap) in one checkout.
-  // Pre-price-change ("old") IDs, kept for existing subscribers.
-  "price_1U6kqkQf4SDuORrEoLEI1tPk": { kind: "allaccess", bundleTier: "personal" }, // Individual monthly ($11.99)
-  "price_1U6kufQf4SDuORrEWjOSH4cY": { kind: "allaccess", bundleTier: "personal" }, // Individual annual ($119.99)
-  "price_1U6kw9Qf4SDuORrEjfbf8nV5": { kind: "allaccess", bundleTier: "family" }, // Family monthly ($17.99)
-  "price_1U6kxKQf4SDuORrEhoVI8wqF": { kind: "allaccess", bundleTier: "family" }, // Family annual ($179.99)
-  // ── NEW All Access prices (2026 price change) ──
-  "price_1UA7bCQf4SDuORrEsqdCo2XT": { kind: "allaccess", bundleTier: "personal" }, // Individual monthly ($19.99)
-  "price_1UA7byQf4SDuORrEDbEQ9chv": { kind: "allaccess", bundleTier: "personal" }, // Individual yearly ($199.99)
-  "price_1UA7evQf4SDuORrEWSQToZT0": { kind: "allaccess", bundleTier: "family" }, // Family monthly ($24.99)
-  "price_1UA7fQQf4SDuORrEM1qRWnbE": { kind: "allaccess", bundleTier: "family" }, // Family yearly ($249.99)
-};
 
 /** Read the first line item's price id off a Subscription object (or its
  *  default_price) for demotion routing. Returns undefined if absent. */

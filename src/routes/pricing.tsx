@@ -5,6 +5,7 @@ import { CHECKOUT_URLS } from "../checkout";
 import { MODULES } from "../modules";
 import { MeetingSnapTiers } from "../components/MeetingSnapTiers";
 import { ALL_ACCESS_CHECKOUT_URLS } from "../allAccessCheckout";
+import { CheckoutLink } from "../components/CheckoutLink";
 
 type BillingCadence = "monthly" | "annual";
 
@@ -157,17 +158,12 @@ function PricingPage() {
                 Current Plan
               </span>
             ) : (
-              <a
+              <CheckoutLink
                 href={plan.checkout?.[billing] || "#"}
-                onClick={(e) => {
-                  if (!plan.checkout?.[billing]) {
-                    e.preventDefault();
-                  }
-                }}
                 className="mt-5 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
               >
                 Subscribe
-              </a>
+              </CheckoutLink>
             )}
 
             {index === 1 &&
@@ -231,14 +227,14 @@ function PricingPage() {
                 </span>
               </div>
 
-              <a
+              <CheckoutLink
                 href={ALL_ACCESS_CHECKOUT_URLS[
                   billing === "monthly" ? "BUNDLE_INDIVIDUAL_MONTHLY" : "BUNDLE_INDIVIDUAL_ANNUAL"
                 ]}
                 className="mt-6 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
               >
                 Get All Access
-              </a>
+              </CheckoutLink>
 
               <ul className="mt-7 space-y-3">
                 {[
@@ -277,14 +273,14 @@ function PricingPage() {
                 </span>
               </div>
 
-              <a
+              <CheckoutLink
                 href={ALL_ACCESS_CHECKOUT_URLS[
                   billing === "monthly" ? "BUNDLE_FAMILY_MONTHLY" : "BUNDLE_FAMILY_ANNUAL"
                 ]}
                 className="mt-6 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
               >
                 Get All Access Family
-              </a>
+              </CheckoutLink>
 
               <ul className="mt-7 space-y-3">
                 {[
@@ -352,12 +348,12 @@ function PricingPage() {
                     </span>
                   ) : m.checkout[billing] ? (
                     <>
-                      <a
+                      <CheckoutLink
                         href={m.checkout[billing]}
                         className="inline-flex justify-center rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
                       >
                         Buy
-                      </a>
+                      </CheckoutLink>
                       <Link
                         to={m.route}
                         className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"

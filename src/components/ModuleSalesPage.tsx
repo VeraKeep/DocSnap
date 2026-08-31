@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { CheckoutLink } from "./CheckoutLink";
 
 /**
  * Shared sales/landing page layout for the VeraKeep™ add-on modules that live
@@ -112,12 +113,12 @@ export function ModuleSalesPage(config: ModuleSalesConfig) {
             {config.subhead}
           </p>
           <div className="mt-8">
-            <a
+            <CheckoutLink
               href={config.primaryHref}
               className="inline-flex justify-center rounded-full bg-indigo-600 px-8 py-3.5 text-base font-semibold text-white transition hover:bg-indigo-500"
             >
               {config.ctaPrimary} — {config.ctaPrimaryPrice}
-            </a>
+            </CheckoutLink>
             <p className="mt-3 text-sm text-gray-400">{config.ctaSecondary}</p>
           </div>
           <p className="mt-5 text-xs text-gray-600">
@@ -176,12 +177,12 @@ export function ModuleSalesPage(config: ModuleSalesConfig) {
               </p>
               <p className="mt-3 text-sm text-gray-400">{config.monthlyBlurb}</p>
               <p className="mt-1 text-sm text-gray-300">{config.cardLine}</p>
-              <a
+              <CheckoutLink
                 href={config.primaryHref}
                 className="mt-6 inline-flex justify-center rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
               >
                 {config.primaryButton}
-              </a>
+              </CheckoutLink>
             </div>
             <div className="flex flex-col rounded-2xl border border-indigo-700/60 bg-indigo-950/30 p-6 sm:p-8">
               <div className="flex items-center justify-between">
@@ -199,12 +200,12 @@ export function ModuleSalesPage(config: ModuleSalesConfig) {
               <p className="mt-2 text-xs text-gray-500">{config.yearlyApx}</p>
               <p className="mt-2 text-sm text-gray-400">{config.yearlyBlurb}</p>
               <p className="mt-1 text-sm text-gray-300">{config.cardLine}, two months free</p>
-              <a
+              <CheckoutLink
                 href={config.yearlyHref}
                 className="mt-6 inline-flex justify-center rounded-full border border-indigo-500 px-6 py-3 text-sm font-semibold text-indigo-200 transition hover:bg-indigo-600/20"
               >
                 {config.yearlyButton}
-              </a>
+              </CheckoutLink>
             </div>
           </div>
           <p className="mx-auto mt-6 max-w-xl text-center text-sm text-gray-400">
@@ -221,12 +222,12 @@ export function ModuleSalesPage(config: ModuleSalesConfig) {
       {/* Final CTA + microcopy */}
       <section className="px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
-          <a
+          <CheckoutLink
             href={config.primaryHref}
             className="inline-flex justify-center rounded-full bg-indigo-600 px-8 py-3.5 text-base font-semibold text-white transition hover:bg-indigo-500"
           >
             {config.primaryButton}
-          </a>
+          </CheckoutLink>
           <p className="mt-3 text-sm text-gray-400">Yearly option — {config.yearlyPrice}/year</p>
           <div className="mx-auto mt-8 max-w-xl rounded-xl border border-gray-800 bg-gray-900/50 p-5 text-left">
             <p className="text-sm leading-relaxed text-gray-300">

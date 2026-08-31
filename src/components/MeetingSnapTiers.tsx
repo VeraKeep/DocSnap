@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { MODULE_CHECKOUT_URLS } from "../moduleCheckout";
+import { CheckoutLink } from "./CheckoutLink";
 
 type BillingCadence = "monthly" | "annual";
 
@@ -119,12 +120,12 @@ export function MeetingSnapTiers({ billing }: { billing?: BillingCadence }) {
                   Coming soon
                 </span>
               ) : tier.href ? (
-                <a
+                <CheckoutLink
                   href={tier.href[cadence]}
                   className="inline-flex w-full justify-center rounded-full bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500"
                 >
                   Add MeetingSnap · {tier.price[cadence]}
-                </a>
+                </CheckoutLink>
               ) : (
                 <Link
                   to="/meetingsnap"
