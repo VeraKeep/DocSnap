@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { canonicalUrl } from "../siteConfig";
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -6,7 +7,7 @@ const structuredData = {
   name: "DocSnap © 2026",
   description:
     "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser using your camera. No account, no uploads. Part of the VeraKeep™ suite.",
-  url: "https://docsnapapp.com/scan",
+  url: canonicalUrl("/scan"),
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
   offers: {
@@ -48,7 +49,7 @@ export const Route = createFileRoute("/scan")({
       },
       {
         property: "og:url",
-        content: "https://docsnapapp.com/scan",
+        content: canonicalUrl("/scan"),
       },
       {
         name: "twitter:card",
@@ -65,7 +66,7 @@ export const Route = createFileRoute("/scan")({
       },
     ],
     links: [
-      { rel: "canonical", href: "https://docsnapapp.com/scan" },
+      { rel: "canonical", href: canonicalUrl("/scan") },
     ],
     scripts: [
       {

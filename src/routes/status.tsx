@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/status")({
@@ -6,7 +7,7 @@ export const Route = createFileRoute("/status")({
       { title: "System status — DocSnap © 2026" },
       { name: "description", content: "Current status of DocSnap © 2026 services — app, cloud storage, authentication, payments, and OCR." },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/status" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/status") }],
   }),
   component: Status,
 });

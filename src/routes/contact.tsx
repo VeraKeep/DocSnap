@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/contact")({
@@ -6,7 +7,7 @@ export const Route = createFileRoute("/contact")({
       { title: 'Contact — DocSnap © 2026' },
       { name: "description", content: 'Have questions or feedback about DocSnap © 2026 — one place for the important stuff you own and the documents that go with it? Reach out via email or GitHub.' },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/contact" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/contact") }],
   }) ,
   component: Contact,
 });

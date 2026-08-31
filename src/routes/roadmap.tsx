@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/roadmap")({
@@ -6,7 +7,7 @@ export const Route = createFileRoute("/roadmap")({
       { title: "Roadmap — DocSnap © 2026" },
       { name: "description", content: "See what's coming to DocSnap © 2026 — what we're working on now, what's planned next, future ideas, and everything we've already shipped." },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/roadmap" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/roadmap") }],
   }),
   component: Roadmap,
 });

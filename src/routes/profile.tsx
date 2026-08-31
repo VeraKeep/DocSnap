@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useClerk, useUser } from "@clerk/tanstack-start";
 import { useCloudSync } from "../hooks/useCloudSync";
@@ -16,7 +17,7 @@ export const Route = createFileRoute("/profile")({
       { title: 'Your Profile — DocSnap © 2026' },
       { name: "description", content: 'Manage your DocSnap © 2026 account — view storage usage, subscription plan, synced documents, and secure account settings.' },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/profile" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/profile") }],
   }) ,
   component: ProfilePage,
 });

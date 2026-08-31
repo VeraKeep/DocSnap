@@ -11,6 +11,7 @@ import { RouteErrorBoundary } from "~/components/RouteErrorBoundary";
 import { PwaRuntime } from "~/components/PwaRuntime";
 import { installGlobalErrorHandlers } from "~/lib/errorLogger";
 import appCss from "~/styles/app.css?url";
+import { assetUrl } from "~/siteConfig";
 
 // import.meta.env (not process.env): Vite replaces the whole `process.env`
 // object with {} in the client bundle, so a process.env read here would never
@@ -41,7 +42,7 @@ export const Route = createRootRoute({
       },
       {
         property: "og:image",
-        content: "https://docsnapapp.com/icon-512.png",
+        content: assetUrl("/icon-512.png"),
       },
       {
         property: "og:type",
@@ -62,7 +63,7 @@ export const Route = createRootRoute({
       },
       {
         name: "twitter:image",
-        content: "https://docsnapapp.com/icon-512.png",
+        content: assetUrl("/icon-512.png"),
       },
     ],
     links: [
