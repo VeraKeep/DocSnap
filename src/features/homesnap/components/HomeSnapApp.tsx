@@ -1317,7 +1317,7 @@ function ObjectDetail({
       <MaintenanceSection
         configured={configured}
         objectId={object.id}
-        onChanged={onMaintenanceChanged}
+        onChanged={onMaintenanceChanged as () => void}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   createAnnotation,
   deleteAnnotation,
@@ -267,7 +267,7 @@ export function BookReader({
       (a) => a.pageId === activePage?.id && a.paragraphIndex === paraIndex,
     );
     if (!pageAnns.length) return <>{text}</>;
-    let pieces: (string | JSX.Element)[] = [text];
+    let pieces: (string | ReactElement)[] = [text];
     for (const ann of pageAnns) {
       const escaped = (ann.quote || "")
         .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")

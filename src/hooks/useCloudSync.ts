@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DuplicateDocument } from "../duplicateDetector";
 
 function withDuplicateCounts(docs: CloudDocument[]): CloudDocument[] {
   const counts = new Map<string, number>();
@@ -40,7 +39,7 @@ export function useCloudSync() {
       return;
     }
     setLoadingDocs(true);
-    listDocuments(user.id)
+    listDocuments(user.id as any)
       .then((docs) => setMyScans(withDuplicateCounts(docs)))
       .catch(() => setMyScans([]))
       .finally(() => setLoadingDocs(false));
@@ -71,9 +70,9 @@ export function useCloudSync() {
           autoCategory: autoCategory || "",
           ocrText: ocrText || "",
           contentHash: contentHash || "",
-        });
+        } as any);
 
-        const updatedDocs = await listDocuments(user.id);
+        const updatedDocs = await listDocuments(user.id as any);
         setMyScans(withDuplicateCounts(updatedDocs));
         setSaveSuccess(true);
         return true;
@@ -92,7 +91,7 @@ export function useCloudSync() {
     if (!user?.id) return;
     setLoadingDocs(true);
     try {
-      const docs = await listDocuments(user.id);
+      const docs = await listDocuments(user.id as any);
       setMyScans(withDuplicateCounts(docs));
     } catch {
       setMyScans([]);
@@ -107,7 +106,7 @@ export function useCloudSync() {
       if (!user?.id) return;
       setDeletingDocId(docId);
       try {
-        await deleteDocument({ userId: user.id, docId });
+        await deleteDocument({ userId: user.id, docId } as any);
         setMyScans((prev) => prev.filter((d) => d.id !== docId));
       } catch (err) {
         console.error("Delete failed:", err);
@@ -133,7 +132,7 @@ export function useCloudSync() {
           userId: user.id,
           docId,
           userCategory: category,
-        });
+        } as any);
       } catch (err) {
         console.error("Category update failed:", err);
         // Reload on failure to revert optimistic update

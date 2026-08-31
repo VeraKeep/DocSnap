@@ -256,7 +256,7 @@ export function HomeSnapDemo({ onExit }: { onExit?: () => void }) {
       <div className="flex items-center justify-center gap-4 text-xs text-gray-600">
         <Link to="/" className="transition hover:text-gray-400">← Back to DocSnap</Link>
         <span>·</span>
-        <Link to="/homesnap" search={{}} className="transition hover:text-gray-400">Back to HomeSnap</Link>
+        <Link to="/homesnap" search={{} as never} className="transition hover:text-gray-400">Back to HomeSnap</Link>
         <span>·</span>
         <Link to="/homesnap-sales" className="transition hover:text-gray-400">Learn more</Link>
       </div>

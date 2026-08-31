@@ -32,7 +32,6 @@ import {
   asDocumentType,
   asEventType,
   asIntervalUnit,
-  asInventoryCategory,
   asObjectType,
   asPropertyType,
   asShareRole,

@@ -59,9 +59,6 @@ const inputCls =
 const labelCls = "mb-1 block text-xs font-medium text-gray-400";
 const btnPrimary =
   "rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45";
-const btnGhost =
-  "rounded-full border border-gray-700 px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-45";
-
 const CATEGORY_BADGE: Record<GarageCategory, string> = {
   power_tool: "bg-indigo-900/40 text-indigo-300",
   hand_tool: "bg-sky-900/40 text-sky-300",

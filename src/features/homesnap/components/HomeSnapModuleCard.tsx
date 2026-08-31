@@ -78,7 +78,7 @@ export function HomeSnapModuleCard({ compact = false }: { compact?: boolean }) {
         </a>
         <Link
           to="/homesnap"
-          search={{}}
+          search={{} as never}
           className="inline-flex justify-center rounded-full border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-gray-500 hover:text-white"
         >
           Open HomeSnap

@@ -176,8 +176,8 @@ function normRisk(raw: Record<string, unknown>): MeetingRisk {
   const speaker_confidence = clampConfidence(raw.speaker_confidence);
   return {
     description: asString(raw.description) ?? "Untitled risk",
-    likelihood: asPriority(raw.likelihood),
-    impact: asPriority(raw.impact),
+    likelihood: asPriority(raw.likelihood) as "high" | "low" | "medium" | null,
+    impact: asPriority(raw.impact) as "high" | "low" | "medium" | null,
     mitigation: asString(raw.mitigation),
     owner: asString(raw.owner),
     confidence: clampConfidence(raw.confidence),
@@ -387,8 +387,6 @@ async function analyzeAndPersist(input: {
     );
   }
   if (isMeetingLimitReached(usage)) {
-    const remaining =
-      usage.allowed === Infinity ? "unlimited" : String(usage.allowed - usage.usedThisMonth);
     throw new Error(
       `You've used all ${usage.allowed} meetings this month on the ${tierConfig.label} plan. Upgrade for more — or wait until next month.`,
     );

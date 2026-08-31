@@ -96,7 +96,7 @@ async function verifyClerkSessionToken(token: string, publishableKey: string): P
   if (payload.iss && payload.iss !== frontendApiUrl) throw new Error("Issuer mismatch");
 
   const jwks = await fetchJwks(frontendApiUrl);
-  const key = jwks.keys.find((k) => k.kid === header.kid);
+  const key = jwks?.keys.find((k) => k.kid === header.kid);
   if (!key) throw new Error("Unknown key id");
 
   const publicKey = await crypto.subtle.importKey(
@@ -109,7 +109,7 @@ async function verifyClerkSessionToken(token: string, publishableKey: string): P
   const valid = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     publicKey,
-    b64urlToBytes(signatureB64),
+    b64urlToBytes(signatureB64) as BufferSource,
     new TextEncoder().encode(`${headerB64}.${payloadB64}`),
   );
   if (!valid) throw new Error("Bad signature");

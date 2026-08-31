@@ -139,7 +139,7 @@ function parseJsonBody(body: Record<string, unknown>): {
     from: get("from", "From", "sender", "Sender"),
     subject: get("subject", "Subject"),
     text: get("text", "Text", "TextBody", "textBody", "plain", "PlainBody"),
-    attachments: attachments.map(normalizeJsonAttachment),
+    attachments: attachments.map(normalizeJsonAttachment).filter((a): a is NonNullable<typeof a> => a != null),
   };
 }
 
@@ -293,7 +293,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const attachment = pickAttachment(attachments);
+  const attachment = pickAttachment(attachments as { filename?: string; mimeType?: string; base64?: string }[]);
   if (attachment?.base64) attachment.base64 = cleanBase64(attachment.base64);
 
   const input: EmailIngestInput = {

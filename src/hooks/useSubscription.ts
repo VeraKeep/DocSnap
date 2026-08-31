@@ -90,9 +90,9 @@ export function useSubscription(): SubscriptionState {
         // Sync the user record (creates or updates email) so the webhook
         // can later look up the user by their checkout email.
         if (email) {
-          await syncUser({ clerkUserId: clerkUserId!, email });
+          await syncUser({ clerkUserId: clerkUserId!, email } as any);
         }
-        const info = await getSubscription(clerkUserId!);
+        const info = await getSubscription(clerkUserId! as any);
         if (!cancelled) {
           setDbStatus(info);
           setLoading(false);

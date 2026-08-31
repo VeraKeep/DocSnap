@@ -97,17 +97,6 @@ const FOLDER_CONFIGS: Record<DocCategory, FolderConfig> = {
 
 // ── Category badge component ────────────────────────────────────────
 
-function CategoryBadge({ category }: { category: DocCategory }) {
-  const cfg = FOLDER_CONFIGS[category];
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${cfg.badgeColor}`}
-    >
-      <span className="text-[11px] leading-none">{cfg.emoji}</span>
-      {cfg.label}
-    </span>
-  );
-}
 
 // ── Category picker dropdown ────────────────────────────────────────
 

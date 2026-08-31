@@ -9,8 +9,8 @@ import {
   expandTerms,
   scoreCorpus,
   searchTerms,
-  type ContractExtraction,
 } from "../src/features/contractsnap/server";
+import type { ContractExtraction } from "../src/features/contractsnap/types";
 
 // Compact stand-in for a ContractRow, just the fields buildSearchCorpus reads.
 type Row = Record<string, unknown>;

@@ -23,7 +23,7 @@ interface ModuleBase {
 interface LiveModule extends ModuleBase {
   comingSoon?: false;
   /** App route the module lives at. */
-  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap" | "/books";
+  route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap" | "/contracts" | "/books";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;

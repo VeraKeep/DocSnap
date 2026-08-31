@@ -30,6 +30,7 @@
  * in the browser. No extracted text is redistributed.
  */
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { OCRWord } from "~/ocr";
 
 /** One extracted page. `text` preserves paragraph boundaries (\n\n separators). */
 export interface ExtractedBookPage {
@@ -211,7 +212,10 @@ function wordsToParagraphs(words: { text: string; bbox: { y0: number } }[]): str
 
 /** Best-effort OCR fallback. Returns null if OCR isn't available. */
 async function ocrFallback(doc: PDFDocumentProxy): Promise<ExtractedBookPage[] | null> {
-  const { recognizePage } = await import("~/ocr").catch(() => null);
+  const ocrMod = (await import("~/ocr").catch(() => null)) as
+    | { recognizePage?: (imageUrl: string) => Promise<OCRWord[]> }
+    | null;
+  const recognizePage = ocrMod?.recognizePage;
   if (!recognizePage) return null;
   const pages: ExtractedBookPage[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
