@@ -109,7 +109,7 @@ export function ContractLibrary() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [searchScored, setSearchScored] = useState(false);
+  const [_searchScored, setSearchScored] = useState(false);
   const [notice, setNotice] = useState("");
   const [entitled, setEntitled] = useState<boolean | null>(null);
   const [selected, setSelected] = useState<ContractDetail | null>(null);
@@ -489,8 +489,8 @@ export function ContractLibrary() {
                       </span>
                     )}
                   </span>
-                  {"matchReason" in c && c.matchReason && query.trim() && (
-                    <span className="mt-1 block text-[11px] text-indigo-400/80">{c.matchReason}</span>
+                  {"matchReason" in c && Boolean(c.matchReason) && query.trim() && (
+                    <span className="mt-1 block text-[11px] text-indigo-400/80">{String(c.matchReason ?? "")}</span>
                   )}
                 </span>
                 <span className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-400">

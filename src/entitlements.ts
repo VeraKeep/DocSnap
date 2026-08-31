@@ -23,7 +23,6 @@
 import { sql } from "./db";
 import {
   setSubscriptionTier,
-  setFreeSubscription,
   setReceiptSnapAddon,
   setGarageSnapAddon,
   setBillSnapAddon,
@@ -199,7 +198,7 @@ export async function applyEntitlementToUser(
       break;
     case "meetingsnap": {
       const meetingTier = entitlement.meetingTier ?? "free";
-      await setMeetingSubscriptionTier(clerkUserId, meetingTier);
+      await setMeetingSubscriptionTier(clerkUserId, meetingTier as Parameters<typeof setMeetingSubscriptionTier>[1]);
       console.log(`[entitlements] Set MeetingSnap ${meetingTier} for user ${clerkUserId}`);
       break;
     }

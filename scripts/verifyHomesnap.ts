@@ -276,7 +276,7 @@ async function main() {
       (${propertyId}, ${SHARED}, ${"completed"}, ${"schedule"}, ${scheduleId}, ${"Replace air filter"}, ${'Completed maintenance "Replace air filter".'}, ${"2026-01-03T12:00:00Z"})
   `;
 
-  const readActivity = async (asUser: string) =>
+  const readActivity = async (_asUser: string) =>
     (await sql`
       SELECT pa.*, u.email AS actor_email
       FROM property_activity pa

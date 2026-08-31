@@ -3,8 +3,7 @@ import { UTApi } from "uploadthing/server";
 import fs from "node:fs";
 import path from "node:path";
 import { getVerifiedUserId } from "./serverAuth";
-import type { CloudDocument, DocCategory } from "./cloudTypes";
-import { ALL_CATEGORIES, getDocCategory } from "./cloudTypes";
+import type { CloudDocument } from "./cloudTypes";
 
 // Re-export the client-safe document types/helpers so existing importers of
 // this module keep working. Client code should import them from

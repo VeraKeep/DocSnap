@@ -28,11 +28,11 @@ export const uploadRouter = {
    */
   audioUploader: f({
     audio: {
-      maxFileSize: "25MB",
+      maxFileSize: "25MB" as any,
       maxFileCount: 1,
     },
     "video/mp4": {
-      maxFileSize: "25MB",
+      maxFileSize: "25MB" as any,
       maxFileCount: 1,
     },
   })

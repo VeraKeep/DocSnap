@@ -3,7 +3,6 @@ export type ExpirationType = "expiration" | "renewal" | "deadline";
 export interface DetectedExpiration { date: Date; label: string; confidence: number; type: ExpirationType }
 
 const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december";
-const MONTH = new RegExp(`(?:${MONTHS})`, "i");
 const DATE = `(?:\\d{1,2}[\\/\\-]\\d{1,2}[\\/\\-]\\d{2,4}|${MONTHS}\\s+\\d{1,2}(?:,)?\\s+\\d{4}|\\d{1,2}\\s+${MONTHS}\\s+\\d{4})`;
 const triggers: Array<{ re: RegExp; type: ExpirationType; confidence: number }> = [
   { re: new RegExp(`(?:expires?|expiration\\s+date|valid\\s+until|registration\\s+expires|license\\s+expires)\\s*[:#-]?\\s*(${DATE})`, "i"), type: "expiration", confidence: .96 },

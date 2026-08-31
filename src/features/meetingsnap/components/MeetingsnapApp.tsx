@@ -71,24 +71,6 @@ function ReviewBadge() {
   );
 }
 
-function Row({
-  title,
-  badge,
-  children,
-}: {
-  title: string;
-  badge?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="font-medium text-gray-200">{title}</span>
-      {badge}
-      <div className="w-full text-sm leading-relaxed text-gray-400">{children}</div>
-    </div>
-  );
-}
-
 function EmptyNote({ text }: { text: string }) {
   return (
     <p className="rounded-xl border border-dashed border-gray-800 p-4 text-center text-sm text-gray-500">

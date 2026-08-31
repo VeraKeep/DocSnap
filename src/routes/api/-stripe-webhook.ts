@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   // Verify the event signature.
   let event: Stripe.Event;
   try {
-    const stripe = new Stripe("sk_unused", { apiVersion: "2025-06-30.basil" });
+    const stripe = new Stripe("sk_unused", { apiVersion: "2025-06-30.basil" as any });
     event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
   } catch (err) {
     console.error("[stripe-webhook] Signature verification failed:", err);
@@ -232,9 +232,8 @@ async function handleSubscriptionDeleted(
 function subscriptionPriceId(subscription: Stripe.Subscription): string | undefined {
   const first = subscription.items?.data?.[0]?.price?.id;
   if (first) return first;
-  return typeof subscription.default_price === "string"
-    ? subscription.default_price
-    : subscription.default_price?.id;
+  const defPrice = (subscription as { default_price?: string | { id?: string } }).default_price;
+  return typeof defPrice === "string" ? defPrice : defPrice?.id;
 }
 
 /** Revoke exactly the entitlement the ending subscription paid for. Each
@@ -310,7 +309,7 @@ async function getCheckoutPriceId(session: Stripe.Checkout.Session): Promise<str
   if (embedded) return embedded;
   if (!session.id || !process.env.STRIPE_SECRET_KEY) return undefined;
   try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-06-30.basil" });
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-06-30.basil" as any });
     const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
     return items.data[0]?.price?.id;
   } catch (err) {

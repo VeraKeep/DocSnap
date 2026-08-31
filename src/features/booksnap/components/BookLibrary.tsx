@@ -3,7 +3,7 @@ import { SignInButton, useUser } from "@clerk/tanstack-start";
 import { uploadPDFBlob } from "~/cloudSync";
 import { MODULE_CHECKOUT_URLS } from "~/moduleCheckout";
 import { createBook, deleteBook, getBooksEntitlement, listBooks } from "../server";
-import { type BookDetail, type BookPage, type BookPageInput, type BookRow } from "../types";
+import { type BookPage, type BookPageInput, type BookRow } from "../types";
 import { BookReader } from "./BookReader";
 import { BookSearch } from "./BookSearch";
 
