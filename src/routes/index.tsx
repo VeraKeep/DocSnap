@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { processDocument, perspectiveWarp, type Quad } from "../documentProcessor";
+import { SITE_ORIGIN, canonicalUrl } from "../siteConfig";
 import { applyFilter, getSourceForFilter, type FilterType } from "../imageFilters";
 import { ocrEnabled } from "../ocr";
 import { recognizePages as ocrRecognizePages } from "../ocr";
@@ -50,7 +51,7 @@ const homeStructuredData = {
   name: "DocSnap © 2026",
   description:
     "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser, no account or upload needed. Part of the VeraKeep™ suite.",
-  url: "https://docsnapapp.com",
+  url: SITE_ORIGIN,
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
   offers: {
@@ -69,7 +70,7 @@ export const Route = createFileRoute("/")({
       },
       { name: "description", content: "Scan any document to a searchable PDF right in your browser — no account, no upload, no Adobe license. DocSnap keeps everything you own and its paperwork organized in one place, part of the VeraKeep™ suite." },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/") }],
     scripts: [
       {
         type: "application/ld+json",

@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/terms")({
@@ -6,7 +7,7 @@ export const Route = createFileRoute("/terms")({
       { title: 'Terms of Service — DocSnap © 2026' },
       { name: "description", content: 'Plain-English terms of service for DocSnap © 2026 — a free local document scanner with optional paid subscriptions, paid add-on modules, AI-powered features, and cloud storage.' },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/terms" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/terms") }],
   }) ,
   component: Terms,
 });

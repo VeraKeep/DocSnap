@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/privacy")({
@@ -6,7 +7,7 @@ export const Route = createFileRoute("/privacy")({
       { title: 'Privacy — DocSnap © 2026' },
       { name: "description", content: 'How DocSnap © 2026 handles your data: your documents are processed locally in your browser by default, and we clearly explain what happens when you use Cloud Sync or our AI-powered paid modules.' },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/privacy" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/privacy") }],
   }) ,
   component: Privacy,
 });

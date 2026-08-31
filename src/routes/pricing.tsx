@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSubscription } from "../hooks/useSubscription";
@@ -86,7 +87,7 @@ export const Route = createFileRoute("/pricing")({
           "Choose DocSnap Free, Personal, or Family. Private browser scanning is free; paid plans add cloud storage, AI organization, and family sharing.",
       },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/pricing" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/pricing") }],
   }),
   component: PricingPage,
 });

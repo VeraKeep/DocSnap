@@ -1,3 +1,4 @@
+import { canonicalUrl } from "../siteConfig";
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { MODULE_CHECKOUT_URLS } from "../moduleCheckout";
@@ -100,7 +101,7 @@ export const Route = createFileRoute("/meetingsnap-pricing")({
           "MeetingSnap turns conversations into action. Choose Free, Personal, Pro, or Team and get AI summaries, decisions, and next steps from every meeting.",
       },
     ],
-    links: [{ rel: "canonical", href: "https://docsnapapp.com/meetingsnap-pricing" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/meetingsnap-pricing") }],
   }),
   component: MeetingSnapPricingPage,
 });
