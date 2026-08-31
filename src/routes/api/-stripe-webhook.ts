@@ -14,23 +14,21 @@
 import Stripe from "stripe";
 import { sql } from "../../db";
 import {
-  setFreeSubscription,
   findUserByEmail,
   findUserByStripeCustomerId,
-  setReceiptSnapAddon,
-  setGarageSnapAddon,
-  setBillSnapAddon,
-  setContractSnapAddon,
-  setHomeSnapAddon,
-  setBookSnapAddon,
-  setMeetingSubscriptionTier,
 } from "../../subscription";
 import {
-  PRICE_ENTITLEMENTS,
   applyEntitlementToUser,
   enqueuePendingEntitlement,
   reconcilePendingEntitlements,
 } from "../../entitlements";
+// Revoke/cancel routing lives in the shared module so the cancellation
+// verify script drives the same production code path.
+import {
+  revokeSubscriptionEntitlement,
+} from "../../revokeEntitlement";
+
+export { revokeSubscriptionEntitlement };
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 
@@ -229,81 +227,6 @@ async function handleSubscriptionDeleted(
 
 /** Read the first line item's price id off a Subscription object (or its
  *  default_price) for demotion routing. Returns undefined if absent. */
-function subscriptionPriceId(subscription: Stripe.Subscription): string | undefined {
-  const first = subscription.items?.data?.[0]?.price?.id;
-  if (first) return first;
-  const defPrice = (subscription as { default_price?: string | { id?: string } }).default_price;
-  return typeof defPrice === "string" ? defPrice : defPrice?.id;
-}
-
-/** Revoke exactly the entitlement the ending subscription paid for. Each
- *  subscription demotes precisely the thing it granted — the DocSnap tier, a
- *  module add-on flag, or the MeetingSnap tier. Unknown/absent → safe DocSnap
- *  free demotion (never grants, never crashes; logs on error via helpers). */
-async function revokeSubscriptionEntitlement(
-  clerkUserId: string,
-  subscription: Stripe.Subscription,
-): Promise<void> {
-  const priceId = subscriptionPriceId(subscription);
-  const entitlement = priceId ? PRICE_ENTITLEMENTS[priceId] : undefined;
-  if (!entitlement) {
-    await setFreeSubscription(clerkUserId);
-    console.log(
-      `[stripe-webhook] Unknown/absent price (${priceId ?? "(none)"}) — demoted DocSnap to free for user ${clerkUserId}`,
-    );
-    return;
-  }
-  switch (entitlement.kind) {
-    case "docsnap":
-      await setFreeSubscription(clerkUserId);
-      console.log(`[stripe-webhook] DocSnap subscription ended — set free for user ${clerkUserId}`);
-      break;
-    case "receiptsnap":
-      await setReceiptSnapAddon(clerkUserId, false);
-      console.log(`[stripe-webhook] ReceiptSnap subscription ended — revoked add-on for user ${clerkUserId}`);
-      break;
-    case "garagesnap":
-      await setGarageSnapAddon(clerkUserId, false);
-      console.log(`[stripe-webhook] GarageSnap subscription ended — revoked add-on for user ${clerkUserId}`);
-      break;
-    case "billsnap":
-      await setBillSnapAddon(clerkUserId, false);
-      console.log(`[stripe-webhook] BillSnap subscription ended — revoked add-on for user ${clerkUserId}`);
-      break;
-    case "contractsnap":
-      await setContractSnapAddon(clerkUserId, false);
-      console.log(`[stripe-webhook] ContractSnap subscription ended — revoked add-on for user ${clerkUserId}`);
-      break;
-    case "homesnap":
-      await setHomeSnapAddon(clerkUserId, false);
-      console.log(`[stripe-webhook] HomeSnap subscription ended — revoked add-on for user ${clerkUserId}`);
-      break;
-    case "booksnap":
-      await setBookSnapAddon(clerkUserId, false);
-      console.log(`[stripe-webhook] BookSnap subscription ended — revoked add-on for user ${clerkUserId}`);
-      break;
-    case "meetingsnap":
-      await setMeetingSubscriptionTier(clerkUserId, "free");
-      console.log(`[stripe-webhook] MeetingSnap subscription ended — set free for user ${clerkUserId}`);
-      break;
-    case "allaccess":
-      // VeraKeep All Access ended — revoke exactly what the bundle granted:
-      // DocSnap tier + all seven module add-ons.
-      await setFreeSubscription(clerkUserId);
-      await setReceiptSnapAddon(clerkUserId, false);
-      await setGarageSnapAddon(clerkUserId, false);
-      await setMeetingSubscriptionTier(clerkUserId, "free");
-      await setHomeSnapAddon(clerkUserId, false);
-      await setContractSnapAddon(clerkUserId, false);
-      await setBillSnapAddon(clerkUserId, false);
-      await setBookSnapAddon(clerkUserId, false);
-      console.log(
-        `[stripe-webhook] VeraKeep All Access ended — revoked DocSnap + all seven modules (ReceiptSnap, GarageSnap, MeetingSnap, HomeSnap, ContractSnap, BillSnap, BookSnap) for user ${clerkUserId}`,
-      );
-      break;
-  }
-}
-
 async function getCheckoutPriceId(session: Stripe.Checkout.Session): Promise<string | undefined> {
   const embedded = session.line_items?.data?.[0]?.price?.id;
   if (embedded) return embedded;
