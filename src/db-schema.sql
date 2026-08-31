@@ -66,6 +66,27 @@ CREATE INDEX IF NOT EXISTS idx_users_clerk_id ON users(clerk_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_events_stripe_id ON webhook_events(stripe_event_id);
+-- Pending entitlement grants: a checkout.session.completed that could not be
+-- matched to a Clerk user at webhook time (an anonymous buyer, or a buyer
+-- whose email is not yet in `users`). The purchase is held here (keyed by the
+-- checkout email + price) instead of being dropped, and is granted the moment
+-- that email completes sign-in (reconciled from subscription.upsertUser).
+-- SAFETY: the queue never grants by itself — it only records what a real
+-- Stripe checkout PAID for at a known price, and reconciliation only grants
+-- that exact entitlement. Unknown/unlisted prices reconcile as no-ops.
+CREATE TABLE IF NOT EXISTS pending_entitlements (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  price_id TEXT,
+  stripe_customer_id TEXT,
+  checkout_session_id TEXT UNIQUE,
+  reconciled_for TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reconciled_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_pending_entitlements_email
+  ON pending_entitlements(email);
+
 CREATE TABLE IF NOT EXISTS share_links (
   id UUID PRIMARY KEY,
   document_id TEXT NOT NULL,

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { MODULE_CHECKOUT_URLS } from "../moduleCheckout";
+import { CheckoutLink } from "../components/CheckoutLink";
 
 type BillingCadence = "monthly" | "annual";
 
@@ -194,15 +195,12 @@ function MeetingSnapPricingPage() {
             )}
 
             {plan.button === "subscribe" && (
-              <a
+              <CheckoutLink
                 href={plan.checkout?.[billing] || "#"}
-                onClick={(e) => {
-                  if (!plan.checkout?.[billing]) e.preventDefault();
-                }}
                 className="mt-5 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
               >
                 Subscribe
-              </a>
+              </CheckoutLink>
             )}
 
             {plan.button === "coming-soon" && (
