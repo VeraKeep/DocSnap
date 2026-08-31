@@ -17,12 +17,16 @@ export interface SubscriptionInfo {
 }
 
 function normalizeTier(status: string | null | undefined): Tier {
-  // Legacy paid values from the DB map forward so no existing subscriber
-  // loses paid access:
+  // The current paid tiers are "personal" and "family". Legacy paid values from
+  // the DB map forward so no existing subscriber loses paid access:
   //   "pro" → personal, "personal" → personal (unchanged),
-  //   "household" → family, "complete" → family (dropped tiers fold up).
-  if (status === "pro" || status === "personal") return "personal";
-  if (status === "household" || status === "complete") return "family";
+  //   "household" → family, "complete" → family (dropped tiers fold up),
+  //   "family" → family (current tier — the Family DocSnap / Family All Access
+  //   value written by setSubscriptionTier; previously fell through to "free").
+  if (status === "family" || status === "household" || status === "complete") {
+    return "family";
+  }
+  if (status === "personal" || status === "pro") return "personal";
   return "free";
 }
 

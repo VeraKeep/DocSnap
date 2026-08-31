@@ -145,10 +145,12 @@ export const MODULES: Module[] = [
     description:
       "Turn your books into searchable memory — add books to your shelf and keep every edition, page, and quote on record, with strict provenance on every answer.",
     route: "/books",
-    // PLANNED ADD-ON: price + Stripe checkout are pending (the recon/PRD keeps
-    // BookSnap as a growing module; checkout URLs left empty so the Buy button
-    // shows the inert "Pricing coming soon" state while the /books app link
-    // works). No add-on gate yet — any signed-in user can use the bookshelf.
+    // PAID ADD-ON (owner decision, business-plan rev 20): $3.99/mo or $39.99/yr.
+    // /books is HARD-GATED behind the addon_booksnap flag (fails closed — see
+    // features/booksnap/server.ts requireBookSnapAddon and subscription.ts
+    // hasBookSnapAddon). A DocSnap tier does NOT unlock it. Checkout URLs are
+    // populated in moduleCheckout.ts; the Buy button routes to the real
+    // BookSnap Stripe checkout.
     priceMonthly: "$3.99",
     priceAnnual: "$39.99",
     checkout: {
