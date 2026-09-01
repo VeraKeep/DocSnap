@@ -4,6 +4,30 @@ const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL_ROUTES = ["/", "/scan", "/manifest.json", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
 
+// ---------------------------------------------------------------------------
+// CACHE POLICY (privacy — keep this current)
+// ---------------------------------------------------------------------------
+// This service worker NEVER writes authenticated or user-specific data to any
+// persistent cache. DocSnap holds sensitive documents (receipts, bills,
+// contracts, cloud files, meetings), so a signed-in user's data must not
+// survive in Cache Storage.
+//
+//   * /api/ + Clerk auth requests  -> network-first, NEVER cached (fetch only).
+//   * Authenticated account/app pages (/profile + all module routes) ->
+//     network-only, NEVER cached, no offline fallback. A signed-in user's page
+//     is never persisted.
+//   * Public scanner shell (/, /scan) -> network-first WITH cache, so the
+//     scanner keeps working offline.
+//   * Static build assets (hashed /assets/*, scripts/styles/fonts/images) ->
+//     stale-while-revalidate. These are public + content-hashed, so caching is
+//     harmless.
+//   * All other navigation (public marketing pages) -> network-first WITHOUT
+//     cache. It still serves fresh, it just never persists.
+//
+// Net: ONLY the public scanner shell and static assets may be stored offline.
+// Never add authenticated paths or /api/ payloads to RUNTIME_CACHE/SHELL_CACHE.
+// ---------------------------------------------------------------------------
+
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
@@ -39,23 +63,50 @@ function isStaticAsset(request) {
   return ["script", "style", "font", "image"].includes(request.destination);
 }
 
-function isNetworkFirst(request) {
-  const url = new URL(request.url);
-  // API calls, Clerk auth, and content-hashed build assets must always prefer
-  // the network so a cached stale copy can never mask a fresh deployment.
-  return url.pathname.startsWith("/api/") || url.hostname.includes("clerk") || url.pathname.startsWith("/assets/");
+// Every API/auth endpoint returns data tied to the signed-in user (documents,
+// entitlements, receipts, bills, ...). Never cached — see policy above.
+function isApiOrAuthRequest(url) {
+  return url.pathname.startsWith("/api/") || url.hostname.includes("clerk");
 }
 
-async function networkFirst(request) {
-  const cache = await caches.open(RUNTIME_CACHE);
+// Authenticated account/app pages. /profile is the account shell and the module
+// routes render that user's data. A signed-in user's page must never be cached.
+const AUTHENTICATED_APP_PATHS = [
+  "/profile",
+  "/receipts",
+  "/bills",
+  "/contracts",
+  "/books",
+  "/garage",
+  "/homesnap",
+  "/meetingsnap",
+];
+function isAuthenticatedAppPath(pathname) {
+  return AUTHENTICATED_APP_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+// The only routes we may persist offline: the public scanner/landing shell.
+function isPublicShellPath(pathname) {
+  return pathname === "/" || pathname === "/scan";
+}
+
+// Network-first that writes to the cache ONLY when `cacheable` is true.
+async function networkFirst(request, { cacheable }) {
   try {
     const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
+    if (cacheable && response.ok) {
+      const cache = await caches.open(RUNTIME_CACHE);
+      await cache.put(request, response.clone());
+    }
     return response;
   } catch {
-    // Fall back to any cached copy (runtime or install-time shell cache) so
-    // the scanner keeps working offline.
-    return (await caches.match(request)) || Response.error();
+    // Fall back ONLY to an already-cached copy (runtime or install-time shell)
+    // for cacheable responses. For non-cacheable requests we never cached them,
+    // so there is nothing safe to fall back to — report the network failure.
+    if (cacheable) {
+      return (await caches.match(request)) || Response.error();
+    }
+    return Response.error();
   }
 }
 
@@ -74,13 +125,40 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (isNetworkFirst(request)) {
-    event.respondWith(networkFirst(request));
-  } else if (isStaticAsset(request)) {
+  // 1) API + Clerk auth: fetch from network, NEVER write to any cache.
+  if (isApiOrAuthRequest(url)) {
+    event.respondWith(networkFirst(request, { cacheable: false }));
+    return;
+  }
+
+  // 2) Static build assets (hashed /assets/*, scripts/styles/fonts/images):
+  //    public + content-hashed, so revalidate caching is safe (harmless).
+  if (isStaticAsset(request)) {
     event.respondWith(staleWhileRevalidate(request));
-  } else if (request.mode === "navigate") {
-    // Network-first keeps server-rendered routes fresh; cached shell enables offline scanning.
-    event.respondWith(networkFirst(request).then((response) => response.status === 0 ? caches.match("/scan") : response));
+    return;
+  }
+
+  // 3) Navigation.
+  if (request.mode === "navigate") {
+    if (isAuthenticatedAppPath(url.pathname)) {
+      // Account/app pages carry user data (or gate on the user's entitlements).
+      // Go strictly network-only: never persist, and never silently show a
+      // stale shell to a signed-in user. Offline, they correctly error.
+      event.respondWith(networkFirst(request, { cacheable: false }));
+      return;
+    }
+    if (isPublicShellPath(url.pathname)) {
+      // Public scanner shell: network-first WITH cache keeps scanning offline.
+      event.respondWith(
+        networkFirst(request, { cacheable: true }).then((response) =>
+          response.status === 0 ? caches.match("/scan") : response,
+        ),
+      );
+      return;
+    }
+    // Any other page (public marketing/landing): network-first WITHOUT cache —
+    // stays fresh online, never persists.
+    event.respondWith(networkFirst(request, { cacheable: false }));
   }
 });
 
