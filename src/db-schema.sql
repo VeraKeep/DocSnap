@@ -554,3 +554,36 @@ CREATE TABLE IF NOT EXISTS book_annotations (
 );
 CREATE INDEX IF NOT EXISTS idx_book_annotations_book_id_page_id
   ON book_annotations (book_id, page_id);
+
+-- DocSnap core: cloud document metadata (backing src/cloudStorage.ts).
+-- Previously each user's cloud document metadata was persisted to a local
+-- `data/<userId>.json` file on the server filesystem. On Vercel/serverless
+-- that filesystem is NOT durable application storage — a deploy, cold start,
+-- or a request landing on a different instance could lose or split a user's
+-- records even though the uploaded PDF still exists in UploadThing. Cloud
+-- metadata therefore now lives in Postgres, owner-scoped by clerk_user_id,
+-- so ANY instance can always read a user's documents.
+-- `id` holds the CloudDocument.id (a UUID assigned when the doc is added) and
+-- is the PRIMARY KEY — globally unique, which makes re-inserting a migrated
+-- file idempotent (ON CONFLICT (id) DO NOTHING). Every field on the
+-- CloudDocument type is a column here; `duplicateCount` is derived at read
+-- time and is deliberately not stored.
+CREATE TABLE IF NOT EXISTS cloud_documents (
+  id TEXT PRIMARY KEY,
+  clerk_user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  page_count INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  file_key TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  thumbnail_url TEXT,
+  auto_category TEXT NOT NULL DEFAULT '',
+  user_category TEXT,
+  ocr_text TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Owner-scoped lookup + newest-first ordering (matches the previous array
+-- semantics where new documents are unshifted to the front).
+CREATE INDEX IF NOT EXISTS idx_cloud_documents_clerk_user_id_date
+  ON cloud_documents (clerk_user_id, date DESC);

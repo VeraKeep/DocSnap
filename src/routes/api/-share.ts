@@ -92,7 +92,7 @@ export async function POST(req: Request): Promise<Response> {
     return json({ error: "documentId is required" }, 400);
   }
   // Document must exist and belong to the verified user.
-  const docs = readUserDocuments(userId);
+  const docs = await readUserDocuments(userId);
   const doc = docs.find((d) => d.id === documentId);
   if (!doc) {
     return json({ error: "Document not found" }, 404);
@@ -180,7 +180,7 @@ export async function GET(
     }
   }
   // Resolve the underlying document.
-  const docs = readUserDocuments(link.ownerUserId);
+  const docs = await readUserDocuments(link.ownerUserId);
   const doc = docs.find((d) => d.id === link.documentId);
   if (!doc) {
     return json({ error: "Shared document no longer exists" }, 410);

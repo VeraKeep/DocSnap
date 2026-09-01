@@ -61,7 +61,7 @@ async function main() {
   const verifySrc = `
     const { neon } = await import(${JSON.stringify("@neondatabase/serverless")});
     const sql = neon(process.env.DATABASE_URL, { fetchOptions: { cache: "no-store" } });
-    const want = ["users","webhook_events","share_links","receipts","meetings","meeting_extractions","bills","waitlist","properties","property_objects","object_documents","object_events","maintenance_schedules","contracts","contract_clauses","contract_events","contract_reminders","garage_items","property_shares","property_activity","books","book_pages","book_annotations"];
+    const want = ["users","webhook_events","share_links","receipts","meetings","meeting_extractions","bills","waitlist","properties","property_objects","object_documents","object_events","maintenance_schedules","contracts","contract_clauses","contract_events","contract_reminders","garage_items","property_shares","property_activity","books","book_pages","book_annotations","cloud_documents"];
     for (let i = 0; i < 12; i++) {
       const rows = await sql.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'");
       const have = new Set(rows.map(r => r.table_name));
@@ -86,6 +86,8 @@ async function main() {
     if (shareCols.length !== 3) { console.log("VERIFY_FAIL property_shares_missing_columns"); process.exit(2); }
     const actCols = await sql.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='property_activity' AND column_name IN ('property_id','actor_user_id','action','entity_type','entity_id')");
     if (actCols.length !== 5) { console.log("VERIFY_FAIL property_activity_missing_columns"); process.exit(2); }
+    const cdCols = await sql.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='cloud_documents' AND column_name IN ('id','clerk_user_id','name','page_count','date','file_key','file_url','thumbnail_url','auto_category','user_category','ocr_text','content_hash')");
+    if (cdCols.length !== 12) { console.log("VERIFY_FAIL cloud_documents_missing_columns"); process.exit(2); }
     console.log("VERIFY_OK tables=" + rows.length + " addon_homesnap=present addon_contractsnap=present addon_garagesnap=present garage_items.home_object_id=present object_events.cost=present property_shares.columns=present property_activity.columns=present");
     console.log("PUBLIC_TABLES=" + rows.map(r => r.table_name).join(","));
   `;

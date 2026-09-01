@@ -1,8 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { UTApi } from "uploadthing/server";
-import fs from "node:fs";
-import path from "node:path";
 import { getVerifiedUserId } from "./serverAuth";
+import { sql } from "./db";
 import type { CloudDocument } from "./cloudTypes";
 
 // Re-export the client-safe document types/helpers so existing importers of
@@ -12,45 +11,88 @@ export type { CloudDocument, DocCategory } from "./cloudTypes";
 export { ALL_CATEGORIES, getDocCategory } from "./cloudTypes";
 
 /**
- * Server-only: resolve the per-user data directory. Deliberately lazy — this
- * module is imported by client bundles for its server functions, so any
- * module-scope Node evaluation (`path.join(process.cwd(), ...)`) would run in
- * the browser and throw "process is not defined" on cold page loads.
+ * Cloud document metadata lives in Postgres (the `cloud_documents` table),
+ * owner-scoped by `clerk_user_id`, NOT on the server filesystem. The previous
+ * implementation persisted each user's docs to a local `data/<userId>.json`
+ * file, which is not durable on Vercel/serverless (a deploy, cold start, or a
+ * request landing on a different instance could lose or split the record).
+ * Anything here must be readable from ANY instance, so reads/writes go
+ * through the shared Neon DB via the `sql` tagged-template helper.
  */
-function getDataDir(): string {
-  return path.join(process.cwd(), "data");
+
+// The `cloud_documents` table row shape (snake_case columns).
+interface CloudDocumentRow {
+  id: string;
+  name: string;
+  page_count: number;
+  date: string;
+  file_key: string;
+  file_url: string;
+  thumbnail_url: string | null;
+  auto_category: string;
+  user_category: string | null;
+  ocr_text: string;
+  content_hash: string;
 }
 
-function ensureDataDir() {
-  if (!fs.existsSync(getDataDir())) {
-    fs.mkdirSync(getDataDir(), { recursive: true });
-  }
+/** Map a DB row back to the CloudDocument shape used across the app. */
+function mapRowToDoc(row: CloudDocumentRow): CloudDocument {
+  return {
+    id: row.id,
+    name: row.name,
+    pageCount: row.page_count,
+    date: row.date,
+    fileKey: row.file_key,
+    fileUrl: row.file_url,
+    thumbnailUrl: row.thumbnail_url ?? undefined,
+    autoCategory: row.auto_category,
+    userCategory: row.user_category ?? undefined,
+    ocrText: row.ocr_text,
+    contentHash: row.content_hash,
+  };
 }
 
-function getUserDocPath(userId: string): string {
-  return path.join(getDataDir(), `${userId}.json`);
+/** Read a user's cloud documents from Postgres, newest first. */
+async function readUserDocs(userId: string): Promise<CloudDocument[]> {
+  const rows = (await sql`
+    SELECT id, name, page_count, date, file_key, file_url, thumbnail_url,
+           auto_category, user_category, ocr_text, content_hash
+    FROM cloud_documents
+    WHERE clerk_user_id = ${userId}
+    ORDER BY date DESC
+  `) as unknown as CloudDocumentRow[];
+  return rows.map(mapRowToDoc);
 }
-
-function readUserDocs(userId: string): CloudDocument[] {
-  ensureDataDir();
-  const filePath = getUserDocPath(userId);
-  if (!fs.existsSync(filePath)) return [];
-  try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw) as CloudDocument[];
-  } catch {
-    return [];
-  }
-}
-/** Server-only helper: read a user's documents directly from the data dir.
- *  Safe to import from API route handlers (plain function, no serverFn). */
-export function readUserDocuments(userId: string): CloudDocument[] {
+/** Server-only helper: read a user's documents from Postgres.
+ *  Safe to import from API route handlers (plain async function, no serverFn). */
+export async function readUserDocuments(userId: string): Promise<CloudDocument[]> {
   return readUserDocs(userId);
 }
 
-function writeUserDocs(userId: string, docs: CloudDocument[]) {
-  ensureDataDir();
-  fs.writeFileSync(getUserDocPath(userId), JSON.stringify(docs, null, 2), "utf-8");
+/** Insert or replace a single cloud document row, keyed by the unique doc id. */
+async function upsertDoc(userId: string, doc: CloudDocument): Promise<void> {
+  await sql`
+    INSERT INTO cloud_documents (
+      id, clerk_user_id, name, page_count, date, file_key, file_url,
+      thumbnail_url, auto_category, user_category, ocr_text, content_hash
+    ) VALUES (
+      ${doc.id}, ${userId}, ${doc.name}, ${doc.pageCount}, ${doc.date},
+      ${doc.fileKey}, ${doc.fileUrl}, ${doc.thumbnailUrl ?? null},
+      ${doc.autoCategory ?? ""}, ${doc.userCategory ?? null},
+      ${doc.ocrText ?? ""}, ${doc.contentHash ?? ""}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      page_count = EXCLUDED.page_count,
+      date = EXCLUDED.date,
+      file_key = EXCLUDED.file_key,
+      file_url = EXCLUDED.file_url,
+      thumbnail_url = EXCLUDED.thumbnail_url,
+      auto_category = EXCLUDED.auto_category,
+      user_category = EXCLUDED.user_category,
+      ocr_text = EXCLUDED.ocr_text,
+      content_hash = EXCLUDED.content_hash
+  `;
 }
 
 /** Check if cloud sync is configured (env vars present) */
@@ -91,7 +133,6 @@ export const addDocument = createServerFn()
   .handler(async ({ data }) => {
     const userId = await getVerifiedUserId();
     if (!userId) throw new Error("Not signed in");
-    const docs = readUserDocs(userId);
     const newDoc: CloudDocument = {
       id: crypto.randomUUID(),
       name: data.name,
@@ -103,8 +144,7 @@ export const addDocument = createServerFn()
       ocrText: data.ocrText || "",
       contentHash: data.contentHash || "",
     };
-    docs.unshift(newDoc);
-    writeUserDocs(userId, docs);
+    await upsertDoc(userId, newDoc);
     return newDoc;
   });
 
@@ -121,12 +161,15 @@ export const updateDocumentCategory = createServerFn()
   .handler(async ({ data }) => {
     const userId = await getVerifiedUserId();
     if (!userId) throw new Error("Not signed in");
-    const docs = readUserDocs(userId);
-    const doc = docs.find((d) => d.id === data.docId);
-    if (!doc) throw new Error("Document not found");
-
-    doc.userCategory = data.userCategory;
-    writeUserDocs(userId, docs);
+    const updated = await sql`
+      UPDATE cloud_documents
+      SET user_category = ${data.userCategory}
+      WHERE id = ${data.docId} AND clerk_user_id = ${userId}
+      RETURNING id
+    `;
+    if ((updated as unknown as { id: string }[]).length === 0) {
+      throw new Error("Document not found");
+    }
     return { success: true };
   });
 
@@ -141,7 +184,8 @@ export const deleteDocument = createServerFn()
       throw new Error("Uploadthing not configured");
     }
 
-    const docs = readUserDocs(userId);
+    // Resolve the doc (owner-scoped) to get its Uploadthing file key.
+    const docs = await readUserDocs(userId);
     const doc = docs.find((d) => d.id === data.docId);
     if (!doc) {
       throw new Error("Document not found");
@@ -155,8 +199,10 @@ export const deleteDocument = createServerFn()
       console.error("Failed to delete Uploadthing file:", err);
     }
 
-    // Remove from local metadata
-    const updated = docs.filter((d) => d.id !== data.docId);
-    writeUserDocs(userId, updated);
+    // Remove the metadata record from Postgres.
+    await sql`
+      DELETE FROM cloud_documents
+      WHERE id = ${data.docId} AND clerk_user_id = ${userId}
+    `;
     return { success: true };
   });
