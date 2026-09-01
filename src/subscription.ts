@@ -376,6 +376,87 @@ export const getSubscription = createServerFn().validator((clerkUserId: string) 
     if (!userId) throw new Error("Not signed in");
     return getUserSubscription(userId);
   });
+
+/**
+ * MeetingSnap's independent paid tier as stored in
+ * `users.meeting_subscription_status`. Inlined here (rather than importing the
+ * meetingsnap feature module) so subscription.ts — the entitlement source of
+ * truth — stays lightweight and free of feature-module coupling. Fails closed:
+ * any unknown/missing value resolves to "free".
+ */
+function normalizeMeetingTierSummary(status: string | null | undefined): MeetingTier {
+  if (status === "personal" || status === "pro" || status === "team") return status;
+  return "free";
+}
+
+/**
+ * Full webhook-first entitlement summary for the signed-in user.
+ *
+ * This is the single place the post-purchase success UI reads entitlements
+ * from: it queries the ACTUAL DB state — the rows the Stripe webhook writes
+ * when a checkout completes. A `?checkout=success` URL flag can never, by
+ * itself, grant anything: the UI only ever confirms what the DB already says
+ * the user owns. FAILS CLOSED: anonymous callers get a 401, and every missing
+ * / unknown / NULL flag resolves to `false` (or `"free"` for MeetingSnap).
+ */
+export interface EntitlementSummary {
+  tier: Tier;
+  receiptsnap: boolean;
+  garagesnap: boolean;
+  billsnap: boolean;
+  contractsnap: boolean;
+  homesnap: boolean;
+  booksnap: boolean;
+  /** MeetingSnap's own 4-tier model (independent of DocSnap's tier). */
+  meetingsnap: MeetingTier;
+  /** True when the user holds the full VeraKeep All Access suite (a paid
+   *  DocSnap tier PLUS all seven module add-ons). */
+  allAccess: boolean;
+}
+
+export const getUserEntitlementSummary = createServerFn()
+  .handler(async (): Promise<EntitlementSummary> => {
+    const userId = await getVerifiedUserId();
+    if (!userId) throw new Error("Not signed in");
+    const sub = await getUserSubscription(userId);
+    const [receiptsnap, garagesnap, billsnap, contractsnap, homesnap, booksnap, meetingRows] =
+      await Promise.all([
+        hasReceiptSnapAddon(userId),
+        hasGarageSnapAddon(userId),
+        hasBillSnapAddon(userId),
+        hasContractSnapAddon(userId),
+        hasHomeSnapAddon(userId),
+        hasBookSnapAddon(userId),
+        sql`
+          SELECT meeting_subscription_status FROM users
+          WHERE clerk_user_id = ${userId} LIMIT 1
+        `,
+      ]);
+    const meetingRow = (meetingRows as Record<string, unknown>[])[0] as
+      | { meeting_subscription_status?: string | null }
+      | undefined;
+    const meetingsnap = normalizeMeetingTierSummary(meetingRow?.meeting_subscription_status);
+    const allAccess =
+      sub.tier !== "free" &&
+      receiptsnap &&
+      garagesnap &&
+      billsnap &&
+      contractsnap &&
+      homesnap &&
+      booksnap &&
+      meetingsnap !== "free";
+    return {
+      tier: sub.tier,
+      receiptsnap,
+      garagesnap,
+      billsnap,
+      contractsnap,
+      homesnap,
+      booksnap,
+      meetingsnap,
+      allAccess,
+    };
+  });
 export const getPortalUrl = createServerFn().handler(async () => process.env.STRIPE_CUSTOMER_PORTAL_URL || null);
 /** Sync the signed-in user's record. The client-passed clerkUserId is ignored
  *  in favor of the verified session; `email` is still taken from the caller

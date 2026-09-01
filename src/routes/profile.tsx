@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useClerk, useUser } from "@clerk/tanstack-start";
 import { useCloudSync } from "../hooks/useCloudSync";
 import { useSubscription } from "../hooks/useSubscription";
+import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import type { Tier } from "../subscription";
 
 const TIER_LABELS: Record<Tier, string> = {
@@ -77,6 +78,8 @@ function ProfilePage() {
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Your profile</h1>
           <p className="mt-3 text-gray-400">Manage your account and keep an eye on your DocSnap © 2026 storage.</p>
         </div>
+
+        <CheckoutSuccessBanner destination={{ kind: "profile" }} />
 
         {!isLoaded ? (
           <div className="mt-10 h-40 animate-pulse rounded-2xl border border-gray-800 bg-gray-900/60" aria-label="Loading profile" />
