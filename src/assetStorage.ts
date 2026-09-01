@@ -124,7 +124,8 @@ export const isAssetCloudConfigured = createServerFn({ method: "GET" }).handler(
   return !!(
     process.env.UPLOADTHING_SECRET &&
     process.env.CLERK_SECRET_KEY &&
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+      process.env.CLERK_PUBLISHABLE_KEY)
   );
 });
 

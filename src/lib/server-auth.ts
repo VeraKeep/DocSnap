@@ -128,7 +128,9 @@ export async function requireServerFunctionUser(context?: {
   const secretKey = process.env.CLERK_SECRET_KEY;
   // The publishable key is public; it is read here as a config gate so the
   // adapter fails closed when Clerk isn't fully configured.
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+    process.env.CLERK_PUBLISHABLE_KEY;
   const request =
     context?.request ?? getStartContext({ throwIfNotFound: false })?.request;
   if (!secretKey || !publishableKey || !isRequestLike(request)) {

@@ -8,7 +8,10 @@ export default defineConfig({
   // Expose NEXT_PUBLIC_* vars (the owner's Clerk publishable key) to
   // import.meta.env in addition to Vite's default VITE_ prefix, so client
   // code (e.g. __root.tsx's ClerkProvider) receives them at build time.
-  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
+  // CLERK_PUBLISHABLE_KEY is added so deploys that supply the client-safe
+  // publishable key under Clerk's standard name (rather than NEXT_PUBLIC_*)
+  // still reach import.meta.env for __root.tsx's fallback lookup.
+  envPrefix: ["VITE_", "NEXT_PUBLIC_", "CLERK_PUBLISHABLE_KEY"],
   build: {
     rollupOptions: {
       output: {
