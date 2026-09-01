@@ -414,48 +414,65 @@ export interface EntitlementSummary {
   allAccess: boolean;
 }
 
+/**
+ * Server-side entitlement summary for an ACTING user id (no session lookup).
+ *
+ * This is the reusable body behind `getUserEntitlementSummary`: it reads the
+ * ACTUAL DB state for the given verified `clerkUserId` (the rows the Stripe
+ * webhook writes). Server code paths that already hold a verified user id
+ * (e.g. the UploadThing uploader middleware, which verifies the session from
+ * the upload `Request`) call this directly instead of the session-bound
+ * createServerFn. FAILS CLOSED: every missing / unknown / NULL flag resolves
+ * to `false` (or `"free"` for MeetingSnap).
+ */
+export async function getUserEntitlementSummaryForUser(
+  clerkUserId: string,
+): Promise<EntitlementSummary> {
+  const sub = await getUserSubscription(clerkUserId);
+  const [receiptsnap, garagesnap, billsnap, contractsnap, homesnap, booksnap, meetingRows] =
+    await Promise.all([
+      hasReceiptSnapAddon(clerkUserId),
+      hasGarageSnapAddon(clerkUserId),
+      hasBillSnapAddon(clerkUserId),
+      hasContractSnapAddon(clerkUserId),
+      hasHomeSnapAddon(clerkUserId),
+      hasBookSnapAddon(clerkUserId),
+      sql`
+        SELECT meeting_subscription_status FROM users
+        WHERE clerk_user_id = ${clerkUserId} LIMIT 1
+      `,
+    ]);
+  const meetingRow = (meetingRows as Record<string, unknown>[])[0] as
+    | { meeting_subscription_status?: string | null }
+    | undefined;
+  const meetingsnap = normalizeMeetingTierSummary(meetingRow?.meeting_subscription_status);
+  const allAccess =
+    sub.tier !== "free" &&
+    receiptsnap &&
+    garagesnap &&
+    billsnap &&
+    contractsnap &&
+    homesnap &&
+    booksnap &&
+    meetingsnap !== "free";
+  return {
+    tier: sub.tier,
+    receiptsnap,
+    garagesnap,
+    billsnap,
+    contractsnap,
+    homesnap,
+    booksnap,
+    meetingsnap,
+    allAccess,
+  };
+}
+
 export const getUserEntitlementSummary = createServerFn()
   .handler(async (): Promise<EntitlementSummary> => {
     const userId = await getVerifiedUserId();
     if (!userId) throw new Error("Not signed in");
-    const sub = await getUserSubscription(userId);
-    const [receiptsnap, garagesnap, billsnap, contractsnap, homesnap, booksnap, meetingRows] =
-      await Promise.all([
-        hasReceiptSnapAddon(userId),
-        hasGarageSnapAddon(userId),
-        hasBillSnapAddon(userId),
-        hasContractSnapAddon(userId),
-        hasHomeSnapAddon(userId),
-        hasBookSnapAddon(userId),
-        sql`
-          SELECT meeting_subscription_status FROM users
-          WHERE clerk_user_id = ${userId} LIMIT 1
-        `,
-      ]);
-    const meetingRow = (meetingRows as Record<string, unknown>[])[0] as
-      | { meeting_subscription_status?: string | null }
-      | undefined;
-    const meetingsnap = normalizeMeetingTierSummary(meetingRow?.meeting_subscription_status);
-    const allAccess =
-      sub.tier !== "free" &&
-      receiptsnap &&
-      garagesnap &&
-      billsnap &&
-      contractsnap &&
-      homesnap &&
-      booksnap &&
-      meetingsnap !== "free";
-    return {
-      tier: sub.tier,
-      receiptsnap,
-      garagesnap,
-      billsnap,
-      contractsnap,
-      homesnap,
-      booksnap,
-      meetingsnap,
-      allAccess,
-    };
+    return getUserEntitlementSummaryForUser(userId);
   });
 export const getPortalUrl = createServerFn().handler(async () => process.env.STRIPE_CUSTOMER_PORTAL_URL || null);
 /** Sync the signed-in user's record. The client-passed clerkUserId is ignored
