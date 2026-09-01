@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { GarageSnapApp } from "~/features/garagesnap/components/GarageSnapApp";
+import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 
 export const Route = createFileRoute("/garage")({
   head: () => ({
@@ -69,6 +70,7 @@ function GaragePage() {
       </header>
 
       <section className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+        <CheckoutSuccessBanner destination={{ kind: "module", module: "garagesnap" }} />
         <p className="text-sm font-medium text-indigo-400">GarageSnap</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
           Everything in its place

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { HomeSnapApp } from "~/features/homesnap/components/HomeSnapApp";
+import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 
 /** Coerce a URL query value into a positive integer, else undefined. */
 function optionalId(value: unknown): number | undefined {
@@ -62,6 +63,7 @@ function HomeSnapPage() {
       </header>
 
       <section className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+        <CheckoutSuccessBanner destination={{ kind: "module", module: "homesnap" }} />
         <p className="text-sm font-medium text-indigo-400">HomeSnap</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
           Your home, permanently on record

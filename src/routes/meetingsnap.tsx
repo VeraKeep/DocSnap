@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { MeetingsnapApp } from "~/features/meetingsnap/components/MeetingsnapApp";
+import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 
 export const Route = createFileRoute("/meetingsnap")({
   head: () => ({
@@ -169,6 +170,7 @@ function MeetingsnapPage() {
             breakdown instantly. Low-confidence items are flagged for review.
           </p>
         </div>
+        <CheckoutSuccessBanner destination={{ kind: "module", module: "meetingsnap" }} />
         <MeetingsnapApp />
       </section>
 

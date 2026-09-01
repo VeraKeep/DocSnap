@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ReceiptLibrary } from "~/features/receiptsnap/components/ReceiptLibrary";
+import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 
 export const Route = createFileRoute("/receipts")({
   head: () => ({
@@ -67,6 +68,7 @@ function ReceiptsPage() {
       </header>
 
       <section className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+        <CheckoutSuccessBanner destination={{ kind: "module", module: "receiptsnap" }} />
         <p className="text-sm font-medium text-indigo-400">ReceiptSnap</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
           Your receipt library

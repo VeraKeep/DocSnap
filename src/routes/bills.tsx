@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BillLibrary } from "~/features/billsnap/components/BillLibrary";
+import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 
 export const Route = createFileRoute("/bills")({
   head: () => ({
@@ -67,6 +68,7 @@ function BillsPage() {
       </header>
 
       <section className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+        <CheckoutSuccessBanner destination={{ kind: "module", module: "billsnap" }} />
         <p className="text-sm font-medium text-indigo-400">BillSnap</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
           Know what you owe and when
