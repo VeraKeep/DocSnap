@@ -18,7 +18,15 @@ import { assetUrl } from "~/siteConfig";
 // reach the browser. NEXT_PUBLIC_ (and VITE_) vars are exposed to import.meta.env
 // via envPrefix in vite.config.ts and inlined into both the SSR and client builds.
 // These are PUBLIC values only — never read a secret via import.meta.env.
-const clerkPubKey = import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+// Accept the owner's Clerk variable under either name: some deploy environments
+// provide the client-safe publishable key as NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+// (Vercel/go-live), others as the standard Clerk name CLERK_PUBLISHABLE_KEY
+// (both are exposed to import.meta.env via envPrefix). Only fall through to the
+// fail-loud config screen when neither is present.
+const clerkPubKey =
+  import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+  import.meta.env.CLERK_PUBLISHABLE_KEY ??
+  "";
 const plausibleDomain = import.meta.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ?? "";
 
 export const Route = createRootRoute({
