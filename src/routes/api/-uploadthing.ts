@@ -1,24 +1,27 @@
 import { createRouteHandler } from "uploadthing/server";
 import { uploadRouter } from "../../uploadthing";
 
-// UploadThing v7's route handler expects its cloud token (base64-encoded JSON
-// { apiKey, appId, regions }) — the value uploadthing documents under
-// `UPLOADTHING_TOKEN`. Prefer that variable. Fall back to `UPLOADTHING_SECRET`
-// for legacy setups, tolerating a value that was pasted with a stray
-// "UPLOADTHING_TOKEN=" prefix and/or a trailing quote (seen in the deployed
-// env) so the credential still validates instead of failing with
-// "Invalid token. A token is a base64 encoded JSON object...".
-let uploadThingToken =
-  process.env.UPLOADTHING_TOKEN ?? process.env.UPLOADTHING_SECRET ?? "";
-uploadThingToken = uploadThingToken
-  .replace(/^UPLOADTHING_TOKEN=/i, "")
-  .replace(/[^A-Za-z0-9+/=]/g, "");
+// SINGLE UploadThing credential path (app-wide): UPLOADTHING_SECRET is the
+// canonical env var — the one set in the deploy environment and the one every
+// other UploadThing consumer uses (cloudStorage.ts / assetStorage.ts config
+// detection + UTApi deletion). We prefer it here for the route handler so the
+// whole app keys off one credential. UPLOADTHING_TOKEN is kept only as a
+// backward-compatible fallback so any legacy deploy that set only
+// UPLOADTHING_TOKEN keeps working. NOTE: the v7 token is a base64-encoded JSON
+// object ({ apiKey, appId, regions }) — store it as the raw value with no
+// "UPLOADTHING_TOKEN=" prefix and no surrounding quotes (the deployed secret is
+// clean; we read it verbatim).
+const uploadThingToken =
+  process.env.UPLOADTHING_SECRET ?? process.env.UPLOADTHING_TOKEN ?? "";
 
 const handler = createRouteHandler({
   router: uploadRouter,
   config: {
     token: uploadThingToken,
-    isDev: true,
+    // Tie dev-mode upload behavior to the environment: never run isDev in
+    // production. import.meta.env.DEV matches the app's existing dev-detection
+    // idiom (RouteErrorBoundary/errorLogger) and is resolved at build time.
+    isDev: import.meta.env.DEV,
   },
 });
 
