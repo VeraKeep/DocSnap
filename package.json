@@ -11,7 +11,7 @@
     "go-live": "bash ./go-live.sh",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
-    "verify": "bun scripts/search-test.ts && bun scripts/verifyContractSnap.ts && bun scripts/verifyGaragesnap.ts && bun scripts/verifyHomesnap.ts && bun scripts/verifyReceiptsnap.ts && bun scripts/verifyBillsnap.ts && bun scripts/verifyBooksnap.ts && bun scripts/verifyMeetingsnap.ts && bun scripts/verifyAllAccess.ts && bun scripts/verifyCloudDocuments.ts && bun scripts/verifyCancellationDowngrade.ts && bun scripts/verifyUploadAuth.ts && bun scripts/verifyWaitlist.ts",
+    "verify": "node scripts/verify-sw-policy.mjs && bun scripts/search-test.ts && bun scripts/verifyContractSnap.ts && bun scripts/verifyGaragesnap.ts && bun scripts/verifyHomesnap.ts && bun scripts/verifyReceiptsnap.ts && bun scripts/verifyBillsnap.ts && bun scripts/verifyBooksnap.ts && bun scripts/verifyMeetingsnap.ts && bun scripts/verifyAllAccess.ts && bun scripts/verifyCloudDocuments.ts && bun scripts/verifyCancellationDowngrade.ts && bun scripts/verifyUploadAuth.ts && bun scripts/verifyWaitlist.ts",
     "test": "npm run build && npm run typecheck && npm run verify"
   },
   "dependencies": {
