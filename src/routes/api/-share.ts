@@ -161,10 +161,11 @@ export async function GET(
   ) {
     return json({ error: "This share link has reached its download limit" }, 410);
   }
-  // Password check.
+  // Password check. The password is accepted ONLY via the Authorization
+  // Basic header — never the URL query string, which would leak into browser
+  // history, analytics, reverse-proxy logs, and referrer data.
   if (link.passwordHash) {
-    const url = new URL(req.url);
-    const provided = url.searchParams.get("password") ?? extractBasicAuth(req);
+    const provided = extractBasicAuth(req);
     if (!provided) {
       return json(
         {

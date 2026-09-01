@@ -40,8 +40,7 @@ function SharedDocumentView() {
     setError(null);
     setNeedsPassword(false);
     try {
-      const query = pw ? `?password=${encodeURIComponent(pw)}` : "";
-      const res = await fetch(`/api/share/${id}${query}`, {
+      const res = await fetch(`/api/share/${id}`, {
         headers: pw
           ? { Authorization: `Basic ${btoa(`share:${pw}`)}` }
           : undefined,
