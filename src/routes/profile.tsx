@@ -1,4 +1,3 @@
-import { canonicalUrl } from "../siteConfig";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useClerk, useUser } from "@clerk/tanstack-start";
 import { useCloudSync } from "../hooks/useCloudSync";
@@ -15,10 +14,10 @@ const TIER_LABELS: Record<Tier, string> = {
 export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
+      { name: "robots", content: "noindex, nofollow" },
       { title: 'Your Profile — DocSnap © 2026' },
       { name: "description", content: 'Manage your DocSnap © 2026 account — view storage usage, subscription plan, synced documents, and secure account settings.' },
     ],
-    links: [{ rel: "canonical", href: canonicalUrl("/profile") }],
   }) ,
   component: ProfilePage,
 });

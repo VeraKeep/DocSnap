@@ -5,6 +5,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 export const Route = createFileRoute("/bills")({
   head: () => ({
     meta: [
+      { name: "robots", content: "noindex, nofollow" },
       { title: "Bills — DocSnap" },
       {
         name: "description",
