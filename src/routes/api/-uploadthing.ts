@@ -19,9 +19,14 @@ const handler = createRouteHandler({
   config: {
     token: uploadThingToken,
     // Tie dev-mode upload behavior to the environment: never run isDev in
-    // production. import.meta.env.DEV matches the app's existing dev-detection
-    // idiom (RouteErrorBoundary/errorLogger) and is resolved at build time.
-    isDev: import.meta.env.DEV,
+    // production. import.meta.env is a Vite-injected global — it is defined in
+    // code bundled through Vite (the app routes) but UNDEFINED in code bundled
+    // by bun (vercel-entry.ts, which imports this route and is bundled with
+    // `bun build`). Referencing import.meta.env.DEV here crashed the whole
+    // render function at cold start (FUNCTION_INVOCATION_FAILED on every URL
+    // in prod). Use a safe accessor instead: falls back to NODE_ENV check, so
+    // the bun-built production bundle evaluates isDev=false without throwing.
+    isDev: import.meta.env?.DEV === true || process.env.NODE_ENV === "development",
   },
 });
 
