@@ -33,11 +33,21 @@ if (src.includes("UPLOADTHING_TOKEN") && !secretFirst)
     "UPLOADTHING_TOKEN appears outside a UPLOADTHING_SECRET-first fallback — UPLOADTHING_SECRET must be the canonical preferred var"
   );
 
-// 3. isDev is tied to the environment, not hard-coded true.
+// 3. isDev is tied to the environment, not hard-coded true, and must NOT
+//    reference import.meta.env directly. That global is Vite-only: this route
+//    is imported by vercel-entry.ts, which build-vercel.sh bundles with bun
+//    build, so in the production render function import.meta.env is undefined
+//    and the module throws at cold start (the 2026-09-03 FUNCTION_INVOCATION
+//    _FAILED outage). Use the safe accessor
+//    (import.meta.env?.DEV === true || NODE_ENV === "development").
 if (src.includes("isDev: true") || /isDev:\s*true/.test(src))
-  failures.push("isDev is hard-coded true — must follow the environment (import.meta.env.DEV)");
-if (!/isDev:\s*import\.meta\.env\.DEV/.test(src))
-  failures.push("isDev is not tied to import.meta.env.DEV (dev flag must never run in production)");
+  failures.push("isDev is hard-coded true — must follow the environment");
+if (/isDev:\s*import\.meta\.env\.DEV(?![?.])/.test(src))
+  failures.push(
+    "isDev references import.meta.env directly — crashes the bun-bundled Vercel render function at cold start (2026-09-03 outage). Use import.meta.env?.DEV === true || NODE_ENV === \"development\"."
+  );
+if (!/isDev:\s*import\.meta\.env\?\.DEV\s*===\s*true\s*\|\|\s*process\.env\.NODE_ENV\s*===\s*["']development["']/.test(src))
+  failures.push("isDev is not the safe accessor (import.meta.env?.DEV === true || NODE_ENV === \"development\")");
 
 if (failures.length) {
   console.error("UPLOADTHING CONFIG CHECK FAILED:");
@@ -45,5 +55,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  "UploadThing config OK: route handler reads UPLOADTHING_SECRET first (TOKEN only a fallback) and isDev follows import.meta.env.DEV."
+  "UploadThing config OK: route handler reads UPLOADTHING_SECRET first (TOKEN only a fallback) and isDev uses the safe accessor (import.meta.env?.DEV === true || NODE_ENV===\"development\")."
 );
