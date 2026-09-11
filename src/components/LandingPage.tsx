@@ -6,7 +6,6 @@ import { MeetingSnapTiers } from "./MeetingSnapTiers";
 import { HomeSnapModuleCard } from "../features/homesnap/components/HomeSnapModuleCard";
 import { HomeSnapLaunchBanner } from "../features/homesnap/components/HomeSnapLaunchBanner";
 import { MyScans } from "./MyScans";
-import { WaitlistForm } from "./WaitlistForm";
 import {
   type CloudDocument,
   type DocCategory,
@@ -467,7 +466,7 @@ export function LandingPage({
           </p>
         )}
       </div>
-      {/* Early access — audience capture for the account-based suite */}
+      {/* Live now — account-based suite is available, not early access */}
       <section className="relative border-t border-gray-800/50 px-6 py-16 sm:px-6">
         <div
           className="absolute inset-0 opacity-20"
@@ -478,19 +477,18 @@ export function LandingPage({
         />
         <div className="relative mx-auto max-w-2xl text-center">
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-300">
-            Join the early access list
+            Live now — start today
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
             Get your receipts and documents out of the drawer — and into a
             single searchable place.
           </h2>
           <p className="mx-auto mt-4 max-w-xl leading-relaxed text-gray-400">
-            DocSnap already scans right in your browser — point your camera at a
+            DocSnap scans right in your browser — point your camera at a
             receipt and it crops, straightens, and makes the text searchable.
-            We're building the account-based suite on top: cloud sync, your
-            saved library, and the full VeraKeep suite of modules. Join the
-            early access list and we'll email you the moment it's ready. No
-            spam, no commitment.
+            Your account adds cloud sync, a saved library, and the full
+            VeraKeep suite of modules. Everything is available now — no early
+            access, no waiting.
           </p>
           <ul className="mx-auto mt-8 max-w-md space-y-3 text-left text-sm text-gray-300">
             <li className="flex items-start gap-2.5">
@@ -515,11 +513,24 @@ export function LandingPage({
               </span>
             </li>
           </ul>
-          <div className="relative z-10 mt-8 flex justify-center">
-            <WaitlistForm />
+          <div className="relative z-10 mt-8 flex flex-wrap items-center justify-center gap-3">
+            <SignUpButton mode="modal">
+              <button
+                onClick={() => trackEvent("sign-up")}
+                className="inline-flex justify-center rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
+              >
+                Create your free account
+              </button>
+            </SignUpButton>
+            <Link
+              to="/pricing"
+              className="inline-flex justify-center rounded-full border border-gray-700 px-6 py-3 text-sm font-semibold text-gray-300 transition hover:border-indigo-500 hover:text-white"
+            >
+              See plans &amp; add-ons
+            </Link>
           </div>
           <p className="mt-3 text-sm text-gray-500">
-            One email address. No credit card. Join in 10 seconds.
+            Free to start. No credit card required. Cancel anytime.
           </p>
         </div>
       </section>

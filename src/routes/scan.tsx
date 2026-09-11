@@ -160,7 +160,7 @@ function ScanLanding() {
         <p className="relative z-10 mt-4 text-sm text-indigo-300/80">
           DocSnap is the hub of the VeraKeep™ suite — one place for everything you
           own and the paperwork that goes with it. ReceiptSnap, GarageSnap, and
-          more are coming soon.
+          every other module are available now — add the ones you own.
         </p>
 
         {/* CTA */}
