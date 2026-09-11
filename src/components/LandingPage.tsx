@@ -299,7 +299,7 @@ export function LandingPage({
             </svg>
           </div>
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-            DocSnap © 2026
+            DocSnap
           </h1>
           <p className="text-xs font-medium uppercase tracking-widest text-indigo-300">Powered by VeraKeep™</p>
           <p className="mx-auto max-w-md text-gray-400 leading-relaxed">

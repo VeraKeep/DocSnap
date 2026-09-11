@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/roadmap")({
   head: () => ({
     meta: [
-      { title: "Roadmap — DocSnap © 2026" },
-      { name: "description", content: "See what's coming to DocSnap © 2026 — what we're working on now, what's planned next, future ideas, and everything we've already shipped." },
+      { title: "Roadmap — DocSnap" },
+      { name: "description", content: "See what's coming to DocSnap — what we're working on now, what's planned next, future ideas, and everything we've already shipped." },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/roadmap") }],
   }),
@@ -79,7 +79,7 @@ const sections: Section[] = [
       "Shareable secure links — time-limited, password-protected document sharing",
       "Redaction tool — draw to redact, permanently burned into the PDF",
       "Duplicate detection — catches repeated scans via file hashes and OCR similarity",
-      "PWA support — install DocSnap © 2026 on your home screen, with an offline banner and service worker",
+      "PWA support — install DocSnap on your home screen, with an offline banner and service worker",
       "Trust pages, SEO landing page (/scan) with structured data, privacy-first design, and privacy-friendly analytics",
     ],
   },
@@ -102,7 +102,7 @@ function Roadmap() {
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Roadmap</h1>
         <p className="mt-2 text-gray-400">
-          What's on the radar for DocSnap © 2026 — and what we've already shipped.
+          What's on the radar for DocSnap — and what we've already shipped.
           No dates promised, just an honest look at where things are heading.
         </p>
 
@@ -145,7 +145,7 @@ function Roadmap() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );

@@ -94,7 +94,7 @@ const MEETING_PLANS: MeetingPlan[] = [
 export const Route = createFileRoute("/meetingsnap-pricing")({
   head: () => ({
     meta: [
-      { title: "MeetingSnap Pricing — VeraKeep © 2026" },
+      { title: "MeetingSnap Pricing — VeraKeep" },
       {
         name: "description",
         content:
@@ -117,7 +117,7 @@ function MeetingSnapPricingPage() {
     <main className="flex min-h-screen flex-col bg-gray-950 text-white">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-800/50 px-4 py-4 sm:px-6">
         <Link to="/pricing" className="text-lg font-semibold hover:text-indigo-400">
-          VeraKeep © 2026
+          VeraKeep
         </Link>
         <div className="flex items-center gap-4 text-sm">
           <Link to="/meetingsnap" className="text-gray-400 hover:text-gray-200">

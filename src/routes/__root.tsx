@@ -166,7 +166,7 @@ function RootDocument({ children }: { children: ReactNode }) {
         />
         {children}
         <footer className="border-t border-gray-800/50 bg-gray-950 px-6 py-4 text-center text-xs text-gray-600">
-          <span>© 2026 DocSnap. All rights reserved.</span>
+          <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
           <span className="mx-2 text-gray-700" aria-hidden="true">·</span>
           <span>Powered by VeraKeep™</span>
         </footer>
@@ -204,7 +204,7 @@ function ClerkConfigMissingScreen() {
           <path d="M46 20l-6 12 6 12" stroke="#a5b4fc" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
-      <h1 className="text-2xl font-bold tracking-tight">DocSnap © 2026</h1>
+      <h1 className="text-2xl font-bold tracking-tight">DocSnap</h1>
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-900/50">
         <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />

@@ -48,7 +48,7 @@ function defaultDocumentName() {
 const homeStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "DocSnap © 2026",
+  name: "DocSnap",
   description:
     "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser, no account or upload needed. Part of the VeraKeep™ suite.",
   url: SITE_ORIGIN,
@@ -343,7 +343,7 @@ function Home() {
       trackEvent("save-to-cloud", { pages: allPages.length });
       const pageEntries: { imageUrl: string; imgNaturalWidth: number; imgNaturalHeight: number; redactions?: Redaction[] }[] = [];
       for (const page of allPages) { const src = getSourceForFilter(page.original, page.processed, page.filter); const imgUrl = await applyFilter(src, page.filter); const img = new Image(); await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("Failed")); img.src = imgUrl; }); pageEntries.push({ imageUrl: imgUrl, imgNaturalWidth: img.naturalWidth, imgNaturalHeight: img.naturalHeight, redactions: page.redactions }); }
-      const blob = await generatePlainPDF(pageEntries, { title: "DocSnap © 2026 Document" });
+      const blob = await generatePlainPDF(pageEntries, { title: "DocSnap Document" });
 
       // Attempt OCR text extraction for searchability
       let ocrText = "";

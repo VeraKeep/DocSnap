@@ -317,6 +317,6 @@ export async function meetingToPdf(m: MeetingDetail): Promise<Blob> {
     body("No risks were extracted.");
   }
 
-  pdf.setProperties({ title: m.title || "Meeting minutes", author: "DocSnap © 2026 — VeraKeep™", creator: "MeetingSnap by DocSnap" });
+  pdf.setProperties({ title: m.title || "Meeting minutes", author: "DocSnap — VeraKeep™", creator: "MeetingSnap by DocSnap" });
   return pdf.output("blob");
 }

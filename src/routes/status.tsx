@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/status")({
   head: () => ({
     meta: [
-      { title: "System status — DocSnap © 2026" },
-      { name: "description", content: "Current status of DocSnap © 2026 services — app, cloud storage, authentication, payments, and OCR." },
+      { title: "System status — DocSnap" },
+      { name: "description", content: "Current status of DocSnap services — app, cloud storage, authentication, payments, and OCR." },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/status") }],
   }),
@@ -18,7 +18,7 @@ interface Component {
 }
 
 const components: Component[] = [
-  { name: "DocSnap © 2026 App", description: "Web app, scanning, and PDF generation" },
+  { name: "DocSnap App", description: "Web app, scanning, and PDF generation" },
   { name: "Cloud Storage", description: "Uploadthing — cloud document storage" },
   { name: "Authentication", description: "Clerk — sign-in and account management" },
   { name: "Payments", description: "Stripe — subscriptions and billing" },
@@ -40,7 +40,7 @@ function Status() {
           Back
         </Link>
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">System status</h1>
-        <p className="mt-2 text-gray-400">The services that power DocSnap © 2026</p>
+        <p className="mt-2 text-gray-400">The services that power DocSnap</p>
         {/* Overall status */}
         <div className="mt-10 flex items-center gap-4 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-5 sm:p-6">
           <span className="relative flex h-3.5 w-3.5 shrink-0">
@@ -85,7 +85,7 @@ function Status() {
       </div>
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );

@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/changelog")({
   head: () => ({
     meta: [
-      { title: 'Changelog — DocSnap © 2026' },
-      { name: "description", content: "See what's new in DocSnap © 2026 — product updates, features, fixes, and improvements to the browser-based scanner." },
+      { title: 'Changelog — DocSnap' },
+      { name: "description", content: "See what's new in DocSnap — product updates, features, fixes, and improvements to the browser-based scanner." },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/changelog") }],
   }) ,
@@ -43,7 +43,7 @@ const entries: ChangelogEntry[] = [
     date: "August 2026",
     title: "PWA, analytics & SEO",
     items: [
-      "PWA support — install DocSnap © 2026 on your home screen, with offline support via a service worker",
+      "PWA support — install DocSnap on your home screen, with offline support via a service worker",
       "Privacy-friendly analytics (Plausible) with custom product events",
       "SEO landing page at /scan with structured data",
     ],
@@ -104,7 +104,7 @@ function Changelog() {
         </Link>
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Changelog</h1>
-        <p className="mt-2 text-gray-400">What's new in DocSnap © 2026</p>
+        <p className="mt-2 text-gray-400">What's new in DocSnap</p>
 
         <div className="mt-10 space-y-10">
           {entries.map((entry, i) => (
@@ -139,7 +139,7 @@ function Changelog() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );

@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: 'Privacy — DocSnap © 2026' },
-      { name: "description", content: 'How DocSnap © 2026 handles your data: your documents are processed locally in your browser by default, and we clearly explain what happens when you use Cloud Sync or our AI-powered paid modules.' },
+      { title: 'Privacy — DocSnap' },
+      { name: "description", content: 'How DocSnap handles your data: your documents are processed locally in your browser by default, and we clearly explain what happens when you use Cloud Sync or our AI-powered paid modules.' },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/privacy") }],
   }) ,
@@ -34,7 +34,7 @@ function Privacy() {
           <section>
             <h2 className="text-xl font-semibold text-white">The short version</h2>
             <p className="mt-3">
-              DocSnap © 2026 has three ways of handling your documents, and we want to
+              DocSnap has three ways of handling your documents, and we want to
               be clear about each one. By default, scanning and document processing
               happen <span className="text-white">entirely in your browser</span> and
               your images never leave your device. When you sign in and choose to save
@@ -49,7 +49,7 @@ function Privacy() {
           <section>
             <h2 className="text-xl font-semibold text-white">1. Local processing (default, no account)</h2>
             <p className="mt-3">
-              When you use DocSnap © 2026 without signing in — scanning a document with
+              When you use DocSnap without signing in — scanning a document with
               your camera, importing an image from your device, cropping and deskewing
               it, applying filters, running OCR (text recognition), and generating your
               PDF — everything runs locally in your browser using your device's own
@@ -146,7 +146,7 @@ function Privacy() {
               <a href="https://plausible.io" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">Plausible</a>
               , a privacy-first analytics tool that doesn't use cookies and never
               collects personal data. It helps us understand how many people use
-              DocSnap © 2026 and which features are most useful — nothing more.
+              DocSnap and which features are most useful — nothing more.
             </p>
           </section>
 
@@ -162,7 +162,7 @@ function Privacy() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — your documents are processed locally by default; we're transparent about what happens in the cloud</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );

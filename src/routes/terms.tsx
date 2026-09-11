@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
-      { title: 'Terms of Service — DocSnap © 2026' },
-      { name: "description", content: 'Plain-English terms of service for DocSnap © 2026 — the paid VeraKeep platform for your documents and the things you own, with free local scanning, subscriptions, paid add-on modules, AI-powered features, and cloud storage.' },
+      { title: 'Terms of Service — DocSnap' },
+      { name: "description", content: 'Plain-English terms of service for DocSnap — the paid VeraKeep platform for your documents and the things you own, with free local scanning, subscriptions, paid add-on modules, AI-powered features, and cloud storage.' },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/terms") }],
   }) ,
@@ -34,7 +34,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">In plain English</h2>
             <p className="mt-3">
-              DocSnap © 2026 is part of the VeraKeep suite. At its core it's a free
+              DocSnap is part of the VeraKeep suite. At its core it's a free
               document scanner that runs locally in your browser, with no account
               required. We also offer optional paid subscriptions and paid add-on
               modules that add cloud storage, AI-powered features, and tools for the
@@ -46,7 +46,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">What the service is</h2>
             <p className="mt-3">
-              DocSnap © 2026 is both a free, local document scanner and a platform you
+              DocSnap is both a free, local document scanner and a platform you
               can subscribe to. The free scanner — camera capture, image filters,
               multi-page PDFs, and searchable OCR — runs entirely in your browser and
               needs no account. Paid tiers add features such as cloud storage, and paid
@@ -77,7 +77,7 @@ function Terms() {
               You can cancel a paid subscription at any time. Cancellation stops future
               recurring billing — after that, we won't charge you again. You manage and
               cancel your subscription through Stripe's customer portal (linked from
-              your DocSnap © 2026 profile). You can also stop using DocSnap © 2026 at
+              your DocSnap profile). You can also stop using DocSnap at
               any time. Refunds for paid plans are handled in accordance with the
               relevant payment processor's policies and the card network rules; we don't
               make promises beyond what our billing processor supports.
@@ -87,7 +87,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">You own your documents</h2>
             <p className="mt-3">
-              Anything you scan, import, or create with DocSnap © 2026 is yours. We
+              Anything you scan, import, or create with DocSnap is yours. We
               don't claim any ownership, license, or rights over your content. However,
               to provide the cloud and AI features you choose to use, content you submit
               to those features is processed by us and by our AI and storage processors
@@ -132,14 +132,14 @@ function Terms() {
               or add-on ownership. Access is granted based on your
               active subscription and can be removed if that subscription is cancelled
               or lapses. Your plan and which modules you can use are shown in your
-              DocSnap © 2026 profile.
+              DocSnap profile.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white">Acceptable use</h2>
             <p className="mt-3">
-              You agree to use DocSnap © 2026 lawfully and respectfully. You may not use
+              You agree to use DocSnap lawfully and respectfully. You may not use
               the service to store or process illegal content, to abuse or harass
               others, to infringe anyone's rights, or to upload or process confidential
               information about other people unless you have the right to do so. You're
@@ -150,7 +150,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Account termination</h2>
             <p className="mt-3">
-              You may stop using DocSnap © 2026 and close your account at any time. We
+              You may stop using DocSnap and close your account at any time. We
               may suspend or terminate accounts that violate these terms, abuse the
               service, or breach the acceptable-use rules above. If we do so, you may
               lose access to cloud-stored content; you should keep your own copies of
@@ -179,10 +179,10 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Service is provided "as-is"</h2>
             <p className="mt-3">
-              DocSnap © 2026 is part of the VeraKeep suite and we do our best, but there are no
+              DocSnap is part of the VeraKeep suite and we do our best, but there are no
               guarantees. The service may have bugs, downtime, or limitations.
               We're not liable for any damages resulting from your use of
-              DocSnap © 2026, including lost documents or inaccurate AI output.
+              DocSnap, including lost documents or inaccurate AI output.
               (We'd feel terrible about it, but legally we can't take that
               responsibility.)
             </p>
@@ -191,7 +191,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">No warranty</h2>
             <p className="mt-3">
-              DocSnap © 2026 is distributed in the hope that it will be useful, but
+              DocSnap is distributed in the hope that it will be useful, but
               WITHOUT ANY WARRANTY; without even the implied warranty of
               MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
             </p>
@@ -200,7 +200,7 @@ function Terms() {
           <section>
             <h2 className="text-xl font-semibold text-white">Limitation of liability</h2>
             <p className="mt-3">
-              To the fullest extent permitted by law, DocSnap © 2026 and its creators
+              To the fullest extent permitted by law, DocSnap and its creators
               shall not be liable for any indirect, incidental, special, or
               consequential damages arising from your use of the service. If
               something goes wrong, our total liability is limited to the
@@ -215,7 +215,7 @@ function Terms() {
               If we update these terms, we'll post the new version here with
               an updated date. Significant changes will be noted in the{" "}
               <Link to="/changelog" className="text-indigo-400 underline">changelog</Link>.
-              Continuing to use DocSnap © 2026 after changes means you accept the new
+              Continuing to use DocSnap after changes means you accept the new
               terms.
             </p>
           </section>
@@ -232,7 +232,7 @@ function Terms() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );
