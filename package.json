@@ -17,9 +17,6 @@
   "dependencies": {
     "@clerk/tanstack-start": "^0.11.5",
     "@neondatabase/serverless": "^1.1.0",
-    "@opinly/backend": "^1.4.0",
-    "@opinly/react": "^1.4.0",
-    "@opinly/shared": "^1.4.0",
     "@tanstack/react-router": "^1.158.1",
     "@tanstack/react-start": "^1.158.3",
     "@tanstack/start-storage-context": "^1.167.15",
