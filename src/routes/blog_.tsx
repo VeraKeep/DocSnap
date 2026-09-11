@@ -8,7 +8,7 @@ import { canonicalUrl } from "~/siteConfig";
 
 type BlogSearch = { cursor?: string };
 
-export const Route = createFileRoute("/blog/")({
+export const Route = createFileRoute("/blog_")({
   validateSearch: (search: Record<string, unknown>): BlogSearch => ({
     cursor:
       typeof search.cursor === "string" && search.cursor.length > 0
