@@ -675,9 +675,6 @@ export function LandingPage({
         <Link to="/pricing" className="transition hover:text-indigo-400">
           Pricing
         </Link>
-        <Link to="/blog" className="transition hover:text-indigo-400">
-          Blog
-        </Link>
       </footer>
     </div>
   );
