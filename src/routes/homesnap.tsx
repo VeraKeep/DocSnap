@@ -21,7 +21,7 @@ export const Route = createFileRoute("/homesnap")({
   }),
   head: () => ({
     meta: [
-      { name: "robots", content: "noindex, nofollow" },
+      { name: "robots", content: "index, follow" },
       { title: "HomeSnap — DocSnap" },
       {
         name: "description",
