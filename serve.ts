@@ -34,6 +34,7 @@ import { GET as receiptImageGET } from "./src/routes/api/-receipt-image";
 const PORT = 3000;
 const HOST = "0.0.0.0";
 const CLIENT_DIR = `${import.meta.dir}/dist/client`;
+const OPINLY_IMAGE_CDN = "https://cdn.opinly.ai/8d855wPeaM56NwQ8ffji8";
 
 const freePort =
   `for _ in $(seq 1 25); do ` +
@@ -50,6 +51,10 @@ for (let attempt = 1; ; attempt++) {
       hostname: HOST,
       async fetch(req) {
         const { pathname } = new URL(req.url);
+
+        if ((req.method === "GET" || req.method === "HEAD") && pathname.startsWith("/images/")) {
+          return Response.redirect(`${OPINLY_IMAGE_CDN}/${pathname.slice("/images/".length)}`, 307);
+        }
 
         // API routes — handle before static files or SSR.
         if (pathname === "/api/stripe-webhook" && req.method === "POST") {

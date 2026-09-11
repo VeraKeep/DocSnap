@@ -9,6 +9,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { RouteErrorBoundary } from "~/components/RouteErrorBoundary";
 import { PwaRuntime } from "~/components/PwaRuntime";
+import { OpinlyIdentity } from "~/components/OpinlyIdentity";
 import { installGlobalErrorHandlers } from "~/lib/errorLogger";
 import appCss from "~/styles/app.css?url";
 import { assetUrl } from "~/siteConfig";
@@ -112,6 +113,11 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          async
+          src="https://static.opinly.ai/p.js"
+          data-key="pk-XP7GJCphMxbPo0mGpUO_5V3_6F8R1kuxeRMV7yI"
+        />
         {plausibleDomain ? (
           <script
             defer
@@ -171,6 +177,7 @@ function RootDocument({ children }: { children: ReactNode }) {
           <span>Powered by VeraKeep™</span>
         </footer>
         <PwaRuntime />
+        <OpinlyIdentity />
         <Scripts />
       </body>
     </html>
