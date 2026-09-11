@@ -5,7 +5,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 export const Route = createFileRoute("/garage")({
   head: () => ({
     meta: [
-      { name: "robots", content: "noindex, nofollow" },
+      { name: "robots", content: "index, follow" },
       { title: "GarageSnap — Workshop Inventory | DocSnap" },
       {
         name: "description",
