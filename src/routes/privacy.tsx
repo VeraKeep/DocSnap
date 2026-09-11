@@ -28,7 +28,7 @@ function Privacy() {
         </Link>
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Privacy</h1>
-        <p className="mt-2 text-gray-400">Last updated: August 2026</p>
+        <p className="mt-2 text-gray-400">Last updated: September 2026</p>
 
         <div className="mt-10 space-y-8 text-gray-300 leading-relaxed">
           <section>
@@ -69,8 +69,9 @@ function Privacy() {
               PDF is stored with{" "}
               <a href="https://uploadthing.com" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">Uploadthing</a>,
               a third-party file-storage provider, and a record of your saved documents
-              (with limited metadata such as the file name and page count) is kept on
-              our servers. Authentication is handled by{" "}
+              (with limited metadata such as the file name and page count) is kept in
+              our hosted database (Neon — a Postgres provider). Authentication is
+              handled by{" "}
               <a href="https://clerk.com" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">Clerk</a>.
               Only you can access your saved documents, and you can delete them — and
               their records on our servers — at any time.
@@ -78,7 +79,20 @@ function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white">3. AI &amp; advanced processing (paid modules &amp; cloud features)</h2>
+            <h2 className="text-xl font-semibold text-white">3. Payments &amp; billing (paid plans &amp; modules)</h2>
+            <p className="mt-3">
+              Subscription and add-on purchases are processed by{" "}
+              <a href="https://stripe.com" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">Stripe</a>,
+              our payment processor. Your card details are handled directly by Stripe
+              and are never stored on our servers. We keep only the records needed to
+              manage your subscription — such as which plan or module you have and
+              your billing status. You manage or cancel your subscription at any time
+              through Stripe's customer portal, linked from your DocSnap profile.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white">4. AI &amp; advanced processing (paid modules &amp; cloud features)</h2>
             <p className="mt-3">
               Some DocSnap modules use AI and server-side processing to understand the
               content you give them. When you use these features, the content you

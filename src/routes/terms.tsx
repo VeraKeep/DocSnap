@@ -5,7 +5,7 @@ export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
       { title: 'Terms of Service — DocSnap © 2026' },
-      { name: "description", content: 'Plain-English terms of service for DocSnap © 2026 — a free local document scanner with optional paid subscriptions, paid add-on modules, AI-powered features, and cloud storage.' },
+      { name: "description", content: 'Plain-English terms of service for DocSnap © 2026 — the paid VeraKeep platform for your documents and the things you own, with free local scanning, subscriptions, paid add-on modules, AI-powered features, and cloud storage.' },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/terms") }],
   }) ,
@@ -28,7 +28,7 @@ function Terms() {
         </Link>
 
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Terms of Service</h1>
-        <p className="mt-2 text-gray-400">Last updated: August 2026</p>
+        <p className="mt-2 text-gray-400">Last updated: September 2026</p>
 
         <div className="mt-10 space-y-8 text-gray-300 leading-relaxed">
           <section>
