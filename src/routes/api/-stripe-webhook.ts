@@ -12,6 +12,7 @@
  */
 
 import Stripe from "stripe";
+import { createOpinlyClient } from "@opinly/backend";
 import { sql } from "../../db";
 import {
   findUserByEmail,
@@ -31,6 +32,7 @@ import {
 export { revokeSubscriptionEntitlement };
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
+const opinlyAnalyticsKey = process.env.OPINLY_ANALYTICS_SECRET_KEY ?? "";
 
 export async function POST(request: Request) {
   // If Stripe is not configured, return a clear 501.
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed":
         await handleCheckoutCompleted(event.data.object);
+        await trackOpinlyPurchase(event.data.object);
         break;
 
       case "customer.subscription.deleted":
@@ -109,6 +112,26 @@ export async function POST(request: Request) {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** Record verified Stripe revenue in Opinly without ever delaying entitlement delivery. */
+async function trackOpinlyPurchase(session: Stripe.Checkout.Session): Promise<void> {
+  if (!opinlyAnalyticsKey || session.payment_status !== "paid") return;
+  if (!session.id || !session.amount_total || !session.currency) return;
+
+  try {
+    const analytics = createOpinlyClient({ apiKey: opinlyAnalyticsKey });
+    await analytics.trackPurchase({
+      orderId: session.id,
+      value: session.amount_total / 100,
+      currency: session.currency.toUpperCase(),
+      email: session.customer_details?.email ?? undefined,
+    });
+  } catch (error) {
+    // Stripe has already been verified and the entitlement flow must remain
+    // successful even if an optional analytics service is unavailable.
+    console.error("[stripe-webhook] Failed to record Opinly purchase:", error);
+  }
 }
 
 /**
