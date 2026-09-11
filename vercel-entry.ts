@@ -48,8 +48,6 @@ const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
 };
 
-const OPINLY_IMAGE_CDN = "https://cdn.opinly.ai/8d855wPeaM56NwQ8ffji8";
-
 const toWebRequest = (req: IncomingMessage): Request => {
   const host = req.headers.host ?? "localhost";
   const proto =
@@ -102,17 +100,6 @@ export default async function vercelHandler(
     // check never matched and the request fell through to the SPA router (HTTP 404).
     // Stripe/BillSnap are matched the same way for consistency with serve.ts.
     const pathname = new URL(webRequest.url).pathname;
-
-    // Opinly's renderer emits stable /images/<fileKey> URLs. Redirect those to
-    // this site's CDN namespace without rewriting any API-provided image field.
-    if ((req.method === "GET" || req.method === "HEAD") && pathname.startsWith("/images/")) {
-      const fileKey = pathname.slice("/images/".length);
-      res.statusCode = 307;
-      res.setHeader("location", `${OPINLY_IMAGE_CDN}/${fileKey}`);
-      res.setHeader("cache-control", "public, max-age=31536000, immutable");
-      res.end();
-      return;
-    }
 
     // Mount the Stripe webhook and BillSnap email ingestion here: config.json
     // routes EVERY path on the domain to this one function (single render.func,
