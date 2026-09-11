@@ -5,8 +5,8 @@ import { useState } from "react";
 export const Route = createFileRoute("/faq")({
   head: () => ({
     meta: [
-      { title: 'FAQ — DocSnap © 2026' },
-      { name: "description", content: 'Frequently asked questions about DocSnap © 2026 — document scanning, OCR, cloud sync, pricing, privacy, and using the app safely.' },
+      { title: 'FAQ — DocSnap' },
+      { name: "description", content: 'Frequently asked questions about DocSnap — document scanning, OCR, cloud sync, pricing, privacy, and using the app safely.' },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/faq") }],
   }) ,
@@ -20,7 +20,7 @@ interface FAQItem {
 
 const faqs: FAQItem[] = [
   {
-    q: "Is DocSnap © 2026 really free?",
+    q: "Is DocSnap really free?",
     a: (
       <>
         Yes! All core features — camera capture, image filters, edge
@@ -49,7 +49,7 @@ const faqs: FAQItem[] = [
     q: "What file format does it produce?",
     a: (
       <>
-        DocSnap © 2026 produces standard PDF files. You can optionally enable OCR
+        DocSnap produces standard PDF files. You can optionally enable OCR
         (optical character recognition) to create searchable PDFs — making
         the text selectable and searchable within the document. Without OCR,
         the PDF contains embedded images of your scanned pages.
@@ -60,7 +60,7 @@ const faqs: FAQItem[] = [
     q: "Does it work on iPhone and Android?",
     a: (
       <>
-        Yes, DocSnap © 2026 works on any modern browser — Chrome, Safari, Firefox,
+        Yes, DocSnap works on any modern browser — Chrome, Safari, Firefox,
         and Edge — on both desktop and mobile. On iPhones and Android
         devices, you can use your camera directly or import photos from your
         library. The interface is responsive and designed to work well on
@@ -185,7 +185,7 @@ function FAQ() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );

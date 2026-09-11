@@ -80,7 +80,7 @@ const PLANS: Plan[] = [
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      { title: "Pricing — DocSnap © 2026" },
+      { title: "Pricing — DocSnap" },
       {
         name: "description",
         content:
@@ -103,7 +103,7 @@ function PricingPage() {
   return (
     <main className="flex min-h-screen flex-col bg-gray-950 text-white">
       <header className="flex items-center justify-between border-b border-gray-800/50 px-4 py-4 sm:px-6">
-        <Link to="/" className="text-lg font-semibold hover:text-indigo-400">DocSnap © 2026</Link>
+        <Link to="/" className="text-lg font-semibold hover:text-indigo-400">DocSnap</Link>
         <Link to="/" className="text-sm text-gray-400 hover:text-gray-200">← Back to app</Link>
       </header>
 

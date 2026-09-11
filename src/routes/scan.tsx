@@ -4,7 +4,7 @@ import { canonicalUrl } from "../siteConfig";
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "DocSnap © 2026",
+  name: "DocSnap",
   description:
     "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser using your camera. No account, no uploads. Part of the VeraKeep™ suite.",
   url: canonicalUrl("/scan"),
@@ -412,7 +412,7 @@ function ScanLanding() {
           <div className="mt-12 space-y-4">
             {[
               {
-                q: "Is DocSnap © 2026 really free?",
+                q: "Is DocSnap really free?",
                 a: (
                   <>
                     Scanning is free — you can capture, crop, filter, OCR, and download PDFs entirely in your browser with no account and no charge. Paid plans (Personal, or Family) add cloud storage and Pro features like password-protected PDFs, AI document naming, expiration reminders, secure sharing, redaction, and duplicate detection. See{" "}
@@ -431,7 +431,7 @@ function ScanLanding() {
               },
               {
                 q: "Does OCR work for all languages?",
-                a: "DocSnap © 2026 uses Tesseract.js for OCR, which supports 100+ languages including English, Spanish, French, German, Chinese, Japanese, and more. English is the default; additional language support is planned.",
+                a: "DocSnap uses Tesseract.js for OCR, which supports 100+ languages including English, Spanish, French, German, Chinese, Japanese, and more. English is the default; additional language support is planned.",
               },
             ].map((faq, i) => (
               <details

@@ -81,9 +81,9 @@ export async function generateSearchablePDF(
 
   pdf.setProperties({
     ...(options.title ? { title: options.title } : {}),
-    author: "DocSnap © 2026 — VeraKeep™",
+    author: "DocSnap — VeraKeep™",
     creator: "DocSnap by VeraKeep™",
-    subject: "Document scanned with DocSnap © 2026",
+    subject: "Document scanned with DocSnap",
   });
 
   const pageWidth = 210; // A4 width in mm
@@ -182,9 +182,9 @@ export async function generatePlainPDF(
 
   pdf.setProperties({
     ...(options.title ? { title: options.title } : {}),
-    author: "DocSnap © 2026 — VeraKeep™",
+    author: "DocSnap — VeraKeep™",
     creator: "DocSnap by VeraKeep™",
-    subject: "Document scanned with DocSnap © 2026",
+    subject: "Document scanned with DocSnap",
   });
 
   const pageWidth = 210;

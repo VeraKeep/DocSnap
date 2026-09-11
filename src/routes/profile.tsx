@@ -15,8 +15,8 @@ export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
       { name: "robots", content: "noindex, nofollow" },
-      { title: 'Your Profile — DocSnap © 2026' },
-      { name: "description", content: 'Manage your DocSnap © 2026 account — view storage usage, subscription plan, synced documents, and secure account settings.' },
+      { title: 'Your Profile — DocSnap' },
+      { name: "description", content: 'Manage your DocSnap account — view storage usage, subscription plan, synced documents, and secure account settings.' },
     ],
   }) ,
   component: ProfilePage,
@@ -40,7 +40,7 @@ function ProfilePage() {
   const { tier, isPro, isLoading: subscriptionLoading, upgradeUrl, portalUrl } = useSubscription();
   const planLabel = TIER_LABELS[tier];
 
-  const name = user?.fullName || user?.primaryEmailAddress?.emailAddress || "DocSnap © 2026 user";
+  const name = user?.fullName || user?.primaryEmailAddress?.emailAddress || "DocSnap user";
   const initials = name
     .split(" ")
     .map((part) => part[0])
@@ -56,7 +56,7 @@ function ProfilePage() {
       <header className="flex items-center justify-between border-b border-gray-800/50 px-4 py-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold text-white transition hover:text-indigo-400">
           <Logo />
-          DocSnap © 2026
+          DocSnap
         </Link>
         <div className="flex items-center gap-4">
           <Link
@@ -75,7 +75,7 @@ function ProfilePage() {
         <div>
           <p className="text-sm font-medium text-indigo-400">Account</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Your profile</h1>
-          <p className="mt-3 text-gray-400">Manage your account and keep an eye on your DocSnap © 2026 storage.</p>
+          <p className="mt-3 text-gray-400">Manage your account and keep an eye on your DocSnap storage.</p>
         </div>
 
         <CheckoutSuccessBanner destination={{ kind: "profile" }} />
@@ -136,7 +136,7 @@ function ProfilePage() {
         )}
       </section>
 
-      <footer className="border-t border-gray-800/50 py-5 text-center text-xs text-gray-600">DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</footer>
+      <footer className="border-t border-gray-800/50 py-5 text-center text-xs text-gray-600">© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</footer>
     </main>
   );
 }

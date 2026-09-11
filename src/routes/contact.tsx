@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/contact")({
   head: () => ({
     meta: [
-      { title: 'Contact — DocSnap © 2026' },
-      { name: "description", content: 'Have questions or feedback about DocSnap © 2026 — one place for the important stuff you own and the documents that go with it? Reach out via email or GitHub.' },
+      { title: 'Contact — DocSnap' },
+      { name: "description", content: 'Have questions or feedback about DocSnap — one place for the important stuff you own and the documents that go with it? Reach out via email or GitHub.' },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/contact") }],
   }) ,
@@ -80,7 +80,7 @@ function Contact() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — we read every message</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );

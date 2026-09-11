@@ -4,8 +4,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
-      { title: 'About — DocSnap © 2026' },
-      { name: "description", content: 'DocSnap © 2026 is the hub of the VeraKeep™ suite — one place for the important stuff you own and the documents that go with it. Built by a solo developer, privacy-first, no Adobe license required.' },
+      { title: 'About — DocSnap' },
+      { name: "description", content: 'DocSnap is the hub of the VeraKeep™ suite — one place for the important stuff you own and the documents that go with it. Built by a solo developer, privacy-first, no Adobe license required.' },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/about") }],
   }) ,
@@ -35,15 +35,15 @@ function About() {
             </svg>
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">About DocSnap © 2026</h1>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">About DocSnap</h1>
           </div>
         </div>
 
         <div className="mt-10 space-y-8 text-gray-300 leading-relaxed">
           <section>
-            <h2 className="text-xl font-semibold text-white">What is DocSnap © 2026?</h2>
+            <h2 className="text-xl font-semibold text-white">What is DocSnap?</h2>
             <p className="mt-3">
-              DocSnap © 2026 is the hub of the VeraKeep™ suite — one place for the
+              DocSnap is the hub of the VeraKeep™ suite — one place for the
               important stuff you own and the documents that go with it. Point your
               camera at any document and get a clean, downloadable, searchable PDF —
               instantly. No accounts, no uploads, no Adobe license required.
@@ -54,7 +54,7 @@ function About() {
           <section>
             <h2 className="text-xl font-semibold text-white">Tech stack</h2>
             <p className="mt-3">
-              DocSnap © 2026 is built with modern web technologies and open-source libraries.
+              DocSnap is built with modern web technologies and open-source libraries.
               As the hub of the VeraKeep™ suite, it's the one place for the important stuff you
               own and the documents that go with it — with ReceiptSnap, GarageSnap, and more
               modules to come:
@@ -87,7 +87,7 @@ function About() {
           <section>
             <h2 className="text-xl font-semibold text-white">Open source</h2>
             <p className="mt-3">
-              DocSnap © 2026 is open source. Check out the code, report issues, or contribute
+              DocSnap is open source. Check out the code, report issues, or contribute
               on{" "}
               <a href="https://github.com/myourgal25/docsnapapp" className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">GitHub</a>.
             </p>
@@ -101,7 +101,7 @@ function About() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-600">
-        <span>DocSnap © 2026 — one place for the important stuff you own and the documents that go with it</span>
+        <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
       </footer>
     </main>
   );
