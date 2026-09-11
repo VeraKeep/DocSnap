@@ -70,9 +70,9 @@ function Contact() {
           <section>
             <h2 className="text-xl font-semibold text-white">Response time</h2>
             <p className="mt-3">
-              This is a side project built with ❤️. We're not a big company
-              with a support team, but we genuinely read every message and try
-              to respond within a few days. Thanks for your patience.
+              VeraKeep is a small independent software company, so you'll hear
+              from a real person when you contact us. We read every message
+              and aim to respond within a few business days.
             </p>
           </section>
         </div>
