@@ -165,10 +165,21 @@ function RootDocument({ children }: { children: ReactNode }) {
           }}
         />
         {children}
-        <footer className="border-t border-gray-800/50 bg-gray-950 px-6 py-4 text-center text-xs text-gray-600">
-          <span>© 2026 DocSnap. All rights reserved. Powered by VeraKeep™</span>
-          <span className="mx-2 text-gray-700" aria-hidden="true">·</span>
-          <span>Powered by VeraKeep™</span>
+        <footer className="border-t border-gray-800/50 bg-gray-950 px-6 py-5 text-center text-xs text-gray-600">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span>© 2026 DocSnap. All rights reserved.</span>
+            <span className="text-gray-700" aria-hidden="true">·</span>
+            <a
+              href="https://verakeep.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-gray-500 transition hover:text-gray-300"
+              aria-label="VeraKeep — parent company of DocSnap"
+            >
+              <img src="/verakeep-mark.svg" alt="" width="22" height="22" className="rounded-md" />
+              <span>A VeraKeep product</span>
+            </a>
+          </div>
         </footer>
         <PwaRuntime />
         <Scripts />
