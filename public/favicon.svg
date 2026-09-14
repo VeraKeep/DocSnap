@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Rounded square background -->
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="#4f46e5" />
-  <!-- D letterform -->
-  <path d="M17 16v32M17 16h16c7.18 0 13 5.82 13 13v6c0 7.18-5.82 13-13 13H17"
-        stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <!-- S accent -->
-  <path d="M46 20l-6 12 6 12" stroke="#a5b4fc" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="DocSnap logo">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#35d8ff"/><stop offset="1" stop-color="#0878e8"/></linearGradient>
+    <linearGradient id="white" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#dce7f3"/></linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#06101d"/>
+  <path d="M21 30V18h16M91 18h16v16M21 94v16h16M91 110h16V94" fill="none" stroke="url(#blue)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M39 28h38l18 18v48a9 9 0 0 1-9 9H39a9 9 0 0 1-9-9V37a9 9 0 0 1 9-9Z" fill="none" stroke="url(#white)" stroke-width="6"/>
+  <path d="M77 28v20h19" fill="url(#blue)" stroke="url(#blue)" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M44 58h28M44 70h23" stroke="#dce7f3" stroke-width="5" stroke-linecap="round"/>
+  <path d="M43 79h12l8 17-5 7z" fill="url(#white)"/>
+  <path d="M65 79h14L59 99l-5-10zM72 89h14l-10 9 10 10H73L62 98z" fill="url(#blue)"/>
 </svg>
