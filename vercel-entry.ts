@@ -99,7 +99,26 @@ export default async function vercelHandler(
     // (`?actionType=upload&slug=pdfUploader`), so a raw `url.endsWith("/api/uploadthing")`
     // check never matched and the request fell through to the SPA router (HTTP 404).
     // Stripe/BillSnap are matched the same way for consistency with serve.ts.
-    const pathname = new URL(webRequest.url).pathname;
+    const requestUrl = new URL(webRequest.url);
+    const pathname = requestUrl.pathname;
+
+    // Consolidate public page signals on the apex host. Keep API endpoints on
+    // either host so provider webhooks/uploads are never dependent on a host
+    // redirect. GET/HEAD page requests on www receive a permanent redirect.
+    const host = requestUrl.hostname.toLowerCase();
+    const isPublicPageMethod = req.method === "GET" || req.method === "HEAD";
+    if (
+      host === "www.docsnapapp.com" &&
+      isPublicPageMethod &&
+      !pathname.startsWith("/api/")
+    ) {
+      requestUrl.hostname = "docsnapapp.com";
+      res.statusCode = 308;
+      res.setHeader("location", requestUrl.toString());
+      res.setHeader("cache-control", "public, max-age=3600");
+      res.end();
+      return;
+    }
 
     // Mount the Stripe webhook and BillSnap email ingestion here: config.json
     // routes EVERY path on the domain to this one function (single render.func,
