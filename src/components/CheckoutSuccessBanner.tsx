@@ -31,6 +31,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useUser } from "@clerk/tanstack-start";
 import { useEffect, useState } from "react";
+import { trackEvent } from "~/analytics";
 import {
   getUserEntitlementSummary,
   type EntitlementSummary,
@@ -291,6 +292,7 @@ export function CheckoutSuccessBanner({
     new URLSearchParams(location.searchStr ?? "").get("checkout") === "success";
   const [summary, setSummary] = useState<EntitlementSummary | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [conversionTracked, setConversionTracked] = useState(false);
 
   useEffect(() => {
     if (!showedPurchase) return;
@@ -327,5 +329,12 @@ export function CheckoutSuccessBanner({
   // Not entitled → render nothing; the route's normal locked/upgrade
   // experience stays visible below.
   if (!content) return null;
+
+  // Count only after the signed-in user DB entitlement confirms the purchase.
+  if (!conversionTracked) {
+    trackEvent("purchase-confirmed", { product: content.label });
+    setConversionTracked(true);
+  }
+
   return <SuccessBanner content={content} onDismiss={() => setDismissed(true)} />;
 }
