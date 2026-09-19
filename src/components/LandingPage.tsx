@@ -146,8 +146,8 @@ export function LandingPage({
               Turn paper into clean, searchable PDFs from your phone or computer. The core scanner works locally in your browser without an account; optional DocSnap modules help organize the records behind everyday life.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <button onClick={onOpenCamera} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-6 py-3.5 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-300">Open camera →</button>
-              <button onClick={onChoosePhotos} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-slate-900/60 px-6 py-3.5 text-sm font-bold text-slate-100 transition hover:border-cyan-400/50 hover:bg-slate-800">Choose photos</button>
+              <button onClick={() => { trackEvent("scanner-start", { method: "camera", placement: "homepage-hero" }); onOpenCamera(); }} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-6 py-3.5 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-300">Open camera →</button>
+              <button onClick={() => { trackEvent("scanner-start", { method: "photos", placement: "homepage-hero" }); onChoosePhotos(); }} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-slate-900/60 px-6 py-3.5 text-sm font-bold text-slate-100 transition hover:border-cyan-400/50 hover:bg-slate-800">Choose photos</button>
               <a href="#modules" className="inline-flex items-center rounded-xl px-4 py-3.5 text-sm font-semibold text-cyan-300 hover:text-cyan-200">Explore modules ↓</a><Link to="/resources" className="inline-flex items-center rounded-xl px-4 py-3.5 text-sm font-semibold text-slate-400 hover:text-cyan-200">Scanning guides →</Link>
             </div>
             <p className="mt-4 text-xs text-slate-500">Free to start · No credit card required · Local scanning available without an account</p>
@@ -217,7 +217,7 @@ export function LandingPage({
                     <p className="mt-3 flex-1 text-sm leading-relaxed text-slate-400">{m.description}</p>
                     <div className="mt-5 flex items-baseline gap-1"><span className="text-2xl font-extrabold">{m.priceMonthly}</span><span className="text-xs text-slate-500">/month</span></div>
                     <div className="mt-4 flex flex-col gap-2">
-                      {!m.comingSoon && m.checkout.monthly ? <a href={m.checkout.monthly} className="rounded-xl px-4 py-2.5 text-center text-sm font-bold text-slate-950 transition hover:brightness-110" style={{ backgroundColor: accent }}>Get {m.name}</a> : <span className="rounded-xl border border-slate-700 px-4 py-2.5 text-center text-sm font-semibold text-slate-500">Pricing coming soon</span>}
+                      {!m.comingSoon && m.checkout.monthly ? <a href={m.checkout.monthly} onClick={() => trackEvent("checkout-click", { product: m.name, placement: "homepage-module-card" })} className="rounded-xl px-4 py-2.5 text-center text-sm font-bold text-slate-950 transition hover:brightness-110" style={{ backgroundColor: accent }}>Get {m.name}</a> : <span className="rounded-xl border border-slate-700 px-4 py-2.5 text-center text-sm font-semibold text-slate-500">Pricing coming soon</span>}
                       {!m.comingSoon && <Link to={m.route} className="rounded-xl border border-slate-700 px-4 py-2.5 text-center text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white">Open {m.name}</Link>}
                     </div>
                     <div className="mt-4 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-600"><img src="/verakeep-mark.svg" alt="" className="h-4 w-4 rounded"/> A VeraKeep product</div>
