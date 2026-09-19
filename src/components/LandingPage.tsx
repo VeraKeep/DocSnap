@@ -117,7 +117,7 @@ export function LandingPage({
             <a href="#features" className="transition hover:text-cyan-300">Features</a>
             <a href="#modules" className="transition hover:text-cyan-300">Modules</a>
             <Link to="/pricing" className="transition hover:text-cyan-300">Pricing</Link>
-            <Link to="/faq" className="transition hover:text-cyan-300">Resources</Link>
+            <Link to="/resources" className="transition hover:text-cyan-300">Resources</Link>
           </nav>
           <div className="flex items-center gap-2">
             {authLoaded && cloudConfigured && isSignedIn ? (
@@ -140,15 +140,15 @@ export function LandingPage({
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.28em] text-cyan-300">Scan · Organize · Find · Done</p>
             <h1 className="mt-5 text-5xl font-black leading-[.95] tracking-[-.05em] text-white sm:text-6xl lg:text-7xl">
-              Your life,<br/><span className="bg-gradient-to-r from-cyan-300 to-blue-500 bg-clip-text text-transparent">documented.</span>
+              Scan paperwork.<br/><span className="bg-gradient-to-r from-cyan-300 to-blue-500 bg-clip-text text-transparent">Find it later.</span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">
-              DocSnap helps you capture, organize, search, and keep the documents and records that make everyday life run smoothly.
+              Turn paper into clean, searchable PDFs from your phone or computer. The core scanner works locally in your browser without an account; optional DocSnap modules help organize the records behind everyday life.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button onClick={onOpenCamera} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-6 py-3.5 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-300">Open camera →</button>
               <button onClick={onChoosePhotos} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-slate-900/60 px-6 py-3.5 text-sm font-bold text-slate-100 transition hover:border-cyan-400/50 hover:bg-slate-800">Choose photos</button>
-              <a href="#modules" className="inline-flex items-center rounded-xl px-4 py-3.5 text-sm font-semibold text-cyan-300 hover:text-cyan-200">Explore modules ↓</a>
+              <a href="#modules" className="inline-flex items-center rounded-xl px-4 py-3.5 text-sm font-semibold text-cyan-300 hover:text-cyan-200">Explore modules ↓</a><Link to="/resources" className="inline-flex items-center rounded-xl px-4 py-3.5 text-sm font-semibold text-slate-400 hover:text-cyan-200">Scanning guides →</Link>
             </div>
             <p className="mt-4 text-xs text-slate-500">Free to start · No credit card required · Local scanning available without an account</p>
           </div>
@@ -255,7 +255,7 @@ export function LandingPage({
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 sm:flex-row">
           <div className="flex items-center gap-3"><img src="/verakeep-mark.svg" alt="VeraKeep" className="h-8 w-8 rounded-lg"/><div><div className="font-bold">VeraKeep</div><div className="text-[9px] uppercase tracking-[0.22em] text-slate-500">Practical tools for real life</div></div></div>
           <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-slate-500">
-            <Link to="/privacy" className="hover:text-slate-300">Privacy</Link><Link to="/terms" className="hover:text-slate-300">Terms</Link><Link to="/contact" className="hover:text-slate-300">Contact</Link><Link to="/faq" className="hover:text-slate-300">FAQ</Link><Link to="/status" className="hover:text-slate-300">Status</Link><Link to="/about" className="hover:text-slate-300">About</Link><Link to="/pricing" className="hover:text-cyan-300">Pricing</Link>
+            <Link to="/resources" className="hover:text-cyan-300">Resources</Link><Link to="/privacy" className="hover:text-slate-300">Privacy</Link><Link to="/terms" className="hover:text-slate-300">Terms</Link><Link to="/contact" className="hover:text-slate-300">Contact</Link><Link to="/faq" className="hover:text-slate-300">FAQ</Link><Link to="/status" className="hover:text-slate-300">Status</Link><Link to="/about" className="hover:text-slate-300">About</Link><Link to="/pricing" className="hover:text-cyan-300">Pricing</Link>
           </nav>
         </div>
       </footer>
