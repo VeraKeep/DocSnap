@@ -50,9 +50,9 @@ const homeStructuredData = {
   "@type": "WebApplication",
   name: "DocSnap",
   description:
-    "One place for the important stuff you own and the documents that go with it — scan any document to a searchable PDF right in your browser, no account or upload needed. Part of the VeraKeep™ suite.",
+    "Scan documents into searchable PDFs from your phone or computer. DocSnap’s core scanner runs locally in your browser without an account or upload, with optional tools for organizing everyday records.",
   url: SITE_ORIGIN,
-  applicationCategory: "MultimediaApplication",
+  applicationCategory: "UtilitiesApplication",
   operatingSystem: "Web",
   offers: {
     "@type": "Offer",
@@ -66,9 +66,9 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       {
-        title: "DocSnap — one place for the important stuff you own and the documents that go with it",
+        title: "Free Document Scanner & Searchable PDF Maker | DocSnap",
       },
-      { name: "description", content: "Scan any document to a searchable PDF right in your browser — no account, no upload, no Adobe license. DocSnap keeps everything you own and its paperwork organized in one place, part of the VeraKeep™ suite." },
+      { name: "description", content: "Scan documents with your phone or computer and create searchable PDFs with OCR. DocSnap’s core scanner works locally in your browser with no account or upload required." },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/") }],
     scripts: [
