@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { ClerkProvider } from "@clerk/tanstack-start";
 import { useEffect, type ReactNode } from "react";
+import { useLocation } from "@tanstack/react-router";
 
 import { RouteErrorBoundary } from "~/components/RouteErrorBoundary";
 import { PwaRuntime } from "~/components/PwaRuntime";
@@ -87,8 +88,19 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const location = useLocation();
+
   // Install global handlers for unhandled errors/rejections (client only).
   useEffect(() => installGlobalErrorHandlers(), []);
+
+  // Plausible auto-tracks the initial pageview. TanStack client-side navigation
+  // does not reload the document, so emit a privacy-safe pageview on subsequent
+  // route changes. Only the URL is sent; never document/OCR/user content.
+  useEffect(() => {
+    if (!plausibleDomain || typeof window === "undefined") return;
+    const plausible = (window as Window & { plausible?: (...args: unknown[]) => void }).plausible;
+    if (typeof plausible === "function") plausible("pageview", { u: window.location.href });
+  }, [location.pathname, location.searchStr]);
 
   return (
     <RootDocument>
@@ -113,11 +125,18 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
         {plausibleDomain ? (
-          <script
-            defer
-            data-domain={plausibleDomain}
-            src="https://plausible.io/js/script.js"
-          />
+          <>
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)}`,
+              }}
+            />
+            <script
+              defer
+              data-domain={plausibleDomain}
+              src="https://plausible.io/js/script.js"
+            />
+          </>
         ) : null}
       </head>
       <body>
