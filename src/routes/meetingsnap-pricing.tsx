@@ -70,23 +70,22 @@ const MEETING_PLANS: MeetingPlan[] = [
       "Cross-meeting search",
       "Decision history",
       "Advanced exports",
-      "Integrations",
-      "Priority processing",
+      "Saved meeting search",
+      "Advanced exports",
     ],
   },
   {
     name: "Team",
     price: { monthly: "$8", annual: "$8" },
     cadence: { monthly: "/user/month", annual: "/user/month" },
-    description: "Collaborate across your whole team.",
+    description: "Planned collaboration features for teams.",
     button: "coming-soon",
     features: [
-      "Unlimited meetings",
-      "Shared workspaces",
-      "Assignments & permissions",
-      "Org-wide search",
-      "Admin & audit logs",
-      "Minimum $40 / month",
+      "Coming soon",
+      "Planned shared workspaces",
+      "Planned assignments & permissions",
+      "Planned organization-wide search",
+      "Planned admin & audit controls",
     ],
   },
 ];
@@ -94,11 +93,11 @@ const MEETING_PLANS: MeetingPlan[] = [
 export const Route = createFileRoute("/meetingsnap-pricing")({
   head: () => ({
     meta: [
-      { title: "MeetingSnap Pricing — VeraKeep" },
+      { title: "MeetingSnap Pricing | Free, Personal & Pro Plans" },
       {
         name: "description",
         content:
-          "MeetingSnap turns conversations into action. Choose Free, Personal, Pro, or Team and get AI summaries, decisions, and next steps from every meeting.",
+          "Compare MeetingSnap Free, Personal, and Pro plans for AI meeting summaries, decisions, action items, search, and exports. Team collaboration features are coming later.",
       },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/meetingsnap-pricing") }],
@@ -120,6 +119,7 @@ function MeetingSnapPricingPage() {
           VeraKeep
         </Link>
         <div className="flex items-center gap-4 text-sm">
+          <Link to="/resources" className="text-gray-400 hover:text-gray-200">Resources</Link>
           <Link to="/meetingsnap" className="text-gray-400 hover:text-gray-200">
             Open the app →
           </Link>
