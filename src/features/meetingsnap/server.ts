@@ -17,7 +17,7 @@
  * object response). No key is ever hardcoded; if OPENAI_API_KEY is unset at
  * runtime we surface the same clear, honest message the receipts module uses.
  */
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
 import {
@@ -475,15 +475,17 @@ export interface TranscriptionResult {
  * exactly like the other AI helpers; if it is unset we throw the same honest
  * "not enabled yet" message.
  */
-export async function transcribeAudio(input: {
+export const transcribeAudio = createServerOnlyFn(async (input: {
   fileUrl: string;
   fileName: string;
-}): Promise<TranscriptionResult> {
+}): Promise<TranscriptionResult> => {
+  const { readAudioBytes, validateAudioUrl } = await import("./audioAuthorization");
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Audio transcription isn't enabled yet — OPENAI_API_KEY is not connected.");
   }
 
-  const audioRes = await fetch(input.fileUrl, { method: "GET" });
+  validateAudioUrl(input.fileUrl);
+  const audioRes = await fetch(input.fileUrl, { method: "GET", redirect: "error", signal: AbortSignal.timeout(60000) });
   if (!audioRes.ok) {
     throw new Error(
       "The uploaded recording could not be retrieved. Please try uploading it again.",
@@ -492,11 +494,11 @@ export async function transcribeAudio(input: {
 
   // Whisper accepts a multipart `file` field; the filename extension tells it
   // how to decode the audio. We reuse the original file name (with extension).
-  const bytes = await audioRes.arrayBuffer();
+  const bytes = await readAudioBytes(audioRes);
   const form = new FormData();
   form.append(
     "file",
-    new File([bytes], input.fileName || "recording.mp3", { type: audioRes.headers.get("content-type") ?? "application/octet-stream" }),
+    new File([bytes.buffer as ArrayBuffer], input.fileName || "recording.mp3", { type: audioRes.headers.get("content-type") ?? "application/octet-stream" }),
   );
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
@@ -552,7 +554,7 @@ export async function transcribeAudio(input: {
     segments,
     speakers: [], // stepping stone: no speaker labels yet (Deepgram fills later)
   };
-}
+});
 
 /* ------------------------------------------------------------------ */
 /* Server functions                                                    */
@@ -661,17 +663,22 @@ export const analyzeMeeting = createServerFn({ method: "POST" })
  */
 export const analyzeAudio = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = (data ?? {}) as { title?: unknown; fileUrl?: unknown; fileName?: unknown };
+    const d = (data ?? {}) as { title?: unknown; fileUrl?: unknown; fileName?: unknown; uploadToken?: unknown };
     const title = typeof d.title === "string" ? d.title.trim().slice(0, MAX_TITLE_LENGTH) : "";
     const fileUrl = typeof d.fileUrl === "string" ? d.fileUrl.trim() : "";
     const fileName = typeof d.fileName === "string" ? d.fileName.trim() : "";
     if (!/^https:\/\/[^\s]+$/i.test(fileUrl) || fileUrl.length > 500) {
       throw new Error("A valid uploaded recording URL is required.");
     }
-    return { title, fileUrl, fileName: fileName.slice(0, 200) };
+    return { title, fileUrl, fileName: fileName.slice(0, 200), uploadToken: typeof d.uploadToken === "string" ? d.uploadToken : "" };
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    const { verifyAudioUpload } = await import("./audioAuthorization");
+    verifyAudioUpload(opts.data.uploadToken, userId, opts.data.fileUrl);
+    const usage = await getMeetingsUsage(userId);
+    if (usage.tier === "free") throw new Error("A paid MeetingSnap plan is required for recording transcription.");
+    if (isMeetingLimitReached(usage)) throw new Error("Your monthly meeting limit has been reached.");
     // 1) Speech-to-text. Throws a friendly message if the key is unset, the
     //    file is unreachable, or Whisper returns no usable text. Returns the
     //    flattened transcript PLUS timestamped segments (empty speakers in the
@@ -831,7 +838,7 @@ export const askAI = createServerFn({ method: "POST" })
       FROM meetings m
       LEFT JOIN meeting_extractions e ON e.meeting_id = m.id
       WHERE m.clerk_user_id = ${userId}
-      ORDER BY m.created_at ASC
+      ORDER BY m.created_at DESC
       LIMIT ${MAX_ASKS_CONTEXT}
     `) as Record<string, unknown>[];
 
@@ -947,3 +954,4 @@ export const draftFollowUpEmail = createServerFn({ method: "POST" })
       noneOpen: false,
     };
   });
+

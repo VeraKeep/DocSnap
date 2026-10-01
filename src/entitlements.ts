@@ -256,14 +256,15 @@ export async function enqueuePendingEntitlement(
     `;
   } catch (err) {
     console.error("[entitlements] Failed to enqueue pending entitlement:", err);
+    throw err;
   }
 }
 
 /**
  * Grant every un-reconciled pending purchase bought with this email onto the
  * now-known `clerkUserId`. Called when the user completes sign-in (upsertUser).
- * FAILS CLOSED: an unknown price in a pending row grants nothing but is still
- * marked reconciled (so it doesn't retry forever); each known price grants
+ * FAILS CLOSED: an unknown price in a pending row grants nothing and remains
+ * pending for review; each known price grants
  * exactly what it paid for.
  */
 export async function reconcilePendingEntitlements(
@@ -287,8 +288,9 @@ export async function reconcilePendingEntitlements(
       );
       if (status === "unknown") {
         console.warn(
-          `[entitlements] Pending purchase (id ${row.id}, price ${row.price_id ?? "(none)"}) has no known entitlement — marked reconciled without granting`,
+          `[entitlements] Pending purchase (id ${row.id}, price ${row.price_id ?? "(none)"}) has no known entitlement — retained for review`,
         );
+        continue;
       }
       await sql`
         UPDATE pending_entitlements
@@ -302,3 +304,4 @@ export async function reconcilePendingEntitlements(
   }
   return count;
 }
+

@@ -14,7 +14,7 @@
  * customer's data rows (receipts, meetings, bills, contracts, garage items,
  * properties, books, share links) — none of those tables have a FK to `users`,
  * and nothing in this module issues a DELETE against them. Cancellation changes
- * ACCESS, never the data. Each setter FAILS CLOSED / logs and never throws.
+ * ACCESS, never the data. Write failures propagate so Stripe can retry without losing the event.
  */
 
 import {
@@ -43,8 +43,8 @@ export function subscriptionPriceId(subscription: {
 
 /** Revoke exactly the entitlement the ending subscription paid for. Each
  *  subscription demotes precisely the thing it granted — the DocSnap tier, a
- *  module add-on flag, or the MeetingSnap tier. Unknown/absent → safe DocSnap
- *  free demotion (never grants, never crashes; logs on error via helpers).
+ *  module add-on flag, or the MeetingSnap tier. Unknown prices change nothing
+ *  because they cannot identify which entitlement should be revoked.
  */
 export async function revokeSubscriptionEntitlement(
   clerkUserId: string,
@@ -53,9 +53,8 @@ export async function revokeSubscriptionEntitlement(
   const priceId = subscriptionPriceId(subscription);
   const entitlement = priceId ? PRICE_ENTITLEMENTS[priceId] : undefined;
   if (!entitlement) {
-    await setFreeSubscription(clerkUserId);
-    console.log(
-      `[stripe-webhook] Unknown/absent price (${priceId ?? "(none)"}) — demoted DocSnap to free for user ${clerkUserId}`,
+    console.warn(
+      `[stripe-webhook] Unknown/absent price (${priceId ?? "(none)"}) — no entitlement changed for user ${clerkUserId}`,
     );
     return;
   }
@@ -109,3 +108,4 @@ export async function revokeSubscriptionEntitlement(
       break;
   }
 }
+

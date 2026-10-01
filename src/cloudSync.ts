@@ -1,3 +1,4 @@
+import { genUploader } from "uploadthing/client";
 import { generateReactHelpers } from "@uploadthing/react";
 import type { UploadRouter } from "./uploadthing";
 
@@ -142,6 +143,16 @@ export async function uploadAssetImage(
  */
 export async function uploadAudioRecording(
   file: File,
-): Promise<{ fileKey: string; fileUrl: string } | null> {
-  return uploadFileToUploadThing(file, "audioUploader");
+): Promise<{ fileKey: string; fileUrl: string; uploadToken: string } | null> {
+  try {
+    const { uploadFiles } = genUploader<UploadRouter>();
+    const [uploaded] = await uploadFiles("audioUploader", { files: [file] });
+    const data = uploaded?.serverData;
+    if (!data?.uploadToken) throw new Error("Recording upload authorization is missing.");
+    return { fileKey: data.fileKey, fileUrl: data.fileUrl, uploadToken: data.uploadToken };
+  } catch (error) {
+    console.error("Recording upload failed:", error);
+    return null;
+  }
 }
+

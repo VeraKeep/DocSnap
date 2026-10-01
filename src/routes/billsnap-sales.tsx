@@ -41,9 +41,10 @@ const CONFIG: ModuleSalesConfig = {
   ],
   startNoteTitle: "Not sure where to start?", startNoteBody: "Add the bill due soonest. Once the current month is organized, backfill the recurring bills you want to keep on record.",
   resourceLinks: [
-    { href: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
-    { href: "/resources/local-vs-cloud-document-scanning", label: "Local vs. cloud document scanning" },
-    { href: "/resources/mobile-scanner-privacy", label: "Mobile scanner privacy" },
+    { to: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
+    { to: "/resources/local-vs-cloud-document-scanning", label: "Local vs. cloud document scanning" },
+    { to: "/resources/mobile-scanner-privacy", label: "Mobile scanner privacy" },
   ],
 };
 function BillSnapSalesPage() { return <ModuleSalesPage {...CONFIG} />; }
+

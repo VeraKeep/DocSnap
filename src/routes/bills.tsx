@@ -4,7 +4,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import { ModulePageHeader } from "~/components/ModulePageHeader";
 
 export const Route = createFileRoute("/bills")({
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "BillSnap — DocSnap" }, { name: "description", content: "Snap the bill, know what you owe and when. Track vendors, due dates, amounts, and get reminders. Sign in required." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "BillSnap — DocSnap" }, { name: "description", content: "Snap the bill, know what you owe and when. Track vendors, due dates, amounts, and get reminders. Sign in required." }] }),
   component: BillsPage,
 });
 
@@ -19,3 +19,4 @@ function BillsPage() {
     </main>
   );
 }
+

@@ -36,19 +36,19 @@ export function inboundAddressForToken(token: string): string {
 }
 
 /**
- * Generate a fresh unguessable token: 24 random bytes base64url-encoded ->
- * 32 chars (>= the 16+ requirement), URL-safe (no '+' '/' '=') so it survives
+ * Generate a fresh unguessable token: 24 random bytes hex-encoded ->
+ * 48 lowercase chars (>= the 16+ requirement), URL-safe (no '+' '/' '=') so it survives
  * being a path/query token. Server-only module, so Node crypto is safe here.
  */
 export function generateInboundToken(): string {
-  return randomBytes(24).toString("base64url");
+  return randomBytes(24).toString("hex");
 }
 
-const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,}$/;
+const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** Normalize a recipient header/full address to its local+domain tokens. */
 export interface ParsedRecipient {
-  /** The local part, lowercased (e.g. "bills+abc123"). */
+  /** The local part, preserving token case (e.g. "bills+abc123"). */
   local: string;
   /** The lowercase domain (without the trailing dot). */
   domain: string;
@@ -60,7 +60,7 @@ export interface ParsedRecipient {
 
 /**
  * Parse and normalize an RFC-5322 recipient. Strips display names and angle
- * brackets (e.g. `"John" <Bills+AbC@Inbound.DocSnapApp.com>`), lowercases, and
+ * brackets (e.g. `"John" <Bills+AbC@Inbound.DocSnapApp.com>`), normalizes the domain, and
  * splits it into local + domain + token. Returns ok:false for anything that
  * isn't a bare address.
  */
@@ -71,12 +71,12 @@ export function parseRecipient(recipient: string): ParsedRecipient {
   const raw = ((angle ? angle[1] : recipient) || "").trim();
   const at = raw.lastIndexOf("@");
   if (at <= 0) return { local: "", domain: "", token: null, ok: false };
-  const local = raw.slice(0, at).toLowerCase();
+  const local = raw.slice(0, at);
   const domain = raw.slice(at + 1).toLowerCase().replace(/\.$/, "");
-  if (!local) return { local: "", domain: "", token: null, ok: false };
+  if (!local || !domain || /[\s@]/.test(local + domain)) return { local: "", domain: "", token: null, ok: false };
   let token: string | null = null;
   const plus = local.indexOf("+");
-  if (plus >= 0) {
+  if (plus >= 0 && local.slice(0, plus).toLowerCase() === "bills") {
     const candidate = local.slice(plus + 1);
     if (TOKEN_PATTERN.test(candidate)) token = candidate;
   }
@@ -85,7 +85,7 @@ export function parseRecipient(recipient: string): ParsedRecipient {
 
 /** True when the local part uses the reserved `bills+` prefix. */
 export function isBillSnapRecipient(recipient: string): boolean {
-  return parseRecipient(recipient).local.startsWith("bills+");
+  return parseRecipient(recipient).local.toLowerCase().startsWith("bills+");
 }
 
 // ---------------------------------------------------------------------------
@@ -234,8 +234,11 @@ export async function lookupClerkUserByInboundToken(token: string): Promise<stri
   try {
     const rows = await sql`
       SELECT clerk_user_id FROM billsnap_inbound_addresses
-      WHERE token = ${token} AND enabled = true LIMIT 1
+      WHERE LOWER(token) = LOWER(${token}) AND enabled = true LIMIT 2
     `;
+    // Older base64url addresses may be lowercased by mail providers.
+    // Reject ambiguous case-folded matches rather than select the wrong owner.
+    if (rows.length !== 1) return null;
     const clerkUserId = rows[0]?.clerk_user_id as string | undefined;
     return clerkUserId && clerkUserId.length > 0 ? clerkUserId : null;
   } catch (error) {
@@ -253,9 +256,10 @@ export async function resolveOwnerFromRecipient(
   recipient: string,
 ): Promise<{ clerkUserId: string | null; token: string | null; domain: string | null }> {
   const parsed = parseRecipient(recipient);
-  if (!parsed.ok || !parsed.local.startsWith("bills+") || !parsed.token) {
+  if (!parsed.ok || parsed.domain !== inboundDomain().toLowerCase().replace(/\.$/, "") || !parsed.local.toLowerCase().startsWith("bills+") || !parsed.token) {
     return { clerkUserId: null, token: parsed.token ?? null, domain: parsed.domain || null };
   }
   const clerkUserId = await lookupClerkUserByInboundToken(parsed.token);
   return { clerkUserId, token: parsed.token, domain: parsed.domain || null };
 }
+

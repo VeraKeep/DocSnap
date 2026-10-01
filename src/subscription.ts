@@ -87,27 +87,27 @@ export async function setSubscriptionTier(
         stripe_customer_id = COALESCE(${stripeCustomerId}, users.stripe_customer_id),
         updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set subscription tier:", err); }
+  } catch (err) { console.error("[subscription] Failed to set subscription tier:", err); throw err; }
 }
 
 export async function setFreeSubscription(clerkUserId: string): Promise<void> {
   try {
     await sql`UPDATE users SET subscription_status = 'free', updated_at = NOW() WHERE clerk_user_id = ${clerkUserId}`;
-  } catch (err) { console.error("[subscription] Failed to set free subscription:", err); }
+  } catch (err) { console.error("[subscription] Failed to set free subscription:", err); throw err; }
 }
 
 export async function findUserByStripeCustomerId(stripeCustomerId: string): Promise<string | null> {
   try {
     const rows = await sql`SELECT clerk_user_id FROM users WHERE stripe_customer_id = ${stripeCustomerId} LIMIT 1`;
     return (rows[0] as { clerk_user_id: string } | undefined)?.clerk_user_id ?? null;
-  } catch (err) { console.error("[subscription] Failed to find user by stripe ID:", err); return null; }
+  } catch (err) { console.error("[subscription] Failed to find user by stripe ID:", err); throw err; }
 }
 
 export async function findUserByEmail(email: string): Promise<string | null> {
   try {
     const rows = await sql`SELECT clerk_user_id FROM users WHERE email = ${email} LIMIT 1`;
     return (rows[0] as { clerk_user_id: string } | undefined)?.clerk_user_id ?? null;
-  } catch (err) { console.error("[subscription] Failed to find user by email:", err); return null; }
+  } catch (err) { console.error("[subscription] Failed to find user by email:", err); throw err; }
 }
 
 /**
@@ -155,7 +155,7 @@ export async function setReceiptSnapAddon(clerkUserId: string, owned: boolean): 
       VALUES (${clerkUserId}, ${owned})
       ON CONFLICT (clerk_user_id) DO UPDATE SET addon_receiptsnap = ${owned}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set ReceiptSnap add-on:", err); }
+  } catch (err) { console.error("[subscription] Failed to set ReceiptSnap add-on:", err); throw err; }
 }
 
 /**
@@ -191,7 +191,7 @@ export async function setGarageSnapAddon(clerkUserId: string, owned: boolean): P
       VALUES (${clerkUserId}, ${owned})
       ON CONFLICT (clerk_user_id) DO UPDATE SET addon_garagesnap = ${owned}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set GarageSnap add-on:", err); }
+  } catch (err) { console.error("[subscription] Failed to set GarageSnap add-on:", err); throw err; }
 }
 
 /**
@@ -227,7 +227,7 @@ export async function setHomeSnapAddon(clerkUserId: string, owned: boolean): Pro
       VALUES (${clerkUserId}, ${owned})
       ON CONFLICT (clerk_user_id) DO UPDATE SET addon_homesnap = ${owned}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set HomeSnap add-on:", err); }
+  } catch (err) { console.error("[subscription] Failed to set HomeSnap add-on:", err); throw err; }
 }
 /**
  * BillSnap add-on entitlement.
@@ -264,7 +264,7 @@ export async function setBillSnapAddon(clerkUserId: string, owned: boolean): Pro
       VALUES (${clerkUserId}, ${owned})
       ON CONFLICT (clerk_user_id) DO UPDATE SET addon_billsnap = ${owned}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set BillSnap add-on:", err); }
+  } catch (err) { console.error("[subscription] Failed to set BillSnap add-on:", err); throw err; }
 }
 
 /**
@@ -300,7 +300,7 @@ export async function setContractSnapAddon(clerkUserId: string, owned: boolean):
       VALUES (${clerkUserId}, ${owned})
       ON CONFLICT (clerk_user_id) DO UPDATE SET addon_contractsnap = ${owned}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set ContractSnap add-on:", err); }
+  } catch (err) { console.error("[subscription] Failed to set ContractSnap add-on:", err); throw err; }
 }
 /**
  * BookSnap add-on entitlement.
@@ -334,7 +334,7 @@ export async function setBookSnapAddon(clerkUserId: string, owned: boolean): Pro
       VALUES (${clerkUserId}, ${owned})
       ON CONFLICT (clerk_user_id) DO UPDATE SET addon_booksnap = ${owned}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set BookSnap add-on:", err); }
+  } catch (err) { console.error("[subscription] Failed to set BookSnap add-on:", err); throw err; }
 }
 /** MeetingSnap's independent 4-tier model (mirrors features/meetingsnap). */
 export type MeetingTier = "free" | "personal" | "pro" | "team";
@@ -352,7 +352,7 @@ export async function setMeetingSubscriptionTier(
       VALUES (${clerkUserId}, ${tier})
       ON CONFLICT (clerk_user_id) DO UPDATE SET meeting_subscription_status = ${tier}, updated_at = NOW()
     `;
-  } catch (err) { console.error("[subscription] Failed to set MeetingSnap tier:", err); }
+  } catch (err) { console.error("[subscription] Failed to set MeetingSnap tier:", err); throw err; }
 }
 
 /** GarageSnap entitlement for the signed-in user — the /garage UI gate
@@ -487,3 +487,4 @@ export const syncUser = createServerFn().validator((params: { clerkUserId: strin
     await upsertUser(userId, data.email);
     return { ok: true };
   });
+

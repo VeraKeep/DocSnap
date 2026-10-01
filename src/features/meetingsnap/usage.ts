@@ -32,7 +32,8 @@ export interface MeetingUsage {
 export async function getMeetingsUsage(
   clerkUserId: string,
 ): Promise<MeetingUsage> {
-  // Resolve the user's own MeetingSnap tier first. Fails closed to free.
+  if (!process.env.DATABASE_URL) throw new Error("Meeting storage is not configured.");
+  // Query failures must stop analysis rather than reset the monthly meter.
   let tier: MeetingTier = "free";
   try {
     const tierRows = (await sql`
@@ -44,6 +45,7 @@ export async function getMeetingsUsage(
     );
   } catch (err) {
     console.error("[meetingsnap] Failed to resolve meeting tier:", err);
+    throw new Error("Meeting usage could not be verified. Please try again later.");
   }
 
   // Count meetings created since the start of the current month.
@@ -58,6 +60,7 @@ export async function getMeetingsUsage(
     usedThisMonth = Number(countRows[0]?.count ?? 0);
   } catch (err) {
     console.error("[meetingsnap] Failed to count monthly meetings:", err);
+    throw new Error("Meeting usage could not be verified. Please try again later.");
   }
 
   return {
@@ -75,3 +78,4 @@ export async function getMeetingsUsage(
 export function isMeetingLimitReached(usage: MeetingUsage): boolean {
   return usage.allowed !== Infinity && usage.usedThisMonth >= usage.allowed;
 }
+

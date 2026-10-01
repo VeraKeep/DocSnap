@@ -4,7 +4,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import { ModulePageHeader } from "~/components/ModulePageHeader";
 
 export const Route = createFileRoute("/books")({
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "BookSnap — DocSnap" }, { name: "description", content: "Turn your books into searchable memory — BookSnap keeps every book, edition, page, and quote on your shelf." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "BookSnap — DocSnap" }, { name: "description", content: "Turn your books into searchable memory — BookSnap keeps every book, edition, page, and quote on your shelf." }] }),
   component: BooksPage,
 });
 
@@ -19,3 +19,4 @@ function BooksPage() {
     </main>
   );
 }
+

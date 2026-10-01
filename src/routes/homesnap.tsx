@@ -14,7 +14,7 @@ function optionalId(value: unknown): number | undefined {
 
 export const Route = createFileRoute("/homesnap")({
   validateSearch: (search: Record<string, unknown>) => ({ property: optionalId(search.property), object: optionalId(search.object) }),
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "HomeSnap — DocSnap" }, { name: "description", content: "A permanent digital record of your home — systems, appliances, warranties, receipts, and repair history. Sign in required." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "HomeSnap — DocSnap" }, { name: "description", content: "A permanent digital record of your home — systems, appliances, warranties, receipts, and repair history. Sign in required." }] }),
   component: HomeSnapPage,
 });
 
@@ -29,3 +29,4 @@ function HomeSnapPage() {
     </main>
   );
 }
+
