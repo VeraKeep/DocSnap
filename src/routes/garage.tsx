@@ -4,7 +4,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import { ModulePageHeader } from "~/components/ModulePageHeader";
 
 export const Route = createFileRoute("/garage")({
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "GarageSnap — Workshop Inventory | DocSnap" }, { name: "description", content: "GarageSnap, a DocSnap module — inventory tools and equipment with photos, make/model and serial numbers, warranties, and storage locations. Sign in required." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "GarageSnap — Workshop Inventory | DocSnap" }, { name: "description", content: "GarageSnap, a DocSnap module — inventory tools and equipment with photos, make/model and serial numbers, warranties, and storage locations. Sign in required." }] }),
   component: GaragePage,
 });
 
@@ -19,3 +19,4 @@ function GaragePage() {
     </main>
   );
 }
+

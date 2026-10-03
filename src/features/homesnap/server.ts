@@ -1151,11 +1151,17 @@ export const createDocument = createServerFn({ method: "POST" })
       file_url?: unknown;
       notes?: unknown;
     };
+    const fileUrl = requiredText(d.file_url, "Document link");
+    let parsedUrl: URL;
+    try { parsedUrl = new URL(fileUrl); } catch { throw new Error("Enter a valid document link."); }
+    if (!["https:", "http:"].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) {
+      throw new Error("Document links must use HTTP or HTTPS without embedded credentials.");
+    }
     return {
       object_id: positiveId(d.object_id, "Object id"),
       document_type: (text(d.document_type) ?? "other") as DocumentType,
       title: text(d.title)?.slice(0, 300) ?? null,
-      file_url: requiredText(d.file_url, "Document link"),
+      file_url: parsedUrl.toString(),
       notes: text(d.notes)?.slice(0, 2000) ?? null,
     };
   })
@@ -1813,3 +1819,4 @@ export const getHomeReport = createServerFn({ method: "GET" }).handler(async ():
     events,
   };
 });
+

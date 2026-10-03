@@ -39,9 +39,10 @@ const CONFIG: ModuleSalesConfig = {
   ],
   startNoteTitle: "Not sure where to start?", startNoteBody: "Add a book you refer to often, then build out collections and page-aware notes as your library grows.",
   resourceLinks: [
-    { href: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
-    { href: "/resources/how-to-scan-without-losing-quality", label: "Scan without losing quality" },
-    { href: "/resources/searchable-pdf-ocr", label: "Searchable PDFs and OCR" },
+    { to: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
+    { to: "/resources/how-to-scan-without-losing-quality", label: "Scan without losing quality" },
+    { to: "/resources/searchable-pdf-ocr", label: "Searchable PDFs and OCR" },
   ],
 };
 function BookSnapSalesPage() { return <ModuleSalesPage {...CONFIG} />; }
+

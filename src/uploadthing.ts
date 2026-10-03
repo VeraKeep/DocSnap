@@ -3,6 +3,8 @@ import { getVerifiedUserId } from "./serverAuth";
 import { getUserEntitlementSummaryForUser } from "./subscription";
 import { gateUpload, type UploadGateResult } from "./uploadAuth";
 
+import { authorizeAudioUpload } from "./features/meetingsnap/audioAuthorization";
+
 const f = createUploadthing();
 
 /**
@@ -97,6 +99,7 @@ export const uploadRouter = {
       return {
         fileKey: file.key,
         fileUrl: file.ufsUrl,
+        uploadToken: authorizeAudioUpload(metadata.uploadedBy, file.ufsUrl),
         uploadedBy: metadata.uploadedBy,
         entitlement: metadata.entitlement,
       };
@@ -135,3 +138,4 @@ export const uploadRouter = {
 } satisfies FileRouter;
 
 export type UploadRouter = typeof uploadRouter;
+

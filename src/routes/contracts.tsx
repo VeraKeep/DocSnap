@@ -4,7 +4,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import { ModulePageHeader } from "~/components/ModulePageHeader";
 
 export const Route = createFileRoute("/contracts")({
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "ContractSnap — DocSnap" }, { name: "description", content: "Upload the contract. Know what you agreed to — ContractSnap extracts renewals, deadlines, and obligations into a plain-language summary with a contract timeline." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "ContractSnap — DocSnap" }, { name: "description", content: "Upload the contract. Know what you agreed to — ContractSnap extracts renewals, deadlines, and obligations into a plain-language summary with a contract timeline." }] }),
   component: ContractsPage,
 });
 
@@ -19,3 +19,4 @@ function ContractsPage() {
     </main>
   );
 }
+

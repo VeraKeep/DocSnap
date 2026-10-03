@@ -39,9 +39,10 @@ const CONFIG: ModuleSalesConfig = {
   ],
   startNoteTitle: "Not sure where to start?", startNoteBody: "Add a contract with a renewal, cancellation window, or expiration date you do not want buried in the fine print.",
   resourceLinks: [
-    { href: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
-    { href: "/resources/mobile-scanner-privacy", label: "Mobile scanner privacy" },
-    { href: "/resources/local-vs-cloud-document-scanning", label: "Local vs. cloud document scanning" },
+    { to: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
+    { to: "/resources/mobile-scanner-privacy", label: "Mobile scanner privacy" },
+    { to: "/resources/local-vs-cloud-document-scanning", label: "Local vs. cloud document scanning" },
   ],
 };
 function ContractSnapSalesPage() { return <ModuleSalesPage {...CONFIG} />; }
+

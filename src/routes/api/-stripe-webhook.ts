@@ -42,6 +42,12 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!process.env.DATABASE_URL) {
+    return new Response(JSON.stringify({ error: "Payment database not configured" }), {
+      status: 503, headers: { "Content-Type": "application/json" },
+    });
+  }
+
   let rawBody: string;
   try {
     rawBody = await request.text();
@@ -76,6 +82,7 @@ export async function POST(request: Request) {
   try {
     switch (event.type) {
       case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded":
         await handleCheckoutCompleted(event.data.object);
         break;
 
@@ -88,7 +95,9 @@ export async function POST(request: Request) {
         // the entitlement this subscription paid for (module or DocSnap tier).
         const sub = event.data.object as Stripe.Subscription;
         if (sub.status !== "active" && sub.status !== "trialing") {
-          const clerkUserId = sub.metadata?.clerk_user_id;
+          const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+          const clerkUserId = sub.metadata?.clerk_user_id ||
+            (customerId ? await findUserByStripeCustomerId(customerId) : null);
           if (clerkUserId) {
             await revokeSubscriptionEntitlement(clerkUserId, sub);
           }
@@ -102,7 +111,10 @@ export async function POST(request: Request) {
     }
   } catch (err) {
     console.error("[stripe-webhook] Error handling event:", err);
-    // Still return 200 to Stripe so it doesn't retry indefinitely.
+    // Acknowledge only successful processing so Stripe retries transient failures.
+    return new Response(JSON.stringify({ error: "Payment processing failed" }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    });
   }
 
   return new Response(JSON.stringify({ received: true }), {
@@ -131,7 +143,8 @@ export async function POST(request: Request) {
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
 ): Promise<void> {
-  const customerEmail = session.customer_details?.email ?? null;
+  if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") return;
+  const customerEmail = session.customer_details?.email ?? session.customer_email ?? null;
   const stripeCustomerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id;
   const checkoutSessionId = session.id ?? null;
@@ -139,6 +152,8 @@ async function handleCheckoutCompleted(
   // Payment links may provide price_id in metadata; otherwise read the first
   // line item from the session object (no Stripe API call needed).
   const priceId = session.metadata?.price_id ?? await getCheckoutPriceId(session);
+
+  if (!priceId) throw new Error("Checkout price could not be resolved");
 
   // ── 1. Resolve the Clerk user, preferring the explicit client_reference_id ──
   let clerkUserId: string | null = null;
@@ -237,7 +252,7 @@ async function getCheckoutPriceId(session: Stripe.Checkout.Session): Promise<str
     return items.data[0]?.price?.id;
   } catch (err) {
     console.error("[stripe-webhook] Failed to read checkout line items:", err);
-    return undefined;
+    throw err;
   }
 }
 
@@ -255,3 +270,4 @@ async function logEvent(event: Stripe.Event): Promise<void> {
     console.error("[stripe-webhook] Failed to log event:", err);
   }
 }
+

@@ -750,7 +750,7 @@ export function MeetingsnapApp() {
         return;
       }
       const res = await analyzeAudio({
-        data: { title, fileUrl: uploaded.fileUrl, fileName: audioFile.name },
+        data: { title, fileUrl: uploaded.fileUrl, fileName: audioFile.name, uploadToken: uploaded.uploadToken },
       });
       setConfigured(res.configured);
       setResult(res.meeting as MeetingDetail);
@@ -1134,3 +1134,4 @@ export function MeetingsnapApp() {
     </div>
   );
 }
+

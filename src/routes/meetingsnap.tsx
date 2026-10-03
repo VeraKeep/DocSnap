@@ -4,7 +4,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import { ModulePageHeader } from "~/components/ModulePageHeader";
 
 export const Route = createFileRoute("/meetingsnap")({
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "MeetingSnap — DocSnap" }, { name: "description", content: "Turn meeting transcripts into summaries, decisions, action items, owners, questions, and risks — searchable forever." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "MeetingSnap — DocSnap" }, { name: "description", content: "Turn meeting transcripts into summaries, decisions, action items, owners, questions, and risks — searchable forever." }] }),
   component: MeetingsnapPage,
 });
 
@@ -41,3 +41,4 @@ function MeetingsnapPage() {
     </main>
   );
 }
+

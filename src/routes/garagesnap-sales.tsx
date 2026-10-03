@@ -39,9 +39,10 @@ const CONFIG: ModuleSalesConfig = {
   ],
   startNoteTitle: "Not sure where to start?", startNoteBody: "Start with your highest-value tools or anything still under warranty, then fill in the rest of the garage over time.",
   resourceLinks: [
-    { href: "/resources/home-warranty-document-organization", label: "Organize warranties and home records" },
-    { href: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
-    { href: "/resources/how-to-digitize-filing-cabinet", label: "Digitize a filing cabinet" },
+    { to: "/resources/home-warranty-document-organization", label: "Organize warranties and home records" },
+    { to: "/resources/how-to-organize-scanned-documents", label: "How to organize scanned documents" },
+    { to: "/resources/how-to-digitize-filing-cabinet", label: "Digitize a filing cabinet" },
   ],
 };
 function GarageSnapSalesPage() { return <ModuleSalesPage {...CONFIG} />; }
+

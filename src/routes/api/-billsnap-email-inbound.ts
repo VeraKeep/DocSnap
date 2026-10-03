@@ -242,7 +242,7 @@ export async function POST(request: Request): Promise<Response> {
     const contentType = firstHeader(request, "content-type").toLowerCase();
     if (contentType.includes("multipart/form-data")) {
       try {
-        const parts = await request.formData();
+        const parts = await request.clone().formData();
         const field = parts.get("secret");
         if (typeof field === "string") provided = field;
       } catch {
@@ -250,7 +250,7 @@ export async function POST(request: Request): Promise<Response> {
       }
     } else {
       try {
-        const raw = await request.text();
+        const raw = await request.clone().text();
         const parsed = JSON.parse(raw || "{}") as { secret?: unknown };
         if (typeof parsed.secret === "string") provided = parsed.secret;
       } catch {
@@ -329,3 +329,4 @@ export async function GET(): Promise<Response> {
     ingest: "Normalizes into the existing POST /api/billsnap-email-ingest path (ingestBillFromEmail).",
   });
 }
+

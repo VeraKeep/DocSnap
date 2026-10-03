@@ -4,7 +4,7 @@ import { CheckoutSuccessBanner } from "~/components/CheckoutSuccessBanner";
 import { ModulePageHeader } from "~/components/ModulePageHeader";
 
 export const Route = createFileRoute("/receipts")({
-  head: () => ({ meta: [{ name: "robots", content: "index, follow" }, { title: "ReceiptSnap — DocSnap" }, { name: "description", content: "Your receipts, searchable forever — capture, extract, and find any purchase in seconds. Sign in required." }] }),
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }, { title: "ReceiptSnap — DocSnap" }, { name: "description", content: "Your receipts, searchable forever — capture, extract, and find any purchase in seconds. Sign in required." }] }),
   component: ReceiptsPage,
 });
 
@@ -19,3 +19,4 @@ function ReceiptsPage() {
     </main>
   );
 }
+
