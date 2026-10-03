@@ -8,15 +8,16 @@
  * possible.
  *
  * Persistence mirrors the rest of DocSnap: `~/db` (Neon Postgres) and the host
- * schema (src/db-schema.sql). When DATABASE_URL is unset, `sql()` no-ops
- * safely, so the module still builds and the analyze flow still works in a
- * session-only demo path.
+ * schema (src/db-schema.sql). Analysis requires a configured database and
+ * reserves quota before any AI work. A transcript and its extraction commit
+ * together; failed processing releases the reservation.
  *
  * Extraction reuses the exact ReceiptSnap AI pattern: a server-side fetch to
  * the OpenAI chat completions API (model gpt-4o-mini, temperature 0, JSON
  * object response). No key is ever hardcoded; if OPENAI_API_KEY is unset at
  * runtime we surface the same clear, honest message the receipts module uses.
  */
+import { reserveMeeting, completeMeeting, releaseMeeting, type MeetingReservation } from "./persistence";
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { requireServerFunctionUser } from "~/lib/server-auth";
@@ -38,7 +39,6 @@ import {
 } from "./tiers";
 import {
   getMeetingsUsage,
-  isMeetingLimitReached,
   type MeetingUsage,
 } from "./usage";
 /**
@@ -302,6 +302,7 @@ async function extractWithAI(sourceText: string, title: string): Promise<Meeting
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(120000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -372,75 +373,35 @@ async function analyzeAndPersist(input: {
   userId: string;
   title: string;
   sourceText: string;
-  /** Timestamped segments from the audio path (empty for the transcript path). */
   segments?: MeetingSegment[];
-  /** Ordered distinct speaker labels (empty in the stepping stone). */
   speakers?: string[];
+  reservation?: MeetingReservation;
 }): Promise<AnalyzeResult> {
-  const meetingTier = await getUserMeetingTier(input.userId);
+  const reservation = input.reservation ?? await reserveMeeting(input.userId);
+  const meetingTier = reservation.tier;
   const tierConfig = MEETING_TIERS[meetingTier];
-  const usage = await getMeetingsUsage(input.userId);
-
-  if (input.sourceText.length > tierConfig.maxTranscriptChars) {
-    throw new Error(
-      `That transcript is ${input.sourceText.length.toLocaleString()} characters — over the ${tierConfig.maxTranscriptChars.toLocaleString()}-character limit for your ${tierConfig.label} plan. Upgrade for larger transcripts.`,
-    );
-  }
-  if (isMeetingLimitReached(usage)) {
-    throw new Error(
-      `You've used all ${usage.allowed} meetings this month on the ${tierConfig.label} plan. Upgrade for more — or wait until next month.`,
-    );
-  }
-
-  const baseExtraction = await extractWithAI(input.sourceText, input.title);
-  // Augment the model-derived extraction with the transcription-side metadata
-  // (timestamped segments + speaker labels) as versioned derived data, exactly
-  // like the rest of the extraction JSONB. Defaults to empty on the transcript
-  // path, which has no audio/timestamps.
-  const extracted: MeetingExtraction = {
-    ...baseExtraction,
-    segments: input.segments ?? [],
-    speakers: input.speakers ?? [],
-  };
-  // Demo path: no DATABASE_URL → sql() no-ops; return a session-only meeting.
-  if (!process.env.DATABASE_URL) {
+  try {
+    if (input.sourceText.length > tierConfig.maxTranscriptChars) {
+      throw new Error(`That transcript exceeds the ${tierConfig.maxTranscriptChars.toLocaleString()}-character limit for your ${tierConfig.label} plan.`);
+    }
+    const usage = await getMeetingsUsage(input.userId);
+    const baseExtraction = await extractWithAI(input.sourceText, input.title);
+    const extracted: MeetingExtraction = {
+      ...baseExtraction,
+      segments: input.segments ?? [],
+      speakers: input.speakers ?? [],
+    };
+    await completeMeeting(input.userId, reservation, input.title, input.sourceText, extracted);
     return {
-      configured: false,
-      meeting: {
-        id: 0,
-        title: input.title || "Untitled meeting",
-        createdAt: null,
-        sourceText: input.sourceText,
-        extraction: extracted,
-      },
+      configured: true,
+      meeting: { id: reservation.id, title: input.title || "Untitled meeting", createdAt: reservation.createdAt, sourceText: input.sourceText, extraction: extracted },
       usage,
       meetingTier,
     };
+  } catch (error) {
+    await releaseMeeting(input.userId, reservation).catch((cleanupError) => console.error("[meetingsnap] Failed to release reservation:", cleanupError));
+    throw error;
   }
-  const insert = (await sql`
-    INSERT INTO meetings (clerk_user_id, title, source_text)
-    VALUES (${input.userId}, ${input.title || "Untitled meeting"}, ${input.sourceText})
-    RETURNING id
-  `) as Record<string, unknown>[];
-  const meetingId = Number(insert[0]?.id);
-  if (meetingId > 0) {
-    await sql`
-      INSERT INTO meeting_extractions (meeting_id, extraction)
-      VALUES (${meetingId}, ${JSON.stringify(extracted)}::jsonb)
-    `;
-  }
-  return {
-    configured: true,
-    meeting: {
-      id: meetingId,
-      title: input.title || "Untitled meeting",
-      createdAt: new Date().toISOString(),
-      sourceText: input.sourceText,
-      extraction: extracted,
-    },
-    usage,
-    meetingTier,
-  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -505,6 +466,7 @@ export const transcribeAudio = createServerOnlyFn(async (input: {
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
+    signal: AbortSignal.timeout(120000),
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
     body: form,
   });
@@ -575,7 +537,7 @@ export const listMeetings = createServerFn({ method: "GET" }).handler(async () =
   const rows = (await sql`
     SELECT m.id, m.title, m.created_at
     FROM meetings m
-    WHERE m.clerk_user_id = ${userId}
+    WHERE m.clerk_user_id = ${userId} AND m.source_text <> ''
     ORDER BY m.created_at DESC
   `) as Record<string, unknown>[];
   return {
@@ -603,7 +565,7 @@ export const getMeeting = createServerFn({ method: "POST" })
       SELECT m.id, m.title, m.source_text, e.extraction, m.created_at
       FROM meetings m
       LEFT JOIN meeting_extractions e ON e.meeting_id = m.id
-      WHERE m.id = ${opts.data.id} AND m.clerk_user_id = ${userId}
+      WHERE m.id = ${opts.data.id} AND m.clerk_user_id = ${userId} AND m.source_text <> ''
     `) as Record<string, unknown>[];
     const r = rows[0];
     if (!r) return { configured: true, meeting: null };
@@ -676,27 +638,17 @@ export const analyzeAudio = createServerFn({ method: "POST" })
     const userId = await requireServerFunctionUser();
     const { verifyAudioUpload } = await import("./audioAuthorization");
     verifyAudioUpload(opts.data.uploadToken, userId, opts.data.fileUrl);
-    const usage = await getMeetingsUsage(userId);
-    if (usage.tier === "free") throw new Error("A paid MeetingSnap plan is required for recording transcription.");
-    if (isMeetingLimitReached(usage)) throw new Error("Your monthly meeting limit has been reached.");
-    // 1) Speech-to-text. Throws a friendly message if the key is unset, the
-    //    file is unreachable, or Whisper returns no usable text. Returns the
-    //    flattened transcript PLUS timestamped segments (empty speakers in the
-    //    stepping stone).
-    const transcription = await transcribeAudio({
-      fileUrl: opts.data.fileUrl,
-      fileName: opts.data.fileName || "recording.mp3",
-    });
-    // 2) Same extract → AI-extract → persist path as transcript analysis,
-    //    now carrying the timestamped segments + speaker labels into the
-    //    versioned extraction JSONB.
-    return analyzeAndPersist({
-      userId,
-      title: opts.data.title,
-      sourceText: transcription.transcript,
-      segments: transcription.segments,
-      speakers: transcription.speakers,
-    });
+    const reservation = await reserveMeeting(userId, true);
+    try {
+      const transcription = await transcribeAudio({ fileUrl: opts.data.fileUrl, fileName: opts.data.fileName || "recording.mp3" });
+      return await analyzeAndPersist({
+        userId, title: opts.data.title, sourceText: transcription.transcript,
+        segments: transcription.segments, speakers: transcription.speakers, reservation,
+      });
+    } catch (error) {
+      await releaseMeeting(userId, reservation).catch((cleanupError) => console.error("[meetingsnap] Failed to release audio reservation:", cleanupError));
+      throw error;
+    }
   });
 
 /* ------------------------------------------------------------------ */
@@ -717,6 +669,7 @@ async function openAiJson(
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(120000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -779,7 +732,7 @@ export const searchMeetings = createServerFn({ method: "POST" })
              (e.extraction IS NOT NULL AND e.extraction <> 'null'::jsonb) AS has_extraction
       FROM meetings m
       LEFT JOIN meeting_extractions e ON e.meeting_id = m.id
-      WHERE m.clerk_user_id = ${userId}
+      WHERE m.clerk_user_id = ${userId} AND m.source_text <> ''
         AND (m.title ILIKE ${q} OR m.source_text ILIKE ${q} OR CAST(e.extraction AS TEXT) ILIKE ${q})
       ORDER BY m.created_at DESC
     `) as Record<string, unknown>[];
@@ -829,6 +782,8 @@ export const askAI = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    const tier = await getUserMeetingTier(userId);
+    if (!MEETING_TIERS[tier].features.askAI) throw new Error("Your MeetingSnap plan does not include this feature.");
     if (!process.env.OPENAI_API_KEY) return { configured: false, result: null };
     if (!process.env.DATABASE_URL) {
       throw new Error("You need saved meetings to ask about them — storage isn't connected yet.");
@@ -837,7 +792,7 @@ export const askAI = createServerFn({ method: "POST" })
       SELECT m.id, m.title, m.source_text, e.extraction
       FROM meetings m
       LEFT JOIN meeting_extractions e ON e.meeting_id = m.id
-      WHERE m.clerk_user_id = ${userId}
+      WHERE m.clerk_user_id = ${userId} AND m.source_text <> ''
       ORDER BY m.created_at DESC
       LIMIT ${MAX_ASKS_CONTEXT}
     `) as Record<string, unknown>[];
@@ -912,6 +867,8 @@ export const draftFollowUpEmail = createServerFn({ method: "POST" })
   })
   .handler(async (opts) => {
     const userId = await requireServerFunctionUser();
+    const tier = await getUserMeetingTier(userId);
+    if (!MEETING_TIERS[tier].features.followUpEmail) throw new Error("Your MeetingSnap plan does not include this feature.");
     if (!process.env.OPENAI_API_KEY) return { configured: false, draft: null, noneOpen: false };
     if (!process.env.DATABASE_URL) return { configured: false, draft: null, noneOpen: false };
 
@@ -919,7 +876,7 @@ export const draftFollowUpEmail = createServerFn({ method: "POST" })
       SELECT m.id, m.title, e.extraction
       FROM meetings m
       LEFT JOIN meeting_extractions e ON e.meeting_id = m.id
-      WHERE m.id = ${opts.data.id} AND m.clerk_user_id = ${userId}
+      WHERE m.id = ${opts.data.id} AND m.clerk_user_id = ${userId} AND m.source_text <> ''
     `) as Record<string, unknown>[];
     const r = rows[0];
     if (!r) throw new Error("That meeting could not be found.");

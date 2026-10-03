@@ -18,6 +18,7 @@ function load(file, mocks = {}) {
   vm.runInNewContext(code, {
     module, exports: module.exports, require: (id) => id in mocks ? mocks[id] : require(id),
     process, Buffer, Request, Response, FormData, File, Uint8Array, AbortSignal, URL,
+    fetch: mocks.__fetch ?? (() => { throw new Error("Unexpected network call"); }),
     console: { log() {}, warn() {}, error() {} },
   }, { filename });
   return module.exports;
@@ -120,3 +121,55 @@ delete process.env.DATABASE_URL;
 assert.equal((await deliver("checkout.session.completed", checkout)).status, 503);
 await assert.rejects(() => usage.getMeetingsUsage("user_test"), /not configured/);
 console.log("PASS: inbound email, signed payments/retries, recording authorization, byte limits, and fail-closed usage.");
+
+// Exercise the actual transcript handler: denied quota never reaches AI;
+// usage/AI/persistence failures always release the temporary reservation.
+const tiers = load("src/features/meetingsnap/tiers.ts");
+let quotaDenied = false, usageDenied = false, saveDenied = false, aiDenied = false;
+let releases = 0, aiCalls = 0, completions = 0;
+process.env.OPENAI_API_KEY = "test-only";
+const meetingServer = load("src/features/meetingsnap/server.ts", {
+  "@tanstack/react-start": { ...serverFunctions, createServerOnlyFn: fn => fn },
+  "~/db": { sql: async () => [{ meeting_subscription_status: "free" }] },
+  "~/lib/server-auth": { requireServerFunctionUser: async () => "user_test" },
+  "./types": load("src/features/meetingsnap/types.ts"), "./tiers": tiers,
+  "./usage": { getMeetingsUsage: async () => {
+    if (usageDenied) throw new Error("Usage unavailable");
+    return { usedThisMonth: 1, allowed: 2, tier: "free" };
+  } },
+  "./persistence": {
+    reserveMeeting: async () => {
+      if (quotaDenied) throw new Error("Allowance exhausted");
+      return { id: 12, tier: "free", createdAt: new Date().toISOString() };
+    },
+    completeMeeting: async () => { if (saveDenied) throw new Error("Save failed"); completions++; },
+    releaseMeeting: async () => { releases++; },
+  },
+  __fetch: async () => {
+    aiCalls++;
+    if (aiDenied) throw new Error("AI failed");
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: "Saved summary" }) } }] }), { status: 200 });
+  },
+});
+const transcriptInput = { data: { title: "Meeting", sourceText: "A sufficiently long meeting transcript." } };
+quotaDenied = true;
+await assert.rejects(() => meetingServer.analyzeMeeting(transcriptInput), /Allowance/);
+assert.equal(aiCalls, 0); assert.equal(releases, 0);
+quotaDenied = false; usageDenied = true;
+await assert.rejects(() => meetingServer.analyzeMeeting(transcriptInput), /Usage/);
+assert.equal(aiCalls, 0); assert.equal(releases, 1);
+usageDenied = false; aiDenied = true;
+await assert.rejects(() => meetingServer.analyzeMeeting(transcriptInput), /AI failed/);
+assert.equal(releases, 2);
+aiDenied = false; saveDenied = true;
+await assert.rejects(() => meetingServer.analyzeMeeting(transcriptInput), /Save failed/);
+assert.equal(releases, 3);
+saveDenied = false;
+const analyzed = await meetingServer.analyzeMeeting(transcriptInput);
+assert.equal(analyzed.meeting.id, 12); assert.equal(analyzed.usage.usedThisMonth, 1);
+assert.equal(completions, 1); assert.equal(releases, 3);
+const priorAI = aiCalls;
+await assert.rejects(() => meetingServer.askAI({ data: { question: "Summarize" } }), /plan/);
+await assert.rejects(() => meetingServer.draftFollowUpEmail({ data: { id: 12 } }), /plan/);
+assert.equal(aiCalls, priorAI);
+console.log("PASS: meeting quota before AI, reservation cleanup, atomic save handoff, and paid feature gates.");

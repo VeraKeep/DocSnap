@@ -19,12 +19,7 @@ function sql(
   ...values: unknown[]
 ): Promise<Record<string, unknown>[]> {
   if (realSql) {
-    try {
-      return realSql(strings, ...values) as Promise<Record<string, unknown>[]>;
-    } catch (err) {
-      console.error("[db] Query error:", err);
-      return Promise.resolve([]);
-    }
+    return realSql(strings, ...values) as Promise<Record<string, unknown>[]>;
   }
 
   // No-op fallback: return empty results, log a warning once.
@@ -39,3 +34,9 @@ function sql(
 sql._warned = false;
 
 export { sql };
+
+/** Strict client for paid work and atomic transactions; never uses the demo fallback. */
+export function getDatabaseClient() {
+  if (!realSql) throw new Error("Database is not configured.");
+  return realSql;
+}
