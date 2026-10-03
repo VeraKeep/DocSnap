@@ -218,7 +218,8 @@ export function LandingPage({
                     <div className="mt-5 flex items-baseline gap-1"><span className="text-2xl font-extrabold">{m.priceMonthly}</span><span className="text-xs text-slate-500">/month</span></div>
                     <div className="mt-4 flex flex-col gap-2">
                       {!m.comingSoon && m.checkout.monthly ? <a href={m.checkout.monthly} onClick={() => trackEvent("checkout-click", { product: m.name, placement: "homepage-module-card" })} className="rounded-xl px-4 py-2.5 text-center text-sm font-bold text-slate-950 transition hover:brightness-110" style={{ backgroundColor: accent }}>Get {m.name}</a> : <span className="rounded-xl border border-slate-700 px-4 py-2.5 text-center text-sm font-semibold text-slate-500">Pricing coming soon</span>}
-                      {!m.comingSoon && <Link to={m.route} className="rounded-xl border border-slate-700 px-4 py-2.5 text-center text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white">Open {m.name}</Link>}
+                      {!m.comingSoon && <Link to={m.salesRoute} onClick={() => trackEvent("module-sales-click", { product: m.name, placement: "homepage-module-card" })} className="rounded-xl border border-slate-700 px-4 py-2.5 text-center text-sm font-semibold text-slate-300 transition hover:border-cyan-500/50 hover:text-white">Learn more about {m.name}</Link>}
+                      {!m.comingSoon && isSignedIn && <Link to={m.route} className="text-center text-xs font-semibold text-slate-500 transition hover:text-cyan-300">Already subscribed? Open {m.name} →</Link>}
                     </div>
                     <div className="mt-4 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-600"><img src="/verakeep-mark.svg" alt="" className="h-4 w-4 rounded"/> A VeraKeep product</div>
                   </article>
