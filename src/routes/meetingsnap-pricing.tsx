@@ -71,7 +71,6 @@ const MEETING_PLANS: MeetingPlan[] = [
       "Decision history",
       "Advanced exports",
       "Saved meeting search",
-      "Advanced exports",
     ],
   },
   {
@@ -198,6 +197,7 @@ function MeetingSnapPricingPage() {
             {plan.button === "subscribe" && (
               <CheckoutLink
                 href={plan.checkout?.[billing] || "#"}
+                product={`MeetingSnap ${plan.name} ${billing}`}
                 className="mt-5 inline-flex justify-center rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold hover:bg-indigo-500"
               >
                 Subscribe

@@ -1,5 +1,6 @@
 import { useUser } from "@clerk/tanstack-start";
 import type { ReactNode } from "react";
+import { trackEvent } from "../analytics";
 
 /**
  * Build the href for a buy.stripe.com Payment Link, stamping the signed-in
@@ -43,6 +44,8 @@ interface CheckoutLinkProps {
   children: ReactNode;
   /** Extra target (e.g. "_blank"). Default is same-tab. */
   target?: string;
+  /** Optional privacy-safe product label for conversion measurement. */
+  product?: string;
 }
 
 /**
@@ -51,14 +54,19 @@ interface CheckoutLinkProps {
  * client side of the "paid-but-not-granted" fix. Falls back to the plain link
  * for anonymous/loading users.
  */
-export function CheckoutLink({ href, className, children, target }: CheckoutLinkProps) {
+export function CheckoutLink({ href, className, children, target, product }: CheckoutLinkProps) {
   const { user, isLoaded } = useUser();
   // Only attach identity once the Clerk session has loaded (server-rendered
   // HTML carries the plain link; hydration adds the identity params).
   const userId = isLoaded ? (user?.id ?? null) : null;
   const email = isLoaded ? (user?.primaryEmailAddress?.emailAddress ?? null) : null;
   return (
-    <a href={checkoutHref(href, userId, email)} className={className} target={target}>
+    <a
+      href={checkoutHref(href, userId, email)}
+      className={className}
+      target={target}
+      onClick={() => trackEvent("checkout-click", product ? { product } : undefined)}
+    >
       {children}
     </a>
   );

@@ -24,6 +24,8 @@ interface LiveModule extends ModuleBase {
   comingSoon?: false;
   /** App route the module lives at. */
   route: "/meetingsnap" | "/garage" | "/receipts" | "/bills" | "/homesnap" | "/contracts" | "/books";
+  /** Public sales page used for feature details before checkout. */
+  salesRoute: "/meetingsnap-sales" | "/garagesnap-sales" | "/receiptsnap-sales" | "/billsnap-sales" | "/homesnap-sales" | "/contractsnap-sales" | "/booksnap-sales";
   /** Display price for monthly/annual billing. */
   priceMonthly: string;
   priceAnnual: string;
@@ -45,6 +47,7 @@ export type Module = LiveModule | ComingSoonModule;
 export const MODULES: Module[] = [
   {
     name: "MeetingSnap",
+    salesRoute: "/meetingsnap-sales",
     emoji: "🎙️",
     tagline: "Turn conversations into action",
     description:
@@ -59,6 +62,7 @@ export const MODULES: Module[] = [
   },
   {
     name: "GarageSnap",
+    salesRoute: "/garagesnap-sales",
     emoji: "🔧",
     tagline: "Everything in your workshop, tracked",
     description:
@@ -73,6 +77,7 @@ export const MODULES: Module[] = [
   },
   {
     name: "ReceiptSnap",
+    salesRoute: "/receiptsnap-sales",
     emoji: "🧾",
     tagline: "Every receipt, searchable forever",
     description:
@@ -87,6 +92,7 @@ export const MODULES: Module[] = [
   },
   {
     name: "BillSnap",
+    salesRoute: "/billsnap-sales",
     emoji: "🧾",
     tagline: "Snap the bill, know what you owe and when",
     description:
@@ -101,6 +107,7 @@ export const MODULES: Module[] = [
   },
   {
     name: "HomeSnap",
+    salesRoute: "/homesnap-sales",
     emoji: "🏡",
     tagline: "Your home, permanently on record",
     description:
@@ -121,6 +128,7 @@ export const MODULES: Module[] = [
   },
   {
     name: "ContractSnap",
+    salesRoute: "/contractsnap-sales",
     emoji: "✍️",
     tagline: "Key contract terms at a glance",
     description:
@@ -140,6 +148,7 @@ export const MODULES: Module[] = [
   },
   {
     name: "BookSnap",
+    salesRoute: "/booksnap-sales",
     emoji: "📚",
     tagline: "Books become searchable memory",
     description:

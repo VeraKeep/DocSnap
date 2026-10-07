@@ -31,6 +31,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useUser } from "@clerk/tanstack-start";
 import { useEffect, useState } from "react";
+import { trackEvent } from "~/analytics";
 import {
   getUserEntitlementSummary,
   type EntitlementSummary,
@@ -274,6 +275,16 @@ function SuccessBanner({
   );
 }
 
+
+function TrackedSuccessBanner({ content, onDismiss }: { content: RenderedContent; onDismiss: () => void }) {
+  useEffect(() => {
+    // Count only after the signed-in user's DB entitlement confirms the purchase.
+    trackEvent("purchase-confirmed", { product: content.label });
+  }, [content.label]);
+
+  return <SuccessBanner content={content} onDismiss={onDismiss} />;
+}
+
 /** Reusable post-purchase confirmation banner. Mount it on any Stripe
  *  redirect destination with the matching `destination` prop. */
 export function CheckoutSuccessBanner({
@@ -327,5 +338,6 @@ export function CheckoutSuccessBanner({
   // Not entitled → render nothing; the route's normal locked/upgrade
   // experience stays visible below.
   if (!content) return null;
-  return <SuccessBanner content={content} onDismiss={() => setDismissed(true)} />;
+
+  return <TrackedSuccessBanner content={content} onDismiss={() => setDismissed(true)} />;
 }
