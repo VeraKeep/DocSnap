@@ -275,6 +275,16 @@ function SuccessBanner({
   );
 }
 
+
+function TrackedSuccessBanner({ content, onDismiss }: { content: RenderedContent; onDismiss: () => void }) {
+  useEffect(() => {
+    // Count only after the signed-in user's DB entitlement confirms the purchase.
+    trackEvent("purchase-confirmed", { product: content.label });
+  }, [content.label]);
+
+  return <SuccessBanner content={content} onDismiss={onDismiss} />;
+}
+
 /** Reusable post-purchase confirmation banner. Mount it on any Stripe
  *  redirect destination with the matching `destination` prop. */
 export function CheckoutSuccessBanner({
@@ -292,7 +302,6 @@ export function CheckoutSuccessBanner({
     new URLSearchParams(location.searchStr ?? "").get("checkout") === "success";
   const [summary, setSummary] = useState<EntitlementSummary | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const [conversionTracked, setConversionTracked] = useState(false);
 
   useEffect(() => {
     if (!showedPurchase) return;
@@ -330,11 +339,5 @@ export function CheckoutSuccessBanner({
   // experience stays visible below.
   if (!content) return null;
 
-  // Count only after the signed-in user DB entitlement confirms the purchase.
-  if (!conversionTracked) {
-    trackEvent("purchase-confirmed", { product: content.label });
-    setConversionTracked(true);
-  }
-
-  return <SuccessBanner content={content} onDismiss={() => setDismissed(true)} />;
+  return <TrackedSuccessBanner content={content} onDismiss={() => setDismissed(true)} />;
 }
